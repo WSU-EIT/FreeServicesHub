@@ -1,0 +1,54 @@
+@page "/Examples/ChartsV3"
+@page "/{TenantCode}/Examples/ChartsV3"
+@implements IDisposable
+@inject BlazorDataModel Model
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) { <h1 class="page-title"><i class="fa-solid fa-server me-1"></i> System Health</h1><LoadingMessage /> } else {
+        <div class="@Model.StickyMenuClass"><h1 class="page-title"><i class="fa-solid fa-server me-1"></i> V3: System Health Dashboard <StickyMenuIcon /></h1></div>
+
+        <ExampleNav />
+        <AboutSection Title="Charts in Context: Infrastructure Monitoring" Subtitle="CPU, memory, disk, and uptime metrics — the Azure Monitor / Grafana pattern" IconClass="fa-solid fa-server">
+            <p class="small text-muted mb-0">Charts applied to server health monitoring — CPU gauges, memory bars, disk usage, and service status indicators.</p>
+        </AboutSection>
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="System Health Cards"
+                     Description="Infrastructure monitoring uses colored status indicators: bg-success for healthy, bg-warning for degraded, bg-danger for down. Each card shows a service name, uptime, and status badge. This is the same pattern as Azure Status and AWS Health Dashboard."
+                     Code="@_codeHealthCards" />
+            <InfoTip Title="Uptime Percentage Display"
+                     Description="Uptime is shown as a large number (h4) with color coding: text-success above 99%, text-warning 95-99%, text-danger below 95%. A thin progress bar below gives visual scale. This SLA-style display is used in DevOps monitoring dashboards."
+                     Code="@_codeUptime" />
+            <InfoTip Title="Sparkline with CSS Bars"
+                     Description="Mini bar charts (sparklines) show recent activity. Each bar is a tiny div with calculated height. d-flex align-items-end with gap-1 creates the chart. No charting library — just CSS divs. This pattern works for CPU usage, request counts, error rates."
+                     Code="@_codeSparkline" />
+        </div>
+        <div class="row row-cols-2 row-cols-md-4 g-2 mb-3">
+            <div class="col"><div class="card border-0 shadow-sm text-center py-2"><div class="h4 mb-0 text-success">99.97%</div><div class="small text-muted">Uptime (30d)</div></div></div>
+            <div class="col"><div class="card border-0 shadow-sm text-center py-2"><div class="h4 mb-0 text-warning">42%</div><div class="small text-muted">CPU Usage</div></div></div>
+            <div class="col"><div class="card border-0 shadow-sm text-center py-2"><div class="h4 mb-0 text-info">68%</div><div class="small text-muted">Memory</div></div></div>
+            <div class="col"><div class="card border-0 shadow-sm text-center py-2"><div class="h4 mb-0 text-primary">124ms</div><div class="small text-muted">Avg Response</div></div></div>
+        </div>
+        <div class="card shadow-sm border-0 mb-3"><div class="card-header bg-white py-2"><span class="small fw-semibold"><i class="fa-solid fa-circle-nodes me-1"></i> Service Status</span></div><div class="card-body p-0">
+            @foreach (var svc in new[] { ("Web App (Production)", "Healthy", "bg-success", "124ms", "42%"), ("API Gateway", "Healthy", "bg-success", "89ms", "31%"), ("Database (Primary)", "Healthy", "bg-success", "12ms", "68%"), ("Database (Replica)", "Warning", "bg-warning", "45ms", "72%"), ("Cache (Redis)", "Healthy", "bg-success", "3ms", "28%"), ("Search Index", "Degraded", "bg-danger", "890ms", "91%") }) {
+                <div class="px-3 py-2 border-bottom d-flex align-items-center gap-3">
+                    <span class="badge @svc.Item3 rounded-circle p-1" style="width:12px;height:12px;">&nbsp;</span>
+                    <span class="small fw-semibold flex-grow-1">@svc.Item1</span>
+                    <span class="badge @svc.Item3 @(svc.Item2 == "Warning" ? "text-dark" : "")">@svc.Item2</span>
+                    <span class="small text-muted" style="min-width:60px;">@svc.Item4</span>
+                    <div style="width:80px;"><div class="progress" style="height:4px;"><div class="progress-bar @svc.Item3" style="width:@svc.Item5"></div></div></div>
+                    <span class="small text-muted" style="min-width:30px;">@svc.Item5</span>
+                </div>
+            }
+        </div></div>
+    }
+}
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "chartsv3";
+    private string _codeHealthCards = "<div class=\"card\">\n  <span class=\"badge bg-success\">Healthy</span>\n  <div class=\"h5\">API Gateway</div>\n  <div class=\"small\">99.98% uptime</div>\n</div>";
+    private string _codeUptime = "<div class=\"h4 @(pct > 99 ? \"text-success\" : \"text-warning\")\">\n  @pct%\n</div>";
+    private string _codeSparkline = "<div class=\"d-flex align-items-end gap-1\" style=\"height:30px\">\n  @foreach (var v in values) {\n    <div class=\"bg-primary\" style=\"width:3px;height:@(v)px\"></div>\n  }\n</div>";
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) Model.TenantCodeFromUrl = TenantCode; if (Model.Loaded && Model.LoggedIn && !_loadedData) { _loadedData = true; _loading = false; StateHasChanged(); } }
+}

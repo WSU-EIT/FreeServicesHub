@@ -1,0 +1,88 @@
+﻿@* WizardStepHeader.razor - Reusable step header for the wizard card *@
+
+<div class="card-header @HeaderClass d-flex justify-content-between align-items-center flex-wrap gap-2 py-3">
+    <div class="d-flex align-items-center gap-2">
+        @if (ShowSpinner)
+        {
+            <div class="spinner-border spinner-border-sm" role="status">
+                <span class="visually-hidden">@SpinnerText</span>
+            </div>
+        }
+        else if (!string.IsNullOrWhiteSpace(BadgeIcon))
+        {
+            <span class="badge @BadgeClass"><i class="fa @BadgeIcon"></i></span>
+        }
+        else
+        {
+            <span class="badge bg-secondary">Step @StepNumber</span>
+        }
+        <span class="fw-semibold">@Title</span>
+    </div>
+    <div class="d-flex gap-2">
+        @if (ShowStartOver)
+        {
+            <button class="btn btn-outline-light btn-sm" @onclick="OnStartOver" disabled="@IsDisabled">
+                <i class="fa fa-refresh me-1"></i>
+                Start Over
+            </button>
+        }
+        @if (ShowBack)
+        {
+            <button class="btn btn-secondary btn-sm" @onclick="OnBack" disabled="@IsDisabled">
+                <i class="fa fa-arrow-left me-1"></i>
+                Back
+            </button>
+        }
+        @if (ShowNext)
+        {
+            <button class="btn btn-primary btn-sm" @onclick="OnNext" disabled="@(IsDisabled || NextDisabled)">
+                @NextButtonText
+                <i class="fa fa-arrow-right ms-1"></i>
+            </button>
+        }
+        @if (ShowSave)
+        {
+            <button class="btn btn-success btn-sm" @onclick="OnSave" disabled="@IsDisabled">
+                <i class="fa fa-save me-1"></i>
+                @SaveButtonText
+            </button>
+        }
+        @if (ShowCreateAnother)
+        {
+            <button class="btn btn-light btn-sm" @onclick="OnStartOver">
+                <i class="fa fa-refresh me-1"></i>
+                Create Another Pipeline
+            </button>
+        }
+        @if (!string.IsNullOrWhiteSpace(InfoText))
+        {
+            <span class="text-muted small">@InfoText</span>
+        }
+        @ChildContent
+    </div>
+</div>
+
+@code {
+    [Parameter] public string HeaderClass { get; set; } = "bg-dark text-white";
+    [Parameter] public int StepNumber { get; set; }
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public bool ShowSpinner { get; set; }
+    [Parameter] public string SpinnerText { get; set; } = "Loading...";
+    [Parameter] public string BadgeIcon { get; set; } = "";
+    [Parameter] public string BadgeClass { get; set; } = "bg-light text-success";
+    [Parameter] public bool ShowStartOver { get; set; }
+    [Parameter] public bool ShowBack { get; set; }
+    [Parameter] public bool ShowNext { get; set; }
+    [Parameter] public bool ShowSave { get; set; }
+    [Parameter] public bool ShowCreateAnother { get; set; }
+    [Parameter] public string NextButtonText { get; set; } = "Next";
+    [Parameter] public string SaveButtonText { get; set; } = "Save YAML & Pipeline";
+    [Parameter] public string InfoText { get; set; } = "";
+    [Parameter] public bool IsDisabled { get; set; }
+    [Parameter] public bool NextDisabled { get; set; }
+    [Parameter] public EventCallback OnStartOver { get; set; }
+    [Parameter] public EventCallback OnBack { get; set; }
+    [Parameter] public EventCallback OnNext { get; set; }
+    [Parameter] public EventCallback OnSave { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

@@ -1,0 +1,281 @@
+@page "/Examples/Carousel"
+@page "/{TenantCode}/Examples/Carousel"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-film me-1"></i> Carousel</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title">
+                <i class="fa-solid fa-film me-1"></i> Carousel / Slideshow Demo
+                <StickyMenuIcon />
+            </h1>
+        </div>
+
+        <ExampleNav />
+
+        <AboutSection Title="About Carousel View" Subtitle="The same gallery data as a single-image focus slideshow" IconClass="fa-solid fa-film">
+            <div class="row">
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-question-circle me-1"></i>What Is This Page?</h6>
+                    <p class="small text-muted mb-0">
+                        This is a <strong>variant</strong> of the Image Gallery demo. Instead of a thumbnail grid
+                        with a lightbox overlay, this shows a <strong>single focused image</strong> with a
+                        horizontal filmstrip below it. This is the pattern used on product detail pages (Amazon),
+                        car configurators (Ford), and photo viewers (Google Photos).
+                    </p>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-lightbulb me-1"></i>What's Different?</h6>
+                    <ul class="small text-muted mb-0 ps-3">
+                        <li><strong>Single focus</strong> — one large image at a time, not a grid</li>
+                        <li><strong>Filmstrip</strong> — horizontal scrollable thumbnail row below</li>
+                        <li><strong>Auto-play</strong> — optional slideshow timer that cycles images</li>
+                        <li><strong>Detail panel</strong> — metadata displayed next to the image</li>
+                        <li><strong>Same data</strong> — identical gallery items list</li>
+                    </ul>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-road me-1"></i>When to Use Which?</h6>
+                    <p class="small text-muted mb-0">
+                        Use the <strong>Image Gallery</strong> when users need to browse and scan many images
+                        quickly (like a photo library). Use the <strong>Carousel</strong> when the focus is on
+                        one image at a time with details (like a product page or slideshow presentation).
+                    </p>
+                </div>
+            </div>
+        </AboutSection>
+
+        @* ── Auto-play Controls ── *@
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+            <button class="btn btn-sm @(_autoPlay ? "btn-danger" : "btn-success")" @onclick="ToggleAutoPlay">
+                <i class="fa-solid @(_autoPlay ? "fa-pause" : "fa-play") me-1"></i>
+                @(_autoPlay ? "Pause" : "Auto-play")
+            </button>
+            <label class="form-label mb-0 small text-muted">Speed:</label>
+            <select class="form-select form-select-sm" style="width:auto;" @bind="_autoPlaySeconds" @bind:after="UpdateTimer">
+                <option value="2">2s</option>
+                <option value="3">3s</option>
+                <option value="5">5s</option>
+                <option value="8">8s</option>
+            </select>
+            <span class="badge bg-secondary rounded-pill">@(_currentIndex + 1) / @_galleryItems.Count</span>
+            <InfoTip Title="Auto-Play Slideshow"
+                     Description="A System.Timers.Timer fires at the selected interval, advancing to the next image automatically. Clicking Pause stops the timer. This is the same timer pattern from the Timer Demo page, applied to a slideshow instead of a countdown."
+                     Code="@_codeAutoPlay" />
+        </div>
+
+        @* ── Main Image + Details ── *@
+        <div class="row mb-3">
+            @* Large Image *@
+            <div class="col-md-8 mb-3">
+                <div class="card shadow-sm border-0 position-relative">
+                    <div class="d-flex align-items-center justify-content-center text-white rounded-top"
+                         style="height:400px; background:@_galleryItems[_currentIndex].Color; transition: background 0.5s;">
+                        <div class="text-center">
+                            <i class="@_galleryItems[_currentIndex].Icon fa-5x opacity-75 mb-3"></i>
+                            <div class="h4 mb-0">@_galleryItems[_currentIndex].Title</div>
+                        </div>
+                    </div>
+
+                    @* Prev/Next overlay buttons *@
+                    <button class="btn btn-dark btn-lg position-absolute top-50 start-0 translate-middle-y ms-2 opacity-75"
+                            @onclick="PrevImage">
+                        <i class="fa-solid fa-chevron-left"></i>
+                    </button>
+                    <button class="btn btn-dark btn-lg position-absolute top-50 end-0 translate-middle-y me-2 opacity-75"
+                            @onclick="NextImage">
+                        <i class="fa-solid fa-chevron-right"></i>
+                    </button>
+
+                    @* Counter badge *@
+                    <div class="position-absolute bottom-0 end-0 m-2">
+                        <span class="badge bg-dark bg-opacity-75">@(_currentIndex + 1) of @_galleryItems.Count</span>
+                    </div>
+                </div>
+            </div>
+
+            @* Detail Panel *@
+            <div class="col-md-4 mb-3">
+                <div class="card shadow-sm border-0 h-100">
+                    <div class="card-header bg-white py-2">
+                        <span class="small fw-semibold"><i class="fa-solid fa-circle-info me-1"></i> Image Details</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <strong class="small text-muted d-block">Title</strong>
+                            <span>@_galleryItems[_currentIndex].Title</span>
+                        </div>
+                        <div class="mb-3">
+                            <strong class="small text-muted d-block">Category</strong>
+                            <span class="badge bg-light text-dark border">@_galleryItems[_currentIndex].Category</span>
+                        </div>
+                        <div class="mb-3">
+                            <strong class="small text-muted d-block">Dimensions</strong>
+                            <span class="small">@_galleryItems[_currentIndex].Dimensions</span>
+                        </div>
+                        <div class="mb-3">
+                            <strong class="small text-muted d-block">Color</strong>
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="rounded" style="width:24px; height:24px; background:@_galleryItems[_currentIndex].Color;"></div>
+                                <span class="small font-monospace">@_galleryItems[_currentIndex].Color</span>
+                            </div>
+                        </div>
+                        <div>
+                            <strong class="small text-muted d-block">Description</strong>
+                            <span class="small text-muted">@_galleryItems[_currentIndex].Description</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* ── Filmstrip Thumbnails ── *@
+        <div class="card shadow-sm border-0 mb-3">
+            <div class="card-body py-2 d-flex gap-2 overflow-auto" @onkeydown="HandleKeydown" tabindex="0">
+                @for (int i = 0; i < _galleryItems.Count; i++) {
+                    int idx = i;
+                    var thumb = _galleryItems[i];
+                    <div class="rounded d-flex align-items-center justify-content-center text-white flex-shrink-0 @(idx == _currentIndex ? "border border-3 border-primary shadow" : "opacity-50")"
+                         style="width:80px; height:60px; cursor:pointer; background:@thumb.Color; transition: opacity 0.3s;"
+                         @onclick="@(() => GoToImage(idx))" title="@thumb.Title">
+                        <i class="@thumb.Icon"></i>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="d-flex flex-wrap gap-1">
+            <InfoTip Title="Single Focus Layout"
+                     Description="The Image Gallery shows a grid of thumbnails and opens a lightbox overlay. This carousel shows one large image at a time with details beside it. The filmstrip below lets you jump to any image. Same data, different emphasis — browse vs. examine."
+                     Code="@_codeLayout" />
+            <InfoTip Title="Filmstrip Navigation"
+                     Description="The filmstrip is a horizontal flex container with overflow-auto. Each thumbnail is flex-shrink-0 with a fixed width. The current image gets a blue border and full opacity; others are dimmed with opacity-50. Clicking any thumbnail updates _currentIndex."
+                     Code="@_codeFilmstrip" />
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+
+    private bool _loading = true;
+    private bool _loadedData = false;
+    private bool _autoPlay = false;
+    private int _autoPlaySeconds = 3;
+    private string _pageName = "carousel";
+
+    // InfoTip snippets
+    private string _codeAutoPlay = "_slideshowTimer = new Timer(_autoPlaySeconds * 1000);\n_slideshowTimer.Elapsed += (s,e) => NextImage();";
+    private string _codeLayout = "<div class=\"col-md-8\"><!-- Large image --></div>\n<div class=\"col-md-4\"><!-- Detail panel --></div>";
+    private string _codeFilmstrip = "<div class=\"d-flex gap-2 overflow-auto\">\n    @foreach thumb ... opacity:@(isCurrent ? 1 : 0.5)\n</div>";
+
+    // State
+    private int _currentIndex = 0;
+    private System.Timers.Timer? _slideshowTimer;
+
+    // Gallery data (same as Image Gallery)
+    private List<GalleryItem> _galleryItems = new List<GalleryItem> {
+        new("Mountain Landscape", "Nature", "fa-solid fa-mountain-sun", "#2d6a4f", "1920 × 1080", "A sweeping view of mountain peaks at golden hour with dramatic cloud formations."),
+        new("Ocean Sunset", "Nature", "fa-solid fa-water", "#0077b6", "2560 × 1440", "Brilliant orange and purple sunset reflecting off calm ocean waters."),
+        new("City Skyline", "Urban", "fa-solid fa-city", "#495057", "1920 × 1080", "Modern city skyline at twilight with illuminated skyscrapers."),
+        new("Forest Path", "Nature", "fa-solid fa-tree", "#40916c", "3840 × 2160", "Winding path through an old-growth forest with dappled sunlight."),
+        new("Circuit Board", "Technology", "fa-solid fa-microchip", "#7209b7", "1280 × 720", "Macro photograph of a circuit board showing intricate trace patterns."),
+        new("Abstract Art", "Art", "fa-solid fa-palette", "#f72585", "1600 × 1200", "Bold geometric shapes in vibrant colors inspired by modern art movements."),
+        new("Space Nebula", "Science", "fa-solid fa-star", "#240046", "2560 × 1600", "Deep space photograph of a colorful nebula with embedded star clusters."),
+        new("Desert Dunes", "Nature", "fa-solid fa-sun", "#e76f51", "1920 × 1080", "Rolling sand dunes under a clear sky with wind-sculpted ridgelines."),
+        new("Architecture", "Urban", "fa-solid fa-building", "#6c757d", "2400 × 1600", "Minimalist architectural detail showing repeating geometric patterns."),
+        new("Data Center", "Technology", "fa-solid fa-server", "#264653", "1920 × 1280", "Rows of server racks in a modern data center with blue LED lighting."),
+        new("Coral Reef", "Nature", "fa-solid fa-fish", "#0096c7", "3200 × 2400", "Vibrant coral reef teeming with tropical fish and marine life."),
+        new("Night Sky", "Science", "fa-solid fa-moon", "#1d3557", "2560 × 1440", "Long-exposure photograph capturing the Milky Way over a mountain silhouette."),
+    };
+
+    // ── Lifecycle ──
+
+    public void Dispose()
+    {
+        Model.OnChange -= OnDataModelUpdated;
+        Model.Subscribers_OnChange.Remove(_pageName);
+        _slideshowTimer?.Dispose();
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.View = _pageName;
+        Model.OnChange += OnDataModelUpdated;
+        if (!Model.Subscribers_OnChange.Contains(_pageName)) { Model.Subscribers_OnChange.Add(_pageName); }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnDataModelUpdated()
+    {
+        if (Model.View == _pageName) StateHasChanged();
+    }
+
+    // ── Navigation ──
+
+    private void NextImage()
+    {
+        _currentIndex = (_currentIndex + 1) % _galleryItems.Count;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void PrevImage()
+    {
+        _currentIndex = (_currentIndex - 1 + _galleryItems.Count) % _galleryItems.Count;
+    }
+
+    private void GoToImage(int idx)
+    {
+        _currentIndex = idx;
+    }
+
+    private void HandleKeydown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "ArrowRight") NextImage();
+        else if (e.Key == "ArrowLeft") PrevImage();
+    }
+
+    // ── Auto-Play ──
+
+    private void ToggleAutoPlay()
+    {
+        _autoPlay = !_autoPlay;
+        if (_autoPlay) {
+            _slideshowTimer = new System.Timers.Timer(_autoPlaySeconds * 1000);
+            _slideshowTimer.Elapsed += (s, e) => NextImage();
+            _slideshowTimer.AutoReset = true;
+            _slideshowTimer.Start();
+        } else {
+            _slideshowTimer?.Stop();
+            _slideshowTimer?.Dispose();
+            _slideshowTimer = null;
+        }
+    }
+
+    private void UpdateTimer()
+    {
+        if (_autoPlay && _slideshowTimer != null) {
+            _slideshowTimer.Stop();
+            _slideshowTimer.Interval = _autoPlaySeconds * 1000;
+            _slideshowTimer.Start();
+        }
+    }
+
+    // ── Inner Types ──
+
+    private record GalleryItem(string Title, string Category, string Icon, string Color, string Dimensions, string Description);
+}

@@ -1,0 +1,53 @@
+﻿@page "/"
+@page "/{TenantCode}"
+@page "/Pipelines"
+@page "/{TenantCode}/Pipelines"
+@inject BlazorDataModel Model
+@implements IDisposable
+
+@if (Model.Loaded && Model.LoggedIn && Model.View == _pageName) {
+    <FreeCICD_App_UI_Dashboard_Pipelines />
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+
+    protected bool _loadedData = false;
+    protected string _pageName = "pipelines";
+
+    public void Dispose()
+    {
+        Model.OnChange -= OnDataModelUpdated;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) {
+            Model.TenantCodeFromUrl = TenantCode;
+        }
+
+        if (Model.Loaded) {
+            if (Model.LoggedIn) {
+                if (!_loadedData) {
+                    _loadedData = true;
+                    await Helpers.ValidateUrl(TenantCode, true);
+                }
+            } else {
+                Helpers.NavigateToLogin();
+            }
+        }
+    }
+
+    protected void OnDataModelUpdated()
+    {
+        if (Model.View == _pageName) {
+            StateHasChanged();
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.View = _pageName;
+        Model.OnChange += OnDataModelUpdated;
+    }
+}

@@ -1,0 +1,8 @@
+steps:
+  - task: PowerShell@2
+    displayName: 'Dump Environment Variables'
+    inputs:
+        targetType: 'inline'
+        script: |
+            Write-Host "Environment Variables:"
+            Get-ChildItem Env: | Sort-Object Name

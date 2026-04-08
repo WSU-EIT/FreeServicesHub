@@ -1,0 +1,52 @@
+@page "/Examples/BootstrapV5"
+@page "/{TenantCode}/Examples/BootstrapV5"
+@implements IDisposable
+@inject BlazorDataModel Model
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) { <h1 class="page-title"><i class="fa-solid fa-credit-card me-1"></i> Pricing Page</h1><LoadingMessage /> } else {
+        <div class="@Model.StickyMenuClass"><h1 class="page-title"><i class="fa-solid fa-credit-card me-1"></i> V5: Pricing Page <StickyMenuIcon /></h1></div>
+
+        <ExampleNav />
+        <AboutSection Title="Bootstrap in Context: Pricing Page" Subtitle="Bootstrap cards and badges arranged as a SaaS pricing comparison — the Stripe / GitHub pattern" IconClass="fa-solid fa-credit-card">
+            <p class="small text-muted mb-0">Three-tier pricing cards with feature lists, badges, and CTA buttons. Every SaaS app has one of these.</p>
+        </AboutSection>
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Pricing Card Highlight"
+                     Description="The 'Most Popular' card uses border-primary border-2 to stand out with a colored border while others use border-0. A badge inside the card-body sits above the title. The shadow class (vs shadow-sm) makes it pop forward. This is the Stripe/GitHub pricing pattern."
+                     Code="@_codePricingHighlight" />
+            <InfoTip Title="Feature Check/Cross List"
+                     Description="Each pricing tier has a list-unstyled feature list. Included features get fa-check text-success, excluded features get fa-times text-muted. This visual pattern instantly communicates what's included vs missing per tier."
+                     Code="@_codeFeatureList" />
+            <InfoTip Title="Monthly/Annual Toggle"
+                     Description="The toggle below switches between monthly and annual pricing. Annual shows a 20% discount. In production, this is a common form-check form-switch or btn-group toggle. The pricing values update reactively when the toggle changes."
+                     Code="@_codeBillingToggle" />
+        </div>
+
+        <div class="text-center mb-4">
+            <h3>Choose Your Plan</h3>
+            <p class="text-muted">Start free, upgrade when you're ready</p>
+            <div class="d-flex justify-content-center align-items-center gap-2">
+                <span class="small @(!_annual ? "fw-bold" : "text-muted")">Monthly</span>
+                <div class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" @bind="_annual" /></div>
+                <span class="small @(_annual ? "fw-bold" : "text-muted")">Annual <span class="badge bg-success">Save 20%</span></span>
+            </div>
+        </div>
+        <div class="row row-cols-1 row-cols-md-3 g-3 mb-3">
+            <div class="col"><div class="card shadow-sm border-0 h-100"><div class="card-body text-center py-4"><h5 class="text-muted">Free</h5><div class="display-6 fw-bold mb-1">$0</div><div class="small text-muted mb-3">forever</div><ul class="list-unstyled small mb-4"><li class="mb-1"><i class="fa-solid fa-check text-success me-1"></i> 3 projects</li><li class="mb-1"><i class="fa-solid fa-check text-success me-1"></i> 1 GB storage</li><li class="mb-1"><i class="fa-solid fa-check text-success me-1"></i> Community support</li><li class="mb-1 text-muted"><i class="fa-solid fa-times me-1"></i> Custom domains</li><li class="mb-1 text-muted"><i class="fa-solid fa-times me-1"></i> API access</li></ul><button class="btn btn-outline-primary w-100">Get Started</button></div></div></div>
+            <div class="col"><div class="card shadow border-primary border-2 h-100"><div class="card-body text-center py-4"><span class="badge bg-primary mb-2">Most Popular</span><h5 class="text-primary">Pro</h5><div class="display-6 fw-bold mb-1">$@(_annual ? "23" : "29")</div><div class="small text-muted mb-3">/@(_annual ? "mo (billed annually)" : "month")</div><ul class="list-unstyled small mb-4"><li class="mb-1"><i class="fa-solid fa-check text-success me-1"></i> Unlimited projects</li><li class="mb-1"><i class="fa-solid fa-check text-success me-1"></i> 100 GB storage</li><li class="mb-1"><i class="fa-solid fa-check text-success me-1"></i> Priority support</li><li class="mb-1"><i class="fa-solid fa-check text-success me-1"></i> Custom domains</li><li class="mb-1"><i class="fa-solid fa-check text-success me-1"></i> API access</li></ul><button class="btn btn-primary w-100">Upgrade to Pro</button></div></div></div>
+            <div class="col"><div class="card shadow-sm border-0 h-100"><div class="card-body text-center py-4"><h5 class="text-muted">Enterprise</h5><div class="display-6 fw-bold mb-1">$@(_annual ? "79" : "99")</div><div class="small text-muted mb-3">/@(_annual ? "mo (billed annually)" : "month")</div><ul class="list-unstyled small mb-4"><li class="mb-1"><i class="fa-solid fa-check text-success me-1"></i> Everything in Pro</li><li class="mb-1"><i class="fa-solid fa-check text-success me-1"></i> 1 TB storage</li><li class="mb-1"><i class="fa-solid fa-check text-success me-1"></i> Dedicated support</li><li class="mb-1"><i class="fa-solid fa-check text-success me-1"></i> SSO / SAML</li><li class="mb-1"><i class="fa-solid fa-check text-success me-1"></i> Audit logs</li></ul><button class="btn btn-outline-dark w-100">Contact Sales</button></div></div></div>
+        </div>
+    }
+}
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "bootstrapv5";
+    private bool _annual = false;
+    private string _codePricingHighlight = "<div class=\"card shadow border-primary border-2\">\n  <span class=\"badge bg-primary\">Most Popular</span>\n  <!-- stands out from border-0 siblings -->\n</div>";
+    private string _codeFeatureList = "<li><i class=\"fa-solid fa-check text-success\"></i> Included</li>\n<li class=\"text-muted\"><i class=\"fa-solid fa-times\"></i> Not included</li>";
+    private string _codeBillingToggle = "<div class=\"form-check form-switch\">\n  <input @bind=\"_annual\" />\n</div>\n<div>$@(_annual ? \"23\" : \"29\")/mo</div>";
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) Model.TenantCodeFromUrl = TenantCode; if (Model.Loaded && Model.LoggedIn && !_loadedData) { _loadedData = true; _loading = false; StateHasChanged(); } }
+}

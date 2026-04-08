@@ -1,0 +1,49 @@
+@* 
+    Collapsible "About This Page" section — FreeGLBA pattern.
+    Usage:
+        <AboutSection Title="What are Source Systems?" Subtitle="Applications that send access data">
+            <div class="row">
+                <div class="col-md-4">...</div>
+            </div>
+        </AboutSection>
+*@
+
+<div class="card shadow-sm mb-3 border-info">
+    <div class="card-header bg-info bg-opacity-10 cursor-pointer py-2" @onclick="Toggle">
+        <div class="d-flex justify-content-between align-items-center">
+            <span>
+                <i class="@IconClass me-2 text-info" aria-hidden="true"></i>
+                <strong>@Title</strong>
+                @if (!string.IsNullOrWhiteSpace(Subtitle)) {
+                    <span class="text-muted ms-2">— @Subtitle</span>
+                }
+            </span>
+            <i class="fa-solid @(_expanded ? "fa-chevron-up" : "fa-chevron-down") text-info" aria-hidden="true"></i>
+        </div>
+    </div>
+    @if (_expanded) {
+        <div class="card-body py-2">
+            @ChildContent
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "About This Page";
+    [Parameter] public string Subtitle { get; set; } = "";
+    [Parameter] public string IconClass { get; set; } = "fa-solid fa-circle-info";
+    [Parameter] public bool StartExpanded { get; set; } = false;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool _expanded;
+
+    protected override void OnInitialized()
+    {
+        _expanded = StartExpanded;
+    }
+
+    private void Toggle()
+    {
+        _expanded = !_expanded;
+    }
+}

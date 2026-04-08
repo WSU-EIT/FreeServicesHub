@@ -1,0 +1,69 @@
+@* WizardStepHeader.razor - Reusable step header card-header with navigation buttons *@
+@* Pattern adapted from FreeCICD Pipeline Wizard *@
+
+<div class="card-header @HeaderClass d-flex justify-content-between align-items-center flex-wrap gap-2 py-3">
+    <div class="d-flex align-items-center gap-2">
+        @if (ShowSpinner) {
+            <div class="spinner-border spinner-border-sm" role="status">
+                <span class="visually-hidden">@SpinnerText</span>
+            </div>
+        } else if (!string.IsNullOrWhiteSpace(BadgeIcon)) {
+            <span class="badge @BadgeClass"><i class="fa @BadgeIcon" aria-hidden="true"></i></span>
+        } else {
+            <span class="badge bg-secondary">Step @StepNumber</span>
+        }
+        <span class="fw-semibold">@Title</span>
+    </div>
+    <div class="d-flex gap-2">
+        @if (ShowStartOver) {
+            <button class="btn btn-outline-light btn-sm" @onclick="OnStartOver" disabled="@IsDisabled"
+                    aria-label="Start the wizard over from the beginning">
+                <i class="fa fa-refresh me-1" aria-hidden="true"></i> Start Over
+            </button>
+        }
+        @if (ShowBack) {
+            <button class="btn btn-secondary btn-sm" @onclick="OnBack" disabled="@IsDisabled"
+                    aria-label="Go back to previous step">
+                <i class="fa fa-arrow-left me-1" aria-hidden="true"></i> Back
+            </button>
+        }
+        @if (ShowNext) {
+            <button class="btn btn-primary btn-sm" @onclick="OnNext" disabled="@(IsDisabled || NextDisabled)"
+                    aria-label="@(NextDisabled ? "Complete this step before continuing" : "Continue to next step")">
+                @NextButtonText <i class="fa fa-arrow-right ms-1" aria-hidden="true"></i>
+            </button>
+        }
+        @if (ShowFinish) {
+            <button class="btn btn-success btn-sm" @onclick="OnFinish" disabled="@IsDisabled"
+                    aria-label="Submit and finish the wizard">
+                <i class="fa fa-check me-1" aria-hidden="true"></i> @FinishButtonText
+            </button>
+        }
+        @if (!string.IsNullOrWhiteSpace(InfoText)) {
+            <span class="text-muted small" role="note">@InfoText</span>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string HeaderClass { get; set; } = "bg-dark text-white";
+    [Parameter] public int StepNumber { get; set; }
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public bool ShowSpinner { get; set; }
+    [Parameter] public string SpinnerText { get; set; } = "Loading...";
+    [Parameter] public string BadgeIcon { get; set; } = "";
+    [Parameter] public string BadgeClass { get; set; } = "bg-light text-success";
+    [Parameter] public bool ShowStartOver { get; set; }
+    [Parameter] public bool ShowBack { get; set; }
+    [Parameter] public bool ShowNext { get; set; }
+    [Parameter] public bool ShowFinish { get; set; }
+    [Parameter] public string NextButtonText { get; set; } = "Next";
+    [Parameter] public string FinishButtonText { get; set; } = "Finish";
+    [Parameter] public string InfoText { get; set; } = "";
+    [Parameter] public bool IsDisabled { get; set; }
+    [Parameter] public bool NextDisabled { get; set; }
+    [Parameter] public EventCallback OnStartOver { get; set; }
+    [Parameter] public EventCallback OnBack { get; set; }
+    [Parameter] public EventCallback OnNext { get; set; }
+    [Parameter] public EventCallback OnFinish { get; set; }
+}

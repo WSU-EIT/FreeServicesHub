@@ -1,0 +1,165 @@
+@page "/Examples/SignatureV4"
+@page "/{TenantCode}/Examples/SignatureV4"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V4: GLBA Data Access Consent — popup-style modal saying you must sign agreeing to data access terms *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-shield-halved me-1"></i> GLBA Consent</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title">
+                <i class="fa-solid fa-shield-halved me-1"></i> V4: GLBA Data Access Consent
+                <StickyMenuIcon />
+            </h1>
+        </div>
+
+        <ExampleNav />
+
+        <AboutSection Title="Signature in Context: GLBA Compliance Gate" Subtitle="A mandatory consent modal before accessing protected financial data" IconClass="fa-solid fa-shield-halved">
+            <div class="row">
+                <div class="col-md-6 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-question-circle me-1"></i>What Is This Variant?</h6>
+                    <p class="small text-muted mb-0">
+                        Universities and financial institutions must comply with the <strong>Gramm-Leach-Bliley Act</strong>
+                        (GLBA). Before accessing student financial data, staff must sign a consent acknowledging they
+                        have a valid educational need and will protect the data. This variant simulates that gate.
+                    </p>
+                </div>
+                <div class="col-md-6 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-lightbulb me-1"></i>Blocking Modal Pattern</h6>
+                    <p class="small text-muted mb-0">
+                        The "protected data" is hidden behind a modal overlay that cannot be dismissed without signing.
+                        This is a common compliance pattern: the signature is a <strong>gate</strong>, not just a form
+                        field. Until you sign, the underlying data is inaccessible.
+                    </p>
+                </div>
+            </div>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Content Gate Pattern"
+                     Description="The main content is blurred/blocked behind an overlay until the user acknowledges and signs. The overlay uses position-absolute with a semi-transparent background. Once signed, the overlay fades and content becomes accessible. This is the GLBA compliance gate pattern."
+                     Code="@_codeContentGate" />
+            <InfoTip Title="Blur Overlay with CSS"
+                     Description="The content behind the gate uses filter:blur(4px) and pointer-events:none to prevent interaction. The overlay div sits on top with position-absolute and a centered card with the sign-in form. On completion, both the blur and overlay are removed."
+                     Code="@_codeBlurOverlay" />
+            <InfoTip Title="Compliance Acknowledgment Steps"
+                     Description="GLBA and FERPA compliance requires specific steps: 1) Read policy text, 2) Check acknowledgment box, 3) Sign. Each step must complete before the next enables. The UI guides users through this sequence with disabled states and visual cues."
+                     Code="@_codeComplianceSteps" />
+        </div>
+
+        @* Blurred/blocked content behind the gate *@
+        <div class="position-relative">
+            @if (!_consentGranted) {
+                <div class="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
+                     style="z-index:10; background:rgba(255,255,255,0.85); backdrop-filter:blur(4px);">
+                    <div class="card shadow-lg border-danger" style="max-width:600px; width:90%;">
+                        <div class="card-header bg-danger text-white">
+                            <i class="fa-solid fa-lock me-1"></i> GLBA Consent Required
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-warning small mb-3">
+                                <i class="fa-solid fa-triangle-exclamation me-1"></i>
+                                <strong>Protected Data Access</strong> — The data on this page contains student financial
+                                information protected under the Gramm-Leach-Bliley Act (GLBA). You must certify that
+                                you have a legitimate educational need to access this information.
+                            </div>
+                            <div class="small mb-3">
+                                By signing below, I affirm that:
+                                <ul class="mt-1">
+                                    <li>I have a <strong>valid educational need</strong> to access this student financial data</li>
+                                    <li>I will <strong>not share</strong> this information with unauthorized parties</li>
+                                    <li>I will <strong>protect</strong> this data in accordance with GLBA and institutional policies</li>
+                                    <li>I understand that violations may result in <strong>disciplinary action</strong></li>
+                                </ul>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small fw-semibold">Reason for access <span class="text-danger">*</span></label>
+                                <select class="form-select form-select-sm" @bind="_accessReason">
+                                    <option value="">Select reason...</option>
+                                    <option>Academic advising</option>
+                                    <option>Financial aid processing</option>
+                                    <option>Billing inquiry</option>
+                                    <option>Scholarship review</option>
+                                    <option>Audit / compliance review</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small fw-semibold">Student ID being accessed</label>
+                                <input type="text" class="form-control form-control-sm" placeholder="e.g. 123456789" @bind="_studentId" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small fw-semibold">Signature <span class="text-danger">*</span></label>
+                                <Signature @ref="_signaturePad" @bind-Value="_signatureValue" Class="border rounded" />
+                            </div>
+                            <div class="d-flex justify-content-end">
+                                <button class="btn btn-danger" @onclick="GrantConsent"
+                                        disabled="@(string.IsNullOrWhiteSpace(_accessReason))">
+                                    <i class="fa-solid fa-unlock me-1"></i> I Agree — Show Data
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @* The "protected" data that gets revealed *@
+            <div class="card shadow-sm border-0 mb-3">
+                <div class="card-header bg-white d-flex justify-content-between">
+                    <span class="fw-semibold"><i class="fa-solid fa-user-graduate me-1"></i> Student Financial Record</span>
+                    @if (_consentGranted) {
+                        <span class="badge bg-success"><i class="fa-solid fa-unlock me-1"></i>Access Granted</span>
+                    }
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-md-3"><strong class="small text-muted">Student</strong><div>Jane M. Doe</div></div>
+                        <div class="col-md-3"><strong class="small text-muted">ID</strong><div>987654321</div></div>
+                        <div class="col-md-3"><strong class="small text-muted">Program</strong><div>Computer Science, B.S.</div></div>
+                        <div class="col-md-3"><strong class="small text-muted">Status</strong><div><span class="badge bg-success">Active</span></div></div>
+                    </div>
+                    <table class="table table-sm table-bordered small">
+                        <thead class="table-light">
+                            <tr><th>Term</th><th>Tuition</th><th>Aid</th><th>Balance</th><th>Status</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Fall 2024</td><td>$12,450</td><td>$8,200</td><td>$4,250</td><td><span class="badge bg-warning text-dark">Due</span></td></tr>
+                            <tr><td>Spring 2024</td><td>$12,450</td><td>$9,100</td><td>$0</td><td><span class="badge bg-success">Paid</span></td></tr>
+                            <tr><td>Fall 2023</td><td>$11,800</td><td>$8,200</td><td>$0</td><td><span class="badge bg-success">Paid</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        @if (_consentGranted) {
+            <div class="alert alert-info small">
+                <i class="fa-solid fa-clock me-1"></i> Consent granted at @_consentTime?.ToString("h:mm:ss tt") for reason: <strong>@_accessReason</strong>.
+                This access is logged for GLBA compliance auditing.
+            </div>
+        }
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false, _consentGranted = false;
+    private string _pageName = "signaturev4";
+    private string _codeContentGate = "<div class=\"position-relative\">\n  <div style=\"filter:blur(4px);pointer-events:none\">\n    <!-- protected content -->\n  </div>\n  <div class=\"position-absolute top-0\">\n    <!-- gate overlay -->\n  </div>\n</div>";
+    private string _codeBlurOverlay = "style=\"filter:blur(4px); pointer-events:none;\"\n// Removed after signing:\nstyle=\"filter:none; pointer-events:auto;\"";
+    private string _codeComplianceSteps = "// Step 1: Read policy\n// Step 2: Check acknowledgment\n// Step 3: Sign\n<button disabled=\"@(!_read || !_acknowledged || !_signed)\">\n  Access Content\n</button>";
+    private string _accessReason = "";
+    private string _studentId = "";
+    private DateTime? _consentTime;
+    private Signature? _signaturePad;
+    private string _signatureValue = "";
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) Model.TenantCodeFromUrl = TenantCode; if (Model.Loaded && Model.LoggedIn && !_loadedData) { _loadedData = true; _loading = false; StateHasChanged(); } }
+    private void GrantConsent() { _consentGranted = true; _consentTime = DateTime.Now; }
+}

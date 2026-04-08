@@ -1,0 +1,20 @@
+﻿@* WizardStepRepository.razor - Repository selection dropdown step *@
+
+<label class="form-label">Repository:</label>
+<select class="form-select" @onchange="OnRepoChanged" disabled="@IsDisabled">
+    <option value="">-- Select Repository --</option>
+    @if (SelectedProjectInfo != null)
+    {
+        @foreach (var repo in SelectedProjectInfo.GitRepos.OrderBy(o => (string.Empty + o.RepoName).ToLower()))
+        {
+            <option value="@repo.RepoId" selected="@(repo.RepoId == SelectedRepoId ? "selected" : null)">@repo.RepoName</option>
+        }
+    }
+</select>
+
+@code {
+    [Parameter] public DataObjects.DevopsProjectInfo? SelectedProjectInfo { get; set; }
+    [Parameter] public string? SelectedRepoId { get; set; }
+    [Parameter] public bool IsDisabled { get; set; }
+    [Parameter] public EventCallback<ChangeEventArgs> OnRepoChanged { get; set; }
+}

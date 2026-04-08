@@ -1,0 +1,62 @@
+/*
+    Add any app-specific CSS here.
+*/
+
+/* ========================================
+   Agent Dashboard Styles
+   ======================================== */
+
+/* Agent Card Base */
+.agent-card {
+    border-left: 4px solid;
+    transition: all 0.3s;
+}
+
+.agent-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Agent Card Status Variants */
+.agent-online {
+    border-left-color: #198754;
+}
+
+.agent-warning {
+    border-left-color: #ffc107;
+}
+
+.agent-error {
+    border-left-color: #dc3545;
+}
+
+.agent-offline {
+    border-left-color: #6c757d;
+}
+
+/* Metric Progress Bars */
+.metric-bar {
+    height: 8px;
+    border-radius: 4px;
+}
+
+.metric-bar .progress-bar {
+    border-radius: 4px;
+}
+
+/* Activity Feed */
+.activity-feed {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+/* Flash Highlight for Recently Updated Cards */
+.agent-card-updated {
+    background-color: #cfe2ff;
+    transition: background-color 1s;
+}
+
+/* Cursor pointer for clickable elements */
+.cursor-pointer {
+    cursor: pointer;
+}

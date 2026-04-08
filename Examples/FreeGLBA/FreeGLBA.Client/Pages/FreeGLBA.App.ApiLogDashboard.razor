@@ -1,0 +1,341 @@
+﻿@* FreeGLBA.App.ApiLogDashboard.razor - API Request Log Dashboard *@
+@page "/ApiLogs/Dashboard"
+@page "/{TenantCode}/ApiLogs/Dashboard"
+@implements IDisposable
+@inject BlazorDataModel Model
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+@if (Model.Loaded && Model.LoggedIn && Model.View == _pageName) {
+    <div class="container-fluid">
+        <div class="@Model.StickyMenuClass">
+            <div class="d-flex justify-content-between align-items-center">
+                <h1 class="page-title mb-0">
+                    <i class="fa-solid fa-chart-line me-2"></i>API Request Log Dashboard
+                </h1>
+                <div class="d-flex align-items-center gap-2">
+                    @* Time Range Selector *@
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn @(_timeRange == "1h" ? "btn-primary" : "btn-outline-primary")" @onclick='() => SetTimeRange("1h")'>1h</button>
+                        <button type="button" class="btn @(_timeRange == "24h" ? "btn-primary" : "btn-outline-primary")" @onclick='() => SetTimeRange("24h")'>24h</button>
+                        <button type="button" class="btn @(_timeRange == "7d" ? "btn-primary" : "btn-outline-primary")" @onclick='() => SetTimeRange("7d")'>7d</button>
+                        <button type="button" class="btn @(_timeRange == "30d" ? "btn-primary" : "btn-outline-primary")" @onclick='() => SetTimeRange("30d")'>30d</button>
+                    </div>
+                    @* Auto-refresh Toggle *@
+                    <div class="form-check form-switch ms-3">
+                        <input class="form-check-input" type="checkbox" id="autoRefresh" @bind="_autoRefresh" @bind:after="ToggleAutoRefresh">
+                        <label class="form-check-label" for="autoRefresh">Auto-refresh</label>
+                    </div>
+                    @* Refresh Button *@
+                    <button class="btn btn-outline-secondary" @onclick="LoadStats" disabled="@_loading">
+                        <i class="fa-solid @(_loading ? "fa-spinner fa-spin" : "fa-sync")"></i>
+                    </button>
+                    @* View Logs Button *@
+                    <button class="btn btn-outline-primary" @onclick="GoToLogs">
+                        <i class="fa-solid fa-list me-1"></i>View Logs
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        @if (_loading && _stats == null) {
+            <div class="text-center py-5">
+                <i class="fa-solid fa-spinner fa-spin fa-2x"></i>
+                <p class="mt-2">Loading dashboard...</p>
+            </div>
+        } else if (_stats != null) {
+            @* Stats Cards Row *@
+            <div class="row g-3 mb-4">
+                <div class="col-md-3">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h6 class="card-subtitle mb-2 text-muted">Total Requests</h6>
+                                    <h2 class="card-title mb-0">@_stats.TotalRequests.ToString("N0")</h2>
+                                </div>
+                                <div class="text-primary fs-1 opacity-25">
+                                    <i class="fa-solid fa-arrow-right-arrow-left"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card h-100 @(_stats.ErrorRate > 5 ? "border-danger" : "")">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h6 class="card-subtitle mb-2 text-muted">Error Rate</h6>
+                                    <h2 class="card-title mb-0 @(_stats.ErrorRate > 5 ? "text-danger" : "")">@_stats.ErrorRate.ToString("F1")%</h2>
+                                    <small class="text-muted">@_stats.TotalErrors.ToString("N0") errors</small>
+                                </div>
+                                <div class="@(_stats.ErrorRate > 5 ? "text-danger" : "text-warning") fs-1 opacity-25">
+                                    <i class="fa-solid fa-triangle-exclamation"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h6 class="card-subtitle mb-2 text-muted">Avg Duration</h6>
+                                    <h2 class="card-title mb-0">@_stats.AvgDurationMs.ToString("F0")<small class="fs-6 text-muted">ms</small></h2>
+                                </div>
+                                <div class="text-info fs-1 opacity-25">
+                                    <i class="fa-solid fa-clock"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h6 class="card-subtitle mb-2 text-muted">Total Logs (All Time)</h6>
+                                    <h2 class="card-title mb-0">@_stats.TotalLogCount.ToString("N0")</h2>
+                                    @if (_stats.LogsOlderThan7Years > 0) {
+                                        <small class="text-warning">@_stats.LogsOlderThan7Years.ToString("N0") older than 7 years</small>
+                                    }
+                                </div>
+                                <div class="text-secondary fs-1 opacity-25">
+                                    <i class="fa-solid fa-database"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-3 mb-4">
+                @* Source System Breakdown *@
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <i class="fa-solid fa-server me-2"></i>By Source System
+                        </div>
+                        <div class="card-body">
+                            @if (_stats.BySourceSystem.Count == 0) {
+                                <p class="text-muted mb-0">No data for selected time range</p>
+                            } else {
+                                <table class="table table-sm mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Source</th>
+                                            <th class="text-end">Count</th>
+                                            <th class="text-end">%</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var item in _stats.BySourceSystem) {
+                                            <tr>
+                                                <td>@(string.IsNullOrEmpty(item.SourceSystemName) ? "(Unknown)" : item.SourceSystemName)</td>
+                                                <td class="text-end">@item.Count.ToString("N0")</td>
+                                                <td class="text-end">@item.Percentage.ToString("F1")%</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                @* Status Code Breakdown *@
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <i class="fa-solid fa-list-ol me-2"></i>By Status Code
+                        </div>
+                        <div class="card-body">
+                            @if (_stats.ByStatusCode.Count == 0) {
+                                <p class="text-muted mb-0">No data for selected time range</p>
+                            } else {
+                                <table class="table table-sm mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Status</th>
+                                            <th>Category</th>
+                                            <th class="text-end">Count</th>
+                                            <th class="text-end">%</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var item in _stats.ByStatusCode) {
+                                            <tr class="@GetStatusRowClass(item.StatusCode)">
+                                                <td>@item.StatusCode</td>
+                                                <td>@item.Category</td>
+                                                <td class="text-end">@item.Count.ToString("N0")</td>
+                                                <td class="text-end">@item.Percentage.ToString("F1")%</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @* Recent Errors *@
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="fa-solid fa-bug me-2"></i>Recent Errors</span>
+                    <button class="btn btn-sm btn-outline-primary" @onclick="GoToErrorLogs">
+                        View All Errors
+                    </button>
+                </div>
+                <div class="card-body p-0">
+                    @if (_stats.RecentErrors.Count == 0) {
+                        <p class="text-muted text-center py-3 mb-0">
+                            <i class="fa-solid fa-check-circle text-success me-2"></i>No errors in selected time range
+                        </p>
+                    } else {
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Source</th>
+                                        <th>Method</th>
+                                        <th>Path</th>
+                                        <th>Status</th>
+                                        <th>Duration</th>
+                                        <th>Error</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var error in _stats.RecentErrors) {
+                                        <tr class="cursor-pointer" @onclick="() => ViewLog(error.ApiRequestLogId)">
+                                            <td class="text-nowrap">@error.RequestedAt.ToLocalTime().ToString("g")</td>
+                                            <td>@(string.IsNullOrEmpty(error.SourceSystemName) ? "-" : error.SourceSystemName)</td>
+                                            <td><span class="badge bg-secondary">@error.HttpMethod</span></td>
+                                            <td class="text-truncate" style="max-width: 200px;" title="@error.RequestPath">@error.RequestPath</td>
+                                            <td><span class="badge bg-danger">@error.StatusCode</span></td>
+                                            <td>@error.DurationMs ms</td>
+                                            <td class="text-truncate" style="max-width: 200px;" title="@error.ErrorMessage">@error.ErrorMessage</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    
+    private string _pageName = "apilogdashboard";
+    private bool _loading = true;
+    private bool _loadedData = false;
+    private string _timeRange = "24h";
+    private bool _autoRefresh = false;
+    private System.Threading.Timer? _refreshTimer;
+    private DataObjects.ApiLogDashboardStats? _stats;
+
+    public void Dispose() {
+        Model.OnChange -= OnDataModelUpdated;
+        _refreshTimer?.Dispose();
+    }
+
+    protected override void OnInitialized() {
+        Model.View = _pageName;
+        Model.OnChange += OnDataModelUpdated;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) {
+            Model.TenantCodeFromUrl = TenantCode;
+        }
+
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            await LoadStats();
+        }
+    }
+
+    private void OnDataModelUpdated() {
+        if (Model.View == _pageName) {
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadStats() {
+        _loading = true;
+        StateHasChanged();
+
+        try {
+            var (from, to) = GetTimeRange();
+            var request = new DataObjects.ApiLogDashboardRequest { From = from, To = to };
+            _stats = await Helpers.GetOrPost<DataObjects.ApiLogDashboardStats>(
+                "api/Data/GetApiLogDashboardStats", request);
+        } catch (Exception ex) {
+            Model.ErrorMessage($"Error loading dashboard stats: {ex.Message}");
+        } finally {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private (DateTime from, DateTime to) GetTimeRange() {
+        var to = DateTime.UtcNow;
+        var from = _timeRange switch {
+            "1h" => to.AddHours(-1),
+            "24h" => to.AddHours(-24),
+            "7d" => to.AddDays(-7),
+            "30d" => to.AddDays(-30),
+            _ => to.AddHours(-24)
+        };
+        return (from, to);
+    }
+
+    private async Task SetTimeRange(string range) {
+        _timeRange = range;
+        await LoadStats();
+    }
+
+    private void ToggleAutoRefresh() {
+        if (_autoRefresh) {
+            _refreshTimer = new System.Threading.Timer(async _ => {
+                await InvokeAsync(async () => {
+                    await LoadStats();
+                });
+            }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+        } else {
+            _refreshTimer?.Dispose();
+            _refreshTimer = null;
+        }
+    }
+
+    private string GetStatusRowClass(int statusCode) {
+        return statusCode switch {
+            >= 500 => "table-danger",
+            >= 400 => "table-warning",
+            _ => ""
+        };
+    }
+
+    private void GoToLogs() {
+        var path = string.IsNullOrEmpty(TenantCode) ? "/ApiLogs" : $"/{TenantCode}/ApiLogs";
+        Nav.NavigateTo(path);
+    }
+
+    private void GoToErrorLogs() {
+        var path = string.IsNullOrEmpty(TenantCode) ? "/ApiLogs?errorsOnly=true" : $"/{TenantCode}/ApiLogs?errorsOnly=true";
+        Nav.NavigateTo(path);
+    }
+
+    private void ViewLog(Guid id) {
+        var path = string.IsNullOrEmpty(TenantCode) ? $"/ApiLogs/{id}" : $"/{TenantCode}/ApiLogs/{id}";
+        Nav.NavigateTo(path);
+    }
+}

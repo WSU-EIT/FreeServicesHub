@@ -1,0 +1,62 @@
+# FreeServicesHub — Pipeline Variables
+# Shared variables for the deploy-freeserviceshub.yml pipeline.
+#
+# These are referenced by all stages. Secrets (hubAdminToken) are stored
+# in Azure DevOps variable groups, not here.
+#
+# FileTransform@2 uses dot-notation variables to inject values into
+# appsettings.json. For example, Agent.HubUrl maps to:
+#   { "Agent": { "HubUrl": "https://..." } }
+#
+# See: Examples/FreeServices/variables.yml for the pattern reference.
+
+variables:
+
+  # ── Build ──
+  buildConfiguration: 'Release'
+  dotnetVersion: '10.0.x'
+
+  # ── Pool Names ──
+  # BuildVM is the self-hosted agent pool for builds.
+  # DeployVM is the environment-scoped pool for deployment targets.
+  buildPool: 'BuildVM'
+  deployPool: 'DeployVM'
+
+  # ── Project Paths ──
+  hubProjectPath: 'FreeServicesHub/FreeServicesHub'
+  agentProjectPath: 'FreeServicesHub.Agent'
+  installerProjectPath: 'FreeServicesHub.Agent.Installer'
+  publishPath: '$(Build.ArtifactStagingDirectory)/publish'
+
+  # ── Hub Deployment ──
+  hubUrl: 'https://your-hub-url.com'
+  hubDeployPath: 'C:\FreeServicesHub'
+  iisSiteName: 'FreeServicesHub'
+  iisAppPoolName: 'FreeServicesHub'
+
+  # ── Agent Deployment ──
+  # Comma-separated list of server hostnames to deploy agents to.
+  # Each server gets its own one-time registration key.
+  agentServers: 'PROD-01,PROD-02,PROD-03'
+  agentInstallPath: 'C:\FreeServicesHub.Agent'
+  installerInstallPath: 'C:\FreeServicesHub.Agent.Installer'
+
+  # ── Agent appsettings.json injection (FileTransform@2 dot-notation) ──
+  # These match the JSON path in FreeServicesHub.Agent/appsettings.json.
+  Agent.HubUrl: '$(hubUrl)'
+  Agent.HeartbeatIntervalSeconds: 30
+  Agent.ReconnectMaxRetries: 10
+  Agent.LogBufferMaxEntries: 500
+
+  # ── Hub appsettings.json injection (FileTransform@2 dot-notation) ──
+  # These match the JSON path in FreeServicesHub/appsettings.json.
+  App.RegistrationKeyExpiryHours: 24
+  App.HeartbeatPruneKeepHours: 24
+  App.HeartbeatPruneRollupAfterHours: 24
+
+  # ── Secrets (stored in Azure DevOps variable groups, not here) ──
+  # hubAdminToken: <linked from variable group "FreeServicesHub-Secrets">
+  #
+  # To link: Pipeline Settings > Variables > Variable Groups
+  # Create group "FreeServicesHub-Secrets" with:
+  #   hubAdminToken  (secret)  -- Bearer token for hub admin API calls

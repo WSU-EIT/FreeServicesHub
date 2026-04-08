@@ -1,0 +1,221 @@
+﻿@page "/Examples/EditSampleItem/{itemid}"
+@page "/{TenantCode}/Examples/EditSampleItem/{itemid}"
+@page "/Examples/EditSampleItem/New"
+@page "/{TenantCode}/Examples/EditSampleItem/New"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><Icon Name="Files" /> @_title</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title">
+                <Icon Name="Files" /> @_title
+                <StickyMenuIcon />
+            </h1>
+
+            <div class="btn-group mb-2" role="group">
+                <button type="button" class="btn btn-dark" @onclick="Back">
+                    <i class="fa-solid fa-arrow-left me-1"></i> Back
+                </button>
+                <button type="button" class="btn btn-success" @onclick="Save">
+                    <i class="fa-solid fa-floppy-disk me-1"></i> Save
+                </button>
+                <InfoTip Title="Save Button"
+                         Description="Clicking Save sends the record to the server as a POST request. The server checks if the record already exists (by its ID) — if yes, it updates; if no, it creates a new one. This is the SaveMany pattern: the same endpoint handles both inserts and updates."
+                         Code="@_codeSave" />
+                @if (!_isNew) {
+                    <DeleteConfirmation OnConfirmed="Delete"
+                        CancelText="@Helpers.ConfirmButtonTextCancel"
+                        DeleteText="@Helpers.ConfirmButtonTextDelete"
+                        ConfirmDeleteText="@Helpers.ConfirmButtonTextConfirmDelete" />
+                    <InfoTip Title="Two-Click Delete"
+                             Description="To prevent accidental deletion, the Delete button requires two clicks: first click shows Confirm Delete, second click actually deletes. This pattern is used in every project. The record is soft deleted — marked as deleted but not erased from the database."
+                             Code="@_codeDeleteConfirm" />
+                }
+            </div>
+        </div>
+
+        <AboutSection Title="Edit Form Pattern" Subtitle="Single-record edit with save, delete, and validation — the standard CRUD detail page" IconClass="fa-solid fa-pen-to-square">
+            <p class="small text-muted mb-0">This page shows the standard edit form used across all projects. Navigate here from a list page, edit fields, and Save. The same endpoint handles both new records (insert) and existing records (update). Required fields highlight red when empty. Delete uses a two-click confirmation to prevent accidents.</p>
+        </AboutSection>
+
+        <RequiredIndicator />
+        <InfoTip Title="Required Fields"
+                 Description="The red asterisk (*) next to a field label means that field must be filled in before you can save. If you try to save with an empty required field, the input box turns red (via the is-invalid CSS class) to show you what is missing."
+                 Code="@_codeRequired" />
+
+        <div class="row">
+            <div class="col-md-6 mb-2">
+                <label for="edit-name"><Language Tag="Name" /> <span class="text-danger">*</span></label>
+                <input type="text" id="edit-name" class="form-control @Helpers.MissingValue(_item.Name)" @bind="_item.Name" />
+                <InfoTip Title="Validation Highlight"
+                         Description="When a required field is empty, Helpers.MissingValue() adds the is-invalid CSS class, which makes the input border turn red. This gives you instant visual feedback — you can see what needs fixing without reading error messages."
+                         Code="@_codeValidation" />
+            </div>
+            <div class="col-md-6 mb-2">
+                <label for="edit-category">Category</label>
+                <select id="edit-category" class="form-select" @bind="_item.Category">
+                    <option value="">-- Select --</option>
+                    <option value="Engineering">Engineering</option>
+                    <option value="Marketing">Marketing</option>
+                    <option value="Operations">Operations</option>
+                    <option value="Finance">Finance</option>
+                    <option value="Support">Support</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6 mb-2">
+                <label for="edit-status">Status</label>
+                <select id="edit-status" class="form-select" @bind="_item.Status">
+                    @foreach (var s in Enum.GetValues<DataObjects.SampleItemStatus>()) {
+                        <option value="@s">@s</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3 mb-2">
+                <label for="edit-priority">Priority</label>
+                <input type="number" id="edit-priority" class="form-control" @bind="_item.Priority" min="1" max="5" />
+            </div>
+            <div class="col-md-3 mb-2">
+                <label for="edit-amount">Amount</label>
+                <input type="number" id="edit-amount" class="form-control" @bind="_item.Amount" step="0.01" />
+            </div>
+        </div>
+
+        <div class="mb-2">
+            <label for="edit-description">Description</label>
+            <textarea id="edit-description" class="form-control" rows="3" @bind="_item.Description"></textarea>
+        </div>
+
+        <div class="mb-2 form-check form-switch">
+            <input type="checkbox" role="switch" class="form-check-input" id="edit-enabled" @bind="_item.Enabled" />
+            <label for="edit-enabled" class="form-check-label">Enabled</label>
+        </div>
+
+        @if (!_isNew) {
+            <LastModifiedMessage DataObject="@_item" />
+            <InfoTip Title="Last Modified"
+                     Description="This component shows who last edited the record and when. It helps teams track changes. The data comes from audit fields (LastModifiedBy, LastModifiedDate) that the server updates automatically on every save."
+                     Code="@_codeLastModified" />
+        }
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    [Parameter] public string? itemid { get; set; }
+
+    private bool _loading = true;
+    private bool _loadedData = false;
+    private bool _isNew = false;
+    private string _title = "";
+    private string _pageName = "editsampleitem";
+    private string _codeSave = "await Helpers.GetOrPost<DataObjects.SampleItem>(\n    \"api/Data/SaveSampleItems\", item)";
+    private string _codeDeleteConfirm = "<DeleteConfirmation OnConfirmed=\"Delete\" />";
+    private string _codeRequired = "<RequiredIndicator />";
+    private string _codeValidation = "class=\"form-control @Helpers.MissingValue(_item.Name)\"";
+    private string _codeLastModified = "<LastModifiedMessage DataObject=\"@_item\" />";
+    private DataObjects.SampleItem _item = new();
+
+    public void Dispose()
+    {
+        Model.OnChange -= OnDataModelUpdated;
+        Model.Subscribers_OnChange.Remove(_pageName);
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.View = _pageName;
+        Model.OnChange += OnDataModelUpdated;
+        if (!Model.Subscribers_OnChange.Contains(_pageName)) { Model.Subscribers_OnChange.Add(_pageName); }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) {
+            Model.TenantCodeFromUrl = TenantCode;
+        }
+
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            await LoadData();
+        }
+    }
+
+    private void OnDataModelUpdated()
+    {
+        if (Model.View == _pageName) StateHasChanged();
+    }
+
+    private async Task LoadData()
+    {
+        _isNew = string.IsNullOrWhiteSpace(itemid) || Helpers.StringLower(itemid) == "new";
+
+        if (_isNew) {
+            _title = "Add Sample Item";
+            _item = new DataObjects.SampleItem {
+                Enabled = true,
+                Status = DataObjects.SampleItemStatus.Draft,
+                Priority = 3,
+            };
+        } else {
+            _title = "Edit Sample Item";
+            var id = Helpers.GuidValue(itemid);
+            var items = await Helpers.GetOrPost<List<DataObjects.SampleItem>>("api/Data/GetSampleItems", new List<Guid> { id });
+            if (items != null && items.Any()) {
+                _item = items.First();
+            } else {
+                Helpers.NavigateTo("Examples/SampleItems");
+                return;
+            }
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task Save()
+    {
+        Model.ClearMessages();
+
+        if (string.IsNullOrWhiteSpace(_item.Name)) {
+            Model.ErrorMessages(new List<string> { Helpers.MissingRequiredField("Name") });
+            return;
+        }
+
+        _item.TenantId = Model.TenantId;
+
+        var saved = await Helpers.GetOrPost<List<DataObjects.SampleItem>>("api/Data/SaveSampleItems", new List<DataObjects.SampleItem> { _item });
+        if (saved != null && saved.Any()) {
+            _item = saved.First();
+            _isNew = false;
+            _title = "Edit Sample Item";
+
+            Model.Message_Saved();
+        } else {
+            Model.UnknownError();
+        }
+    }
+
+    private async Task Delete()
+    {
+        Model.ClearMessages();
+
+        var result = await Helpers.GetOrPost<DataObjects.BooleanResponse>("api/Data/DeleteSampleItems", new List<Guid> { _item.SampleItemId });
+        if (result != null && result.Result) {
+            Helpers.NavigateTo("Examples/SampleItems");
+        } else {
+            Model.UnknownError();
+        }
+    }
+
+    private void Back()
+    {
+        Helpers.NavigateTo("Examples/SampleItems");
+    }
+}

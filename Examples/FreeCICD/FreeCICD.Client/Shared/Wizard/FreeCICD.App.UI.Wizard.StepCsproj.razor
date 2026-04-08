@@ -1,0 +1,50 @@
+﻿@* WizardStepCsproj.razor - .csproj file selection step *@
+
+@if (SelectedBranchInfo == null || SelectedBranchInfo.Files == null || SelectedBranchInfo.Files.Count() == 0)
+{
+    <p>No file structure available for the selected branch.</p>
+}
+else
+{
+    var csprojFiles = SelectedBranchInfo.Files
+        .Where(f => f.FileType.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+        .ToList();
+        
+    if (csprojFiles.Count == 0)
+    {
+        <p>No .csproj files found in this branch.</p>
+    }
+    else
+    {
+        <label class="form-label">Choose a .csproj file:</label>
+        <select class="form-select" @onchange="OnCsprojChanged" disabled="@IsDisabled">
+            <option value="">-- Select .csproj file --</option>
+            @foreach (var file in csprojFiles.OrderBy(f => f.Path))
+            {
+                <option value="@file.Path" selected="@(IsPathMatch(file.Path, SelectedCsprojPath) ? "selected" : null)">@file.Path</option>
+            }
+        </select>
+    }
+}
+
+@code {
+    [Parameter] public DataObjects.DevopsGitRepoBranchInfo? SelectedBranchInfo { get; set; }
+    [Parameter] public string? SelectedCsprojPath { get; set; }
+    [Parameter] public bool IsDisabled { get; set; }
+    [Parameter] public EventCallback<ChangeEventArgs> OnCsprojChanged { get; set; }
+
+    /// <summary>
+    /// Compares file paths handling different formats (with/without leading slash).
+    /// </summary>
+    private bool IsPathMatch(string? filePath, string? selectedPath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath) || string.IsNullOrWhiteSpace(selectedPath))
+            return false;
+
+        // Normalize both paths: trim leading/trailing slashes and compare case-insensitively
+        var normalizedFile = filePath.TrimStart('/', '\\').TrimEnd('/', '\\');
+        var normalizedSelected = selectedPath.TrimStart('/', '\\').TrimEnd('/', '\\');
+        
+        return normalizedFile.Equals(normalizedSelected, StringComparison.OrdinalIgnoreCase);
+    }
+}

@@ -1,0 +1,216 @@
+﻿@inject BlazorDataModel Model
+
+@{
+    var info = FindCurrentPage();
+}
+
+@if (info.Current != null) {
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 py-2 px-3 bg-light rounded border">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-0 small">
+                <li class="breadcrumb-item">
+                    <a href="@Helpers.BuildUrl("Examples/Dashboard")"><i class="fa-solid fa-grid-2 me-1"></i>Dashboard</a>
+                </li>
+                <li class="breadcrumb-item">
+                    <a href="@Helpers.BuildUrl("Examples/Dashboard")">@info.Current.Category</a>
+                </li>
+                @if (info.Current.ParentTitle != null) {
+                    <li class="breadcrumb-item">
+                        <a href="@Helpers.BuildUrl(info.Current.ParentRoute!)">@info.Current.ParentTitle</a>
+                    </li>
+                }
+                <li class="breadcrumb-item active" aria-current="page">@info.Current.Title</li>
+            </ol>
+        </nav>
+        <div class="d-flex gap-1 align-items-center">
+            @if (info.Prev != null) {
+                <a href="@Helpers.BuildUrl(info.Prev.Route)" class="btn btn-outline-primary btn-sm" title="@info.Prev.Title">
+                    <i class="fa-solid fa-chevron-left me-1"></i>Prev
+                </a>
+            } else {
+                <span class="btn btn-outline-secondary btn-sm disabled"><i class="fa-solid fa-chevron-left me-1"></i>Prev</span>
+            }
+            <a href="@Helpers.BuildUrl("Examples/Dashboard")" class="btn btn-outline-dark btn-sm" title="Back to Examples Dashboard">
+                <i class="fa-solid fa-grid-2 me-1"></i>All
+            </a>
+            @if (info.Next != null) {
+                <a href="@Helpers.BuildUrl(info.Next.Route)" class="btn btn-outline-primary btn-sm" title="@info.Next.Title">
+                    Next<i class="fa-solid fa-chevron-right ms-1"></i>
+                </a>
+            } else {
+                <span class="btn btn-outline-secondary btn-sm disabled">Next<i class="fa-solid fa-chevron-right ms-1"></i></span>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private (ExPage? Current, ExPage? Prev, ExPage? Next) FindCurrentPage()
+    {
+        var idx = _pages.FindIndex(p => p.PageName == Model.View);
+        if (idx < 0) return (null, null, null);
+        return (
+            _pages[idx],
+            idx > 0 ? _pages[idx - 1] : null,
+            idx < _pages.Count - 1 ? _pages[idx + 1] : null
+        );
+    }
+
+    private record ExPage(string Category, string PageName, string Title, string Route, string? ParentTitle = null, string? ParentRoute = null);
+
+    private static readonly List<ExPage> _pages = new() {
+        // Dashboard & Data
+        new("Dashboard & Data", "sampleitems", "Sample Items", "Examples/SampleItems"),
+        new("Dashboard & Data", "sampleitemsv1", "V1: Card View", "Examples/SampleItemsV1", "Sample Items", "Examples/SampleItems"),
+        new("Dashboard & Data", "sampleitemsv2", "V2: Split Panel", "Examples/SampleItemsV2", "Sample Items", "Examples/SampleItems"),
+        new("Dashboard & Data", "sampleitemsv3", "V3: Grouped View", "Examples/SampleItemsV3", "Sample Items", "Examples/SampleItems"),
+        new("Dashboard & Data", "sampleitemsv4", "V4: Timeline", "Examples/SampleItemsV4", "Sample Items", "Examples/SampleItems"),
+        new("Dashboard & Data", "sampleitemsv5", "V5: Stats Dashboard", "Examples/SampleItemsV5", "Sample Items", "Examples/SampleItems"),
+        new("Dashboard & Data", "searchautocomplete", "Search & Autocomplete", "Examples/SearchAutocomplete"),
+        new("Dashboard & Data", "comparisontable", "Comparison Table", "Examples/ComparisonTable"),
+        new("Dashboard & Data", "itemcards", "Item Cards", "Examples/ItemCards"),
+
+        // Files & Media
+        new("Files & Media", "filedemo", "File Demo", "Examples/FileDemo"),
+        new("Files & Media", "filedemov1", "V1: Profile Photo", "Examples/FileDemoV1", "File Demo", "Examples/FileDemo"),
+        new("Files & Media", "filedemov2", "V2: Document Library", "Examples/FileDemoV2", "File Demo", "Examples/FileDemo"),
+        new("Files & Media", "filedemov3", "V3: Resume Upload", "Examples/FileDemoV3", "File Demo", "Examples/FileDemo"),
+        new("Files & Media", "filedemov4", "V4: Bulk Import", "Examples/FileDemoV4", "File Demo", "Examples/FileDemo"),
+        new("Files & Media", "filedemov5", "V5: Case Attachments", "Examples/FileDemoV5", "File Demo", "Examples/FileDemo"),
+        new("Files & Media", "filedemov6", "V6: Upload Policy", "Examples/FileDemoV6", "File Demo", "Examples/FileDemo"),
+        new("Files & Media", "imagegallery", "Image Gallery", "Examples/ImageGallery"),
+        new("Files & Media", "carousel", "Carousel", "Examples/Carousel"),
+        new("Files & Media", "signaturedemo", "Signature Demo", "Examples/SignatureDemo"),
+        new("Files & Media", "signaturev1", "V1: Job Application", "Examples/SignatureV1", "Signature Demo", "Examples/SignatureDemo"),
+        new("Files & Media", "signaturev2", "V2: Doc Acknowledgment", "Examples/SignatureV2", "Signature Demo", "Examples/SignatureDemo"),
+        new("Files & Media", "signaturev3", "V3: Upload & Sign", "Examples/SignatureV3", "Signature Demo", "Examples/SignatureDemo"),
+        new("Files & Media", "signaturev4", "V4: GLBA Consent", "Examples/SignatureV4", "Signature Demo", "Examples/SignatureDemo"),
+        new("Files & Media", "signaturev5", "V5: Contract Signing", "Examples/SignatureV5", "Signature Demo", "Examples/SignatureDemo"),
+
+        // UI Components
+        new("UI Components", "bootstrapshowcase", "Bootstrap Showcase", "Examples/BootstrapShowcase"),
+        new("UI Components", "bootstrapv1", "V1: Email Builder", "Examples/BootstrapV1", "Bootstrap Showcase", "Examples/BootstrapShowcase"),
+        new("UI Components", "bootstrapv2", "V2: Settings Page", "Examples/BootstrapV2", "Bootstrap Showcase", "Examples/BootstrapShowcase"),
+        new("UI Components", "bootstrapv3", "V3: Error Pages", "Examples/BootstrapV3", "Bootstrap Showcase", "Examples/BootstrapShowcase"),
+        new("UI Components", "bootstrapv4", "V4: User Profile", "Examples/BootstrapV4", "Bootstrap Showcase", "Examples/BootstrapShowcase"),
+        new("UI Components", "bootstrapv5", "V5: Pricing Page", "Examples/BootstrapV5", "Bootstrap Showcase", "Examples/BootstrapShowcase"),
+        new("UI Components", "bootstrapv6", "V6: Filter Panel", "Examples/BootstrapV6", "Bootstrap Showcase", "Examples/BootstrapShowcase"),
+        new("UI Components", "bootstrapv7", "V7: Settings Admin", "Examples/BootstrapV7", "Bootstrap Showcase", "Examples/BootstrapShowcase"),
+        new("UI Components", "bootstrapv8", "V8: Offcanvas Sidebar", "Examples/BootstrapV8", "Bootstrap Showcase", "Examples/BootstrapShowcase"),
+        new("UI Components", "bootstrapv9", "V9: Master-Detail", "Examples/BootstrapV9", "Bootstrap Showcase", "Examples/BootstrapShowcase"),
+        new("UI Components", "bootstrapv10", "V10: Modals & Toasts", "Examples/BootstrapV10", "Bootstrap Showcase", "Examples/BootstrapShowcase"),
+        new("UI Components", "bootstrapv11", "V11: Data Table", "Examples/BootstrapV11", "Bootstrap Showcase", "Examples/BootstrapShowcase"),
+        new("UI Components", "bootstrapv12", "V12: Request Form", "Examples/BootstrapV12", "Bootstrap Showcase", "Examples/BootstrapShowcase"),
+        new("UI Components", "kanbanboard", "Kanban Board", "Examples/KanbanBoard"),
+        new("UI Components", "statusboard", "Status Board", "Examples/StatusBoard"),
+        new("UI Components", "pipelinetracker", "Pipeline Tracker", "Examples/PipelineTracker"),
+        new("UI Components", "wizarddemo", "Wizard Demo", "Examples/WizardDemo"),
+        new("UI Components", "commandpalette", "Command Palette", "Examples/CommandPalette"),
+        new("UI Components", "commentthread", "Comment Thread", "Examples/CommentThread"),
+        new("UI Components", "chatview", "Chat View", "Examples/ChatView"),
+
+        // Charts & Viz
+        new("Charts & Viz", "chartsdashboard", "Charts Dashboard", "Examples/ChartsDashboard"),
+        new("Charts & Viz", "chartsv1", "V1: Sales Analytics", "Examples/ChartsV1", "Charts Dashboard", "Examples/ChartsDashboard"),
+        new("Charts & Viz", "chartsv2", "V2: Enrollment Stats", "Examples/ChartsV2", "Charts Dashboard", "Examples/ChartsDashboard"),
+        new("Charts & Viz", "chartsv3", "V3: System Health", "Examples/ChartsV3", "Charts Dashboard", "Examples/ChartsDashboard"),
+        new("Charts & Viz", "chartsv4", "V4: HR Analytics", "Examples/ChartsV4", "Charts Dashboard", "Examples/ChartsDashboard"),
+        new("Charts & Viz", "chartsv5", "V5: Web Analytics", "Examples/ChartsV5", "Charts Dashboard", "Examples/ChartsDashboard"),
+        new("Charts & Viz", "networkgraph", "Network Graph", "Examples/NetworkGraph"),
+        new("Charts & Viz", "networkgraphv1", "V1: Org Chart", "Examples/NetworkGraphV1", "Network Graph", "Examples/NetworkGraph"),
+        new("Charts & Viz", "networkgraphv2", "V2: Dependency Map", "Examples/NetworkGraphV2", "Network Graph", "Examples/NetworkGraph"),
+
+        // Code & Real-Time
+        new("Code & Real-Time", "codeeditor", "Code Editor", "Examples/CodeEditor"),
+        new("Code & Real-Time", "codeeditorv1", "V1: SQL Query Builder", "Examples/CodeEditorV1", "Code Editor", "Examples/CodeEditor"),
+        new("Code & Real-Time", "codeeditorv2", "V2: API Tester", "Examples/CodeEditorV2", "Code Editor", "Examples/CodeEditor"),
+        new("Code & Real-Time", "codeeditorv3", "V3: Config Editor", "Examples/CodeEditorV3", "Code Editor", "Examples/CodeEditor"),
+        new("Code & Real-Time", "codeeditorv4", "V4: Diff Viewer", "Examples/CodeEditorV4", "Code Editor", "Examples/CodeEditor"),
+        new("Code & Real-Time", "codeeditorv5", "V5: Template Engine", "Examples/CodeEditorV5", "Code Editor", "Examples/CodeEditor"),
+        new("Code & Real-Time", "codeplayground", "Code Playground", "Examples/CodePlayground"),
+        new("Code & Real-Time", "signalrdemo", "SignalR Demo", "Examples/SignalRDemo"),
+        new("Code & Real-Time", "signalrv1", "V1: Live Notifications", "Examples/SignalRV1", "SignalR Demo", "Examples/SignalRDemo"),
+        new("Code & Real-Time", "signalrv2", "V2: Online Users", "Examples/SignalRV2", "SignalR Demo", "Examples/SignalRDemo"),
+        new("Code & Real-Time", "signalrv3", "V3: Live Poll", "Examples/SignalRV3", "SignalR Demo", "Examples/SignalRDemo"),
+        new("Code & Real-Time", "signalrv4", "V4: Activity Feed", "Examples/SignalRV4", "SignalR Demo", "Examples/SignalRDemo"),
+        new("Code & Real-Time", "signalrv5", "V5: Live Scoreboard", "Examples/SignalRV5", "SignalR Demo", "Examples/SignalRDemo"),
+        new("Code & Real-Time", "timerdemo", "Timer Demo", "Examples/TimerDemo"),
+        new("Code & Real-Time", "timerv1", "V1: Pomodoro", "Examples/TimerV1", "Timer Demo", "Examples/TimerDemo"),
+        new("Code & Real-Time", "timerv2", "V2: Session Timeout", "Examples/TimerV2", "Timer Demo", "Examples/TimerDemo"),
+        new("Code & Real-Time", "timerv3", "V3: Auto-Refresh", "Examples/TimerV3", "Timer Demo", "Examples/TimerDemo"),
+        new("Code & Real-Time", "timerv4", "V4: Quiz Timer", "Examples/TimerV4", "Timer Demo", "Examples/TimerDemo"),
+        new("Code & Real-Time", "timerv5", "V5: Event Countdown", "Examples/TimerV5", "Timer Demo", "Examples/TimerDemo"),
+        new("Code & Real-Time", "gitbrowser", "Git Browser", "Examples/GitBrowser"),
+        new("Code & Real-Time", "apikeydemo", "API Key Demo", "Examples/ApiKeyDemo"),
+
+        // Project Management — Projects & Hierarchy
+        new("Project Management", "projects", "Projects", "Examples/Projects"),
+        new("Project Management", "projectsv1", "V1: Project Tree", "Examples/ProjectsV1", "Projects", "Examples/Projects"),
+        new("Project Management", "projectsv2", "V2: Project Form", "Examples/ProjectsV2", "Projects", "Examples/Projects"),
+        new("Project Management", "projectsv3", "V3: Project Cards", "Examples/ProjectsV3", "Projects", "Examples/Projects"),
+        new("Project Management", "projectsv4", "V4: Project Comparison", "Examples/ProjectsV4", "Projects", "Examples/Projects"),
+
+        // Project Management — Tickets
+        new("Project Management", "tickets", "Tickets", "Examples/Tickets"),
+        new("Project Management", "ticketsv1", "V1: Ticket Form", "Examples/TicketsV1", "Tickets", "Examples/Tickets"),
+        new("Project Management", "ticketsv2", "V2: Ticket Detail", "Examples/TicketsV2", "Tickets", "Examples/Tickets"),
+        new("Project Management", "ticketsv3", "V3: Quick Create", "Examples/TicketsV3", "Tickets", "Examples/Tickets"),
+        new("Project Management", "ticketsv4", "V4: Bulk Edit", "Examples/TicketsV4", "Tickets", "Examples/Tickets"),
+
+        // Project Management — Board Views
+        new("Project Management", "boardviews", "Board Views", "Examples/BoardViews"),
+        new("Project Management", "boardviewsv1", "V1: Kanban Board", "Examples/BoardViewsV1", "Board Views", "Examples/BoardViews"),
+        new("Project Management", "boardviewsv2", "V2: Sprint Board", "Examples/BoardViewsV2", "Board Views", "Examples/BoardViews"),
+        new("Project Management", "boardviewsv3", "V3: Swimlane Board", "Examples/BoardViewsV3", "Board Views", "Examples/BoardViews"),
+        new("Project Management", "boardviewsv4", "V4: Board Settings", "Examples/BoardViewsV4", "Board Views", "Examples/BoardViews"),
+
+        // Project Management — Sprint Planning
+        new("Project Management", "sprintplanning", "Sprint Planning", "Examples/SprintPlanning"),
+        new("Project Management", "sprintplanningv1", "V1: Planning View", "Examples/SprintPlanningV1", "Sprint Planning", "Examples/SprintPlanning"),
+        new("Project Management", "sprintplanningv2", "V2: Active Sprint", "Examples/SprintPlanningV2", "Sprint Planning", "Examples/SprintPlanning"),
+        new("Project Management", "sprintplanningv3", "V3: Retrospective", "Examples/SprintPlanningV3", "Sprint Planning", "Examples/SprintPlanning"),
+        new("Project Management", "sprintplanningv4", "V4: Velocity Report", "Examples/SprintPlanningV4", "Sprint Planning", "Examples/SprintPlanning"),
+
+        // Project Management — Backlog & Grooming
+        new("Project Management", "backlog", "Backlog", "Examples/Backlog"),
+        new("Project Management", "backlogv1", "V1: Grooming View", "Examples/BacklogV1", "Backlog", "Examples/Backlog"),
+        new("Project Management", "backlogv2", "V2: Bulk Operations", "Examples/BacklogV2", "Backlog", "Examples/Backlog"),
+        new("Project Management", "backlogv3", "V3: Grouped Backlog", "Examples/BacklogV3", "Backlog", "Examples/Backlog"),
+        new("Project Management", "backlogv4", "V4: Saved Views", "Examples/BacklogV4", "Backlog", "Examples/Backlog"),
+
+        // Domain Workflows — Work Orders
+        new("Domain Workflows", "workorders", "Work Orders", "Examples/WorkOrders"),
+        new("Domain Workflows", "workordersv1", "V1: Submit Request", "Examples/WorkOrdersV1", "Work Orders", "Examples/WorkOrders"),
+        new("Domain Workflows", "workordersv2", "V2: Dispatch Board", "Examples/WorkOrdersV2", "Work Orders", "Examples/WorkOrders"),
+        new("Domain Workflows", "workordersv3", "V3: Technician View", "Examples/WorkOrdersV3", "Work Orders", "Examples/WorkOrders"),
+        new("Domain Workflows", "workordersv4", "V4: Facilities Dashboard", "Examples/WorkOrdersV4", "Work Orders", "Examples/WorkOrders"),
+
+        // Domain Workflows — Budget & Approvals
+        new("Domain Workflows", "budgetrequests", "Budget Requests", "Examples/BudgetRequests"),
+        new("Domain Workflows", "budgetrequestsv1", "V1: Request Builder", "Examples/BudgetRequestsV1", "Budget Requests", "Examples/BudgetRequests"),
+        new("Domain Workflows", "budgetrequestsv2", "V2: Approval Queue", "Examples/BudgetRequestsV2", "Budget Requests", "Examples/BudgetRequests"),
+        new("Domain Workflows", "budgetrequestsv3", "V3: Budget Overview", "Examples/BudgetRequestsV3", "Budget Requests", "Examples/BudgetRequests"),
+        new("Domain Workflows", "budgetrequestsv4", "V4: Request Detail", "Examples/BudgetRequestsV4", "Budget Requests", "Examples/BudgetRequests"),
+
+        // Domain Workflows — Equipment Checkout
+        new("Domain Workflows", "equipmentcheckout", "Equipment Checkout", "Examples/EquipmentCheckout"),
+        new("Domain Workflows", "equipmentcheckoutv1", "V1: Checkout Form", "Examples/EquipmentCheckoutV1", "Equipment Checkout", "Examples/EquipmentCheckout"),
+        new("Domain Workflows", "equipmentcheckoutv2", "V2: My Checkouts", "Examples/EquipmentCheckoutV2", "Equipment Checkout", "Examples/EquipmentCheckout"),
+        new("Domain Workflows", "equipmentcheckoutv3", "V3: Overdue Report", "Examples/EquipmentCheckoutV3", "Equipment Checkout", "Examples/EquipmentCheckout"),
+        new("Domain Workflows", "equipmentcheckoutv4", "V4: Asset Detail", "Examples/EquipmentCheckoutV4", "Equipment Checkout", "Examples/EquipmentCheckout"),
+
+        // Domain Workflows — Course Evaluations
+        new("Domain Workflows", "courseevaluations", "Course Evaluations", "Examples/CourseEvaluations"),
+        new("Domain Workflows", "courseevaluationsv1", "V1: Take Evaluation", "Examples/CourseEvaluationsV1", "Course Evaluations", "Examples/CourseEvaluations"),
+        new("Domain Workflows", "courseevaluationsv2", "V2: Results Summary", "Examples/CourseEvaluationsV2", "Course Evaluations", "Examples/CourseEvaluations"),
+        new("Domain Workflows", "courseevaluationsv3", "V3: Template Builder", "Examples/CourseEvaluationsV3", "Course Evaluations", "Examples/CourseEvaluations"),
+        new("Domain Workflows", "courseevaluationsv4", "V4: Department Report", "Examples/CourseEvaluationsV4", "Course Evaluations", "Examples/CourseEvaluations"),
+
+        // Domain Workflows — Employee Onboarding
+        new("Domain Workflows", "employeeonboarding", "Employee Onboarding", "Examples/EmployeeOnboarding"),
+        new("Domain Workflows", "employeeonboardingv1", "V1: Onboarding Setup", "Examples/EmployeeOnboardingV1", "Employee Onboarding", "Examples/EmployeeOnboarding"),
+        new("Domain Workflows", "employeeonboardingv2", "V2: Task Tracker", "Examples/EmployeeOnboardingV2", "Employee Onboarding", "Examples/EmployeeOnboarding"),
+        new("Domain Workflows", "employeeonboardingv3", "V3: My Onboarding", "Examples/EmployeeOnboardingV3", "Employee Onboarding", "Examples/EmployeeOnboarding"),
+        new("Domain Workflows", "employeeonboardingv4", "V4: Department Dashboard", "Examples/EmployeeOnboardingV4", "Employee Onboarding", "Examples/EmployeeOnboarding"),
+    };
+}

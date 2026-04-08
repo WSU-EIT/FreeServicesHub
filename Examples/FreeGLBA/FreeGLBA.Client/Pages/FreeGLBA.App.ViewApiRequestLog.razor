@@ -1,0 +1,301 @@
+﻿@* FreeGLBA.App.ViewApiRequestLog.razor - Single API Request Log Detail View *@
+@page "/ApiLogs/{Id:guid}"
+@page "/{TenantCode}/ApiLogs/{Id:guid}"
+@implements IDisposable
+@inject BlazorDataModel Model
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+@if (Model.Loaded && Model.LoggedIn && Model.View == _pageName) {
+    <div class="container-fluid">
+        <div class="@Model.StickyMenuClass">
+            <div class="d-flex justify-content-between align-items-center">
+                <h1 class="page-title mb-0">
+                    <i class="fa-solid fa-magnifying-glass me-2"></i>API Request Details
+                </h1>
+                <button class="btn btn-outline-secondary" @onclick="GoBack">
+                    <i class="fa-solid fa-arrow-left me-1"></i>Back to List
+                </button>
+            </div>
+        </div>
+
+        @if (_loading) {
+            <div class="text-center py-5">
+                <i class="fa-solid fa-spinner fa-spin fa-2x"></i>
+                <p class="mt-2">Loading log details...</p>
+            </div>
+        } else if (_log == null) {
+            <div class="alert alert-warning">
+                <i class="fa-solid fa-exclamation-triangle me-2"></i>
+                Log not found. It may have been deleted or the ID is invalid.
+            </div>
+        } else {
+            @* Status Banner *@
+            <div class="alert @(_log.IsSuccess ? "alert-success" : "alert-danger") d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="badge @(_log.IsSuccess ? "bg-success" : "bg-danger") me-2 fs-5">@_log.StatusCode</span>
+                    <span class="badge @GetMethodBadgeClass(_log.HttpMethod) me-2">@_log.HttpMethod</span>
+                    <strong>@_log.RequestPath</strong>
+                </div>
+                <div class="text-end">
+                    <span class="badge bg-secondary fs-6">@_log.DurationMs ms</span>
+                </div>
+            </div>
+
+            <div class="row">
+                @* Request Info *@
+                <div class="col-md-6 mb-3">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <i class="fa-solid fa-arrow-right-to-bracket me-2"></i>Request Info
+                        </div>
+                        <div class="card-body">
+                            <table class="table table-sm mb-0">
+                                <tbody>
+                                    <tr><th style="width: 35%;">Time</th><td>@_log.RequestedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td></tr>
+                                    <tr><th>Method</th><td><span class="badge @GetMethodBadgeClass(_log.HttpMethod)">@_log.HttpMethod</span></td></tr>
+                                    <tr><th>Path</th><td class="text-break">@_log.RequestPath</td></tr>
+                                    @if (!string.IsNullOrEmpty(_log.QueryString)) {
+                                        <tr><th>Query</th><td class="text-break small">@_log.QueryString</td></tr>
+                                    }
+                                    <tr><th>Source System</th><td>@(string.IsNullOrEmpty(_log.SourceSystemName) ? "-" : _log.SourceSystemName)</td></tr>
+                                    <tr><th>Auth Type</th><td>@(string.IsNullOrEmpty(_log.AuthType) ? "-" : _log.AuthType)</td></tr>
+                                    @if (!string.IsNullOrEmpty(_log.UserId)) {
+                                        <tr><th>User</th><td>@_log.UserName (@_log.UserId)</td></tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                @* Response Info *@
+                <div class="col-md-6 mb-3">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <i class="fa-solid fa-arrow-right-from-bracket me-2"></i>Response Info
+                        </div>
+                        <div class="card-body">
+                            <table class="table table-sm mb-0">
+                                <tbody>
+                                    <tr><th style="width: 35%;">Status Code</th><td><span class="badge @GetStatusBadgeClass(_log.StatusCode)">@_log.StatusCode</span></td></tr>
+                                    <tr><th>Success</th><td>@(_log.IsSuccess ? "Yes" : "No")</td></tr>
+                                    <tr><th>Response Time</th><td>@_log.RespondedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td></tr>
+                                    <tr><th>Duration</th><td><strong class="@(_log.DurationMs > 1000 ? "text-warning" : "")">@_log.DurationMs ms</strong></td></tr>
+                                    <tr><th>Correlation ID</th><td class="small text-muted">@_log.CorrelationId</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                @* Client Info *@
+                <div class="col-md-6 mb-3">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <i class="fa-solid fa-desktop me-2"></i>Client Info
+                        </div>
+                        <div class="card-body">
+                            <table class="table table-sm mb-0">
+                                <tbody>
+                                    <tr><th style="width: 35%;">IP Address</th><td>@_log.IpAddress</td></tr>
+                                    @if (!string.IsNullOrEmpty(_log.ForwardedFor)) {
+                                        <tr><th>X-Forwarded-For</th><td>@_log.ForwardedFor</td></tr>
+                                    }
+                                    <tr><th>User Agent</th><td class="small text-break">@_log.UserAgent</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                @* Error Info (if any) *@
+                @if (!_log.IsSuccess || !string.IsNullOrEmpty(_log.ErrorMessage)) {
+                    <div class="col-md-6 mb-3">
+                        <div class="card h-100 border-danger">
+                            <div class="card-header bg-danger text-white">
+                                <i class="fa-solid fa-bug me-2"></i>Error Details
+                            </div>
+                            <div class="card-body">
+                                @if (!string.IsNullOrEmpty(_log.ExceptionType)) {
+                                    <p class="mb-2"><strong>Exception Type:</strong> <code>@_log.ExceptionType</code></p>
+                                }
+                                @if (!string.IsNullOrEmpty(_log.ErrorMessage)) {
+                                    <p class="mb-0"><strong>Message:</strong></p>
+                                    <pre class="bg-light p-2 rounded small">@_log.ErrorMessage</pre>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            @* Headers *@
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center cursor-pointer" @onclick="() => _showHeaders = !_showHeaders">
+                    <span><i class="fa-solid fa-code me-2"></i>Request Headers</span>
+                    <i class="fa-solid @(_showHeaders ? "fa-chevron-up" : "fa-chevron-down")"></i>
+                </div>
+                @if (_showHeaders) {
+                    <div class="card-body p-0">
+                        @if (string.IsNullOrEmpty(_log.RequestHeaders)) {
+                            <p class="text-muted p-3 mb-0">No headers captured</p>
+                        } else {
+                            <pre class="mb-0 p-3 bg-light" style="max-height: 300px; overflow: auto;">@FormatJson(_log.RequestHeaders)</pre>
+                        }
+                    </div>
+                }
+            </div>
+
+            @* Request Body *@
+            @if (_log.BodyLoggingEnabled || !string.IsNullOrEmpty(_log.RequestBody)) {
+                <div class="card mb-3">
+                    <div class="card-header d-flex justify-content-between align-items-center cursor-pointer" @onclick="() => _showRequestBody = !_showRequestBody">
+                        <span>
+                            <i class="fa-solid fa-file-code me-2"></i>Request Body
+                            @if (_log.RequestBodySize > 0) {
+                                <span class="badge bg-secondary ms-2">@FormatBytes(_log.RequestBodySize)</span>
+                            }
+                        </span>
+                        <i class="fa-solid @(_showRequestBody ? "fa-chevron-up" : "fa-chevron-down")"></i>
+                    </div>
+                    @if (_showRequestBody) {
+                        <div class="card-body p-0">
+                            @if (string.IsNullOrEmpty(_log.RequestBody)) {
+                                <p class="text-muted p-3 mb-0">@GetBodyMessage(_log.BodyLoggingEnabled, "request")</p>
+                            } else {
+                                <pre class="mb-0 p-3 bg-light" style="max-height: 400px; overflow: auto;">@FormatJson(_log.RequestBody)</pre>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+            @* Response Body *@
+            @if (_log.BodyLoggingEnabled || !string.IsNullOrEmpty(_log.ResponseBody)) {
+                <div class="card mb-3">
+                    <div class="card-header d-flex justify-content-between align-items-center cursor-pointer" @onclick="() => _showResponseBody = !_showResponseBody">
+                        <span>
+                            <i class="fa-solid fa-file-code me-2"></i>Response Body
+                            @if (_log.ResponseBodySize > 0) {
+                                <span class="badge bg-secondary ms-2">@FormatBytes(_log.ResponseBodySize)</span>
+                            }
+                        </span>
+                        <i class="fa-solid @(_showResponseBody ? "fa-chevron-up" : "fa-chevron-down")"></i>
+                    </div>
+                    @if (_showResponseBody) {
+                        <div class="card-body p-0">
+                            @if (string.IsNullOrEmpty(_log.ResponseBody)) {
+                                <p class="text-muted p-3 mb-0">@GetBodyMessage(_log.BodyLoggingEnabled, "response")</p>
+                            } else {
+                                <pre class="mb-0 p-3 bg-light" style="max-height: 400px; overflow: auto;">@FormatJson(_log.ResponseBody)</pre>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    [Parameter] public Guid Id { get; set; }
+
+    private string _pageName = "viewapirequestlog";
+    private bool _loading = true;
+    private bool _loadedData = false;
+    private DataObjects.ApiRequestLog? _log;
+    private bool _showHeaders = false;
+    private bool _showRequestBody = false;
+    private bool _showResponseBody = false;
+
+    public void Dispose() { Model.OnChange -= OnDataModelUpdated; }
+
+    protected override void OnInitialized() {
+        Model.View = _pageName;
+        Model.OnChange += OnDataModelUpdated;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) {
+            Model.TenantCodeFromUrl = TenantCode;
+        }
+
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            await LoadLog();
+        }
+    }
+
+    private void OnDataModelUpdated() {
+        if (Model.View == _pageName) {
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadLog() {
+        _loading = true;
+        StateHasChanged();
+
+        try {
+            _log = await Helpers.GetOrPost<DataObjects.ApiRequestLog>("api/Data/GetApiLog", Id);
+        } catch (Exception ex) {
+            Model.ErrorMessage($"Error loading log: {ex.Message}");
+        } finally {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private string GetMethodBadgeClass(string method) {
+        return method?.ToUpper() switch {
+            "GET" => "bg-primary",
+            "POST" => "bg-success",
+            "PUT" => "bg-warning text-dark",
+            "PATCH" => "bg-info",
+            "DELETE" => "bg-danger",
+            _ => "bg-secondary"
+        };
+    }
+
+    private string GetStatusBadgeClass(int statusCode) {
+        return statusCode switch {
+            >= 200 and < 300 => "bg-success",
+            >= 300 and < 400 => "bg-info",
+            >= 400 and < 500 => "bg-warning text-dark",
+            >= 500 => "bg-danger",
+            _ => "bg-secondary"
+        };
+    }
+
+    private string FormatBytes(int bytes) {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024.0):F1} MB";
+    }
+
+    private string FormatJson(string? json) {
+        if (string.IsNullOrEmpty(json)) return "";
+        try {
+            var obj = System.Text.Json.JsonSerializer.Deserialize<object>(json);
+            return System.Text.Json.JsonSerializer.Serialize(obj, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        } catch {
+            return json;
+        }
+    }
+
+    private string GetBodyMessage(bool bodyLoggingEnabled, string bodyType) {
+        if (!bodyLoggingEnabled) {
+            return $"Body logging was not enabled for this {bodyType}";
+        }
+        return $"No {bodyType} body";
+    }
+
+    private void GoBack() {
+        var path = string.IsNullOrEmpty(TenantCode) ? "/ApiLogs" : $"/{TenantCode}/ApiLogs";
+        Nav.NavigateTo(path);
+    }
+}

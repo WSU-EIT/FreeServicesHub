@@ -1,0 +1,508 @@
+﻿@* FreeGLBA.App.GlbaDashboard.razor - Dashboard page *@
+@page "/GlbaDashboard"
+@page "/{TenantCode}/GlbaDashboard"
+@implements IDisposable
+@inject BlazorDataModel Model
+@inject HttpClient Http
+
+@if (Model.Loaded && Model.LoggedIn && Model.View == _pageName) {
+    @if (_loading) {
+        <div class="container-fluid">
+            <h1 class="page-title">
+                <i class="fa-solid fa-shield-halved me-2"></i>GLBA Compliance Dashboard
+            </h1>
+            <div class="text-center py-5"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>
+        </div>
+    } else {
+        <div class="container-fluid">
+            <div class="@Model.StickyMenuClass">
+                <h1 class="page-title">
+                    <i class="fa-solid fa-shield-halved me-2"></i>GLBA Compliance Dashboard
+                </h1>
+            </div>
+
+            @* About GLBA - Collapsible Banner *@
+            <div class="card shadow-sm mb-4 border-primary">
+                <div class="card-header bg-primary bg-opacity-10 cursor-pointer" @onclick="ToggleAboutSection">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="fa-solid fa-book-open me-2 text-primary"></i>
+                            <strong>About GLBA Compliance Tracking</strong>
+                            <span class="text-muted ms-2">— What this system does and how to use it</span>
+                        </div>
+                        <button class="btn btn-sm btn-link text-primary p-0">
+                            @if (_aboutExpanded) {
+                                <i class="fa-solid fa-chevron-up"></i>
+                            } else {
+                                <i class="fa-solid fa-chevron-down"></i>
+                            }
+                        </button>
+                    </div>
+                </div>
+                @if (_aboutExpanded) {
+                    <div class="card-body">
+                        <div class="row">
+                            @* What is GLBA *@
+                            <div class="col-md-6 col-lg-3 mb-3">
+                                <h6 class="text-primary"><i class="fa-solid fa-scale-balanced me-2"></i>What is GLBA?</h6>
+                                <p class="small text-muted mb-2">
+                                    The <strong>Gramm-Leach-Bliley Act (GLBA)</strong> is a 1999 federal law that requires 
+                                    financial institutions to explain their information-sharing practices and protect 
+                                    sensitive consumer data.
+                                </p>
+                                <p class="small text-muted mb-0">
+                                    Educational institutions handling student financial aid (Title IV) must also comply 
+                                    with GLBA requirements for protecting financial information.
+                                </p>
+                            </div>
+
+                            @* Why This System *@
+                            <div class="col-md-6 col-lg-3 mb-3">
+                                <h6 class="text-primary"><i class="fa-solid fa-bullseye me-2"></i>Why This System?</h6>
+                                <p class="small text-muted mb-2">
+                                    GLBA compliance requires tracking <strong>who accessed what data, when, and why</strong>. 
+                                    This system provides:
+                                </p>
+                                <ul class="small text-muted mb-0 ps-3">
+                                    <li>Centralized access logging from all systems</li>
+                                    <li>Real-time monitoring dashboard</li>
+                                    <li>Audit-ready compliance reports</li>
+                                    <li>API for automated event capture</li>
+                                </ul>
+                            </div>
+
+                            @* How to Use *@
+                            <div class="col-md-6 col-lg-3 mb-3">
+                                <h6 class="text-primary"><i class="fa-solid fa-list-check me-2"></i>How to Get Started</h6>
+                                <ol class="small text-muted mb-0 ps-3">
+                                    <li><strong>Create Source Systems</strong> — Register each app that accesses financial data</li>
+                                    <li><strong>Get API Keys</strong> — Secure authentication for each source</li>
+                                    <li><strong>Send Events</strong> — POST to <code>/api/glba/events</code> when data is accessed</li>
+                                    <li><strong>Monitor</strong> — Track access patterns on this dashboard</li>
+                                    <li><strong>Report</strong> — Generate compliance reports as needed</li>
+                                </ol>
+                            </div>
+
+                            @* Quick Links *@
+                            <div class="col-md-6 col-lg-3 mb-3">
+                                <h6 class="text-primary"><i class="fa-solid fa-link me-2"></i>Quick Links</h6>
+                                <div class="d-grid gap-2">
+                                    <a href="@Helpers.BuildUrl("SourceSystems")" class="btn btn-outline-primary btn-sm">
+                                        <i class="fa-solid fa-server me-1"></i>Manage Source Systems
+                                    </a>
+                                    <a href="@Helpers.BuildUrl("AccessEvents")" class="btn btn-outline-primary btn-sm">
+                                        <i class="fa-solid fa-list me-1"></i>View All Events
+                                    </a>
+                                    <a href="@Helpers.BuildUrl("DataSubjects")" class="btn btn-outline-primary btn-sm">
+                                        <i class="fa-solid fa-users me-1"></i>Data Subjects
+                                    </a>
+                                    <a href="@Helpers.BuildUrl("ComplianceReports")" class="btn btn-outline-primary btn-sm">
+                                        <i class="fa-solid fa-file-lines me-1"></i>Compliance Reports
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+
+                        @* Agreement Tracking *@
+                        <div class="border-top pt-3 mt-2">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6 class="text-primary"><i class="fa-solid fa-file-signature me-2"></i>Privacy Agreement Tracking</h6>
+                                    <p class="small text-muted mb-2">
+                                        Each access event can include a copy of the <strong>privacy notice or agreement</strong> 
+                                        that was shown to the user when they accessed data. This captures the exact disclosure 
+                                        text the user acknowledged at that moment in time.
+                                    </p>
+                                    <p class="small text-muted mb-0">
+                                        <strong>Why this matters:</strong> During GLBA audits, you may need to prove what 
+                                        disclosure was presented to users when they accessed protected data. Storing the 
+                                        agreement text with each event creates an immutable record of compliance.
+                                    </p>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6 class="text-primary"><i class="fa-solid fa-code me-2"></i>Include Agreement in API Calls</h6>
+                                    <pre class="bg-dark text-light p-2 rounded small mb-0"><code>POST /api/glba/events
+{
+  "subjectId": "student-12345",
+  "accessType": "view",
+  "dataCategory": "financial-aid",
+  "purpose": "enrollment verification",
+  "agreementText": "I acknowledge that I am accessing 
+    protected financial data in accordance with 
+    institutional policy and GLBA requirements...",
+  "agreementAcknowledgedAt": "2025-01-15T10:30:00Z"
+}</code></pre>
+                                </div>
+                            </div>
+                        </div>
+
+                        @* API Integration Example *@
+                        <div class="border-top pt-3 mt-2">
+                            <h6 class="text-primary"><i class="fa-solid fa-code me-2"></i>Basic API Integration</h6>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <p class="small text-muted mb-2">Send access events from your applications:</p>
+                                    <pre class="bg-dark text-light p-2 rounded small mb-0"><code>POST /api/glba/events
+Authorization: Bearer YOUR_API_KEY
+Content-Type: application/json
+
+{
+  "subjectId": "student-12345",
+  "accessType": "view",
+  "dataCategory": "financial-aid",
+  "purpose": "enrollment verification"
+}</code></pre>
+                                </div>
+                                <div class="col-md-6">
+                                    <p class="small text-muted mb-2">Or use the .NET client library:</p>
+                                    <pre class="bg-dark text-light p-2 rounded small mb-0"><code>// Install: dotnet add package FreeGLBA.Client
+
+services.AddGlbaClient(options => {
+    options.BaseUrl = "https://your-server";
+    options.ApiKey = "YOUR_API_KEY";
+});
+
+// Then inject and use:
+await glbaClient.LogAccessAsync(new GlbaEventRequest {
+    SubjectId = "student-12345",
+    AccessType = "view"
+});</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            @* Stats Cards *@
+            <div class="row mb-4">
+                <div class="col-lg-2 col-md-4 col-6 mb-3">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-body text-center py-3">
+                            <h2 class="mb-0 text-primary">@_stats.Today.ToString("N0")</h2>
+                            <p class="text-muted mb-0 small">Events Today</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-2 col-md-4 col-6 mb-3">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-body text-center py-3">
+                            <h2 class="mb-0 text-primary">@_stats.ThisWeek.ToString("N0")</h2>
+                            <p class="text-muted mb-0 small">Events This Week</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-2 col-md-4 col-6 mb-3">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-body text-center py-3">
+                            <h2 class="mb-0 text-primary">@_stats.ThisMonth.ToString("N0")</h2>
+                            <p class="text-muted mb-0 small">Events This Month</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-2 col-md-4 col-6 mb-3">
+                    <div class="card shadow-sm h-100 border-info">
+                        <div class="card-body text-center py-3">
+                            <h2 class="mb-0 text-info">@_stats.SubjectsToday.ToString("N0")</h2>
+                            <p class="text-muted mb-0 small">Subjects Today</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-2 col-md-4 col-6 mb-3">
+                    <div class="card shadow-sm h-100 border-info">
+                        <div class="card-body text-center py-3">
+                            <h2 class="mb-0 text-info">@_stats.SubjectsThisWeek.ToString("N0")</h2>
+                            <p class="text-muted mb-0 small">Subjects This Week</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-2 col-md-4 col-6 mb-3">
+                    <div class="card shadow-sm h-100 border-success">
+                        <div class="card-body text-center py-3">
+                            <h2 class="mb-0 text-success">@_stats.TotalSubjects.ToString("N0")</h2>
+                            <p class="text-muted mb-0 small">Total Subjects</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @* Recent Events *@
+            <div class="card shadow-sm mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fa-solid fa-clock-rotate-left me-2"></i>Recent Events
+                    </h5>
+                    <a href="@Helpers.BuildUrl("AccessEvents")" class="btn btn-sm btn-outline-primary">
+                        View All <i class="fa-solid fa-arrow-right ms-1"></i>
+                    </a>
+                </div>
+                <div class="card-body p-0">
+                    @if (_recentEvents.Count == 0) {
+                        <div class="text-center text-muted py-4">
+                            <i class="fa-solid fa-inbox fa-2x mb-2"></i>
+                            <p class="mb-0">No access events recorded yet.</p>
+                            <small>Events will appear here as they are logged by source systems.</small>
+                        </div>
+                    } else {
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Accessed At</th>
+                                        <th>User</th>
+                                        <th>Subject(s)</th>
+                                        <th>Data Category</th>
+                                        <th>Access Type</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var evt in _recentEvents) {
+                                        <tr>
+                                            <td>
+                                                <a href="@GetEventUrl(evt.AccessEventId)">
+                                                    <span title="@evt.AccessedAt.ToLocalTime().ToString("f")">@GetTimeAgo(evt.AccessedAt)</span>
+                                                </a>
+                                            </td>
+                                            <td>
+                                                <div>@evt.UserId</div>
+                                                @if (!string.IsNullOrEmpty(evt.UserName)) {
+                                                    <small class="text-muted">@evt.UserName</small>
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (evt.SubjectCount > 1) {
+                                                    <span class="badge bg-warning text-dark">@evt.SubjectCount subjects</span>
+                                                } else if (evt.SubjectId == "SYSTEM") {
+                                                    <span class="badge bg-secondary">SYSTEM</span>
+                                                } else {
+                                                    <a href="@GetSubjectUrl(evt.SubjectId)">@evt.SubjectId</a>
+                                                }
+                                            </td>
+                                            <td>@(string.IsNullOrEmpty(evt.DataCategory) ? "-" : evt.DataCategory)</td>
+                                            <td>
+                                                @{
+                                                    var badgeClass = evt.AccessType?.ToLower() switch {
+                                                        "export" or "download" => "bg-warning text-dark",
+                                                        "view" or "query" => "bg-info",
+                                                        "print" => "bg-secondary",
+                                                        _ => "bg-primary"
+                                                    };
+                                                }
+                                                <span class="badge @badgeClass">@evt.AccessType</span>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @* Source Systems Status *@
+            <div class="card shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fa-solid fa-server me-2"></i>Source Systems
+                    </h5>
+                    <a href="@Helpers.BuildUrl("SourceSystems")" class="btn btn-sm btn-outline-primary">
+                        Manage <i class="fa-solid fa-gear ms-1"></i>
+                    </a>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>System</th>
+                                    <th>Status</th>
+                                    <th>Last Event</th>
+                                    <th>Total Events</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var src in _sources) {
+                                    <tr>
+                                        <td>@(src.DisplayName ?? src.Name)</td>
+                                        <td>
+                                            @if (src.IsActive) {
+                                                <span class="badge bg-success"><i class="fa-solid fa-circle me-1"></i>Active</span>
+                                            } else {
+                                                <span class="badge bg-secondary"><i class="fa-solid fa-circle me-1"></i>Inactive</span>
+                                            }
+                                        </td>
+                                        <td>@GetTimeAgo(src.LastEventReceivedAt)</td>
+                                        <td>@src.EventCount.ToString("N0")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            @* Top Accessors *@
+            <div class="card shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fa-solid fa-user-shield me-2"></i>Top Accessors
+                    </h5>
+                    <a href="@Helpers.BuildUrl("Accessors")" class="btn btn-sm btn-outline-primary">
+                        View All <i class="fa-solid fa-arrow-right ms-1"></i>
+                    </a>
+                </div>
+                <div class="card-body p-0">
+                    @if (_topAccessors.Count == 0) {
+                        <div class="text-center text-muted py-4">
+                            <i class="fa-solid fa-users fa-2x mb-2"></i>
+                            <p class="mb-0">No accessor data yet.</p>
+                            <small>Users who access data will appear here.</small>
+                        </div>
+                    } else {
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>User</th>
+                                        <th>Department</th>
+                                        <th>Total Accesses</th>
+                                        <th>Subjects</th>
+                                        <th>Exports</th>
+                                        <th>Last Access</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var accessor in _topAccessors) {
+                                        <tr>
+                                            <td>
+                                                <div>@accessor.UserId</div>
+                                                @if (!string.IsNullOrEmpty(accessor.UserName)) {
+                                                    <small class="text-muted">@accessor.UserName</small>
+                                                }
+                                            </td>
+                                            <td>@(string.IsNullOrEmpty(accessor.UserDepartment) ? "-" : accessor.UserDepartment)</td>
+                                            <td><span class="badge bg-primary">@accessor.TotalAccesses</span></td>
+                                            <td><span class="badge bg-info">@accessor.UniqueSubjectsAccessed</span></td>
+                                            <td>
+                                                @if (accessor.ExportCount > 0) {
+                                                    <span class="badge bg-warning text-dark">@accessor.ExportCount</span>
+                                                } else {
+                                                    <span class="text-muted">0</span>
+                                                }
+                                            </td>
+                                            <td>@GetTimeAgo(accessor.LastAccessAt)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+
+    private string _pageName = "glbadashboard";
+    private bool _loading = true;
+    private bool _loadedData = false;
+    private bool _aboutExpanded = false;
+
+    private DataObjects.GlbaStats _stats = new();
+    private List<DataObjects.AccessEvent> _recentEvents = new();
+    private List<DataObjects.SourceSystem> _sources = new();
+    private List<DataObjects.AccessorSummary> _topAccessors = new();
+
+    public void Dispose()
+    {
+        Model.OnChange -= OnDataModelUpdated;
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.View = _pageName;
+        Model.OnChange += OnDataModelUpdated;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) {
+            Model.TenantCodeFromUrl = TenantCode;
+        }
+
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            await LoadDataAsync();
+        }
+    }
+
+    private void OnDataModelUpdated()
+    {
+        if (Model.View == _pageName) {
+            StateHasChanged();
+        }
+    }
+
+    private void ToggleAboutSection()
+    {
+        _aboutExpanded = !_aboutExpanded;
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try {
+            // Load all data in parallel
+            var statsTask = Helpers.GetOrPost<DataObjects.GlbaStats>("api/glba/stats/summary");
+            var eventsTask = Helpers.GetOrPost<List<DataObjects.AccessEvent>>("api/glba/events/recent?limit=20");
+            var sourcesTask = Helpers.GetOrPost<List<DataObjects.SourceSystem>>("api/glba/sources/status");
+            var accessorsTask = Helpers.GetOrPost<List<DataObjects.AccessorSummary>>("api/glba/accessors/top");
+
+            await Task.WhenAll(statsTask, eventsTask, sourcesTask, accessorsTask);
+
+            _stats = await statsTask ?? new();
+            _recentEvents = await eventsTask ?? new();
+            _sources = await sourcesTask ?? new();
+            _topAccessors = await accessorsTask ?? new();
+        } catch (Exception ex) {
+            Model.ErrorMessage($"Error loading dashboard: {ex.Message}");
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private string GetTimeAgo(DateTime? dt)
+    {
+        if (!dt.HasValue) return "Never";
+        return GetTimeAgo(dt.Value);
+    }
+
+    private string GetTimeAgo(DateTime dt)
+    {
+        var diff = DateTime.UtcNow - dt;
+        if (diff.TotalSeconds < 0) return "Just now"; // Future date edge case
+        if (diff.TotalMinutes < 1) return "Just now";
+        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes} min ago";
+        if (diff.TotalHours < 24) return $"{(int)diff.TotalHours} hours ago";
+        if (diff.TotalDays < 7) return $"{(int)diff.TotalDays} days ago";
+        return dt.ToString("MMM d, yyyy");
+    }
+
+    private string GetEventUrl(Guid eventId)
+    {
+        return Helpers.BuildUrl($"AccessEvents/{eventId}");
+    }
+
+    private string GetSubjectUrl(string? subjectId)
+    {
+        if (string.IsNullOrEmpty(subjectId)) return "#";
+        var encoded = Uri.EscapeDataString(subjectId);
+        return Helpers.BuildUrl($"DataSubjects/{encoded}");
+    }
+}

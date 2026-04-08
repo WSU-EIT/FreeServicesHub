@@ -1,0 +1,49 @@
+@page "/Examples/SignalRV1"
+@page "/{TenantCode}/Examples/SignalRV1"
+@implements IDisposable
+@inject BlazorDataModel Model
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) { <h1 class="page-title"><i class="fa-solid fa-bell me-1"></i> Live Notifications</h1><LoadingMessage /> } else {
+        <div class="@Model.StickyMenuClass"><h1 class="page-title"><i class="fa-solid fa-bell me-1"></i> V1: Live Notification Feed <StickyMenuIcon /></h1></div>
+
+        <ExampleNav />
+        <AboutSection Title="SignalR in Context: Live Notifications" Subtitle="Real-time notification toasts and a notification center — the Slack/Teams pattern" IconClass="fa-solid fa-bell">
+            <p class="small text-muted mb-0">SignalR pushes notification events that appear as toast messages and accumulate in a notification center panel. Same real-time messaging, but in a notification UX context.</p>
+        </AboutSection>
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Notification Alert Types"
+                     Description="Each notification uses alert-(Type) to set color: alert-info for general, alert-success for positive, alert-warning for warnings. The icon also varies by type. This auto-color pattern is used in production notification systems across all apps."
+                     Code="@_codeAlertTypes" />
+            <InfoTip Title="Dismissible Notifications"
+                     Description="Each notification has a btn-close that removes it from the list. The list is managed in C# (_notifications.Remove(n)). In production, dismissed notifications are marked as read via API. New ones push to the top with Insert(0, ...)."
+                     Code="@_codeDismissible" />
+            <InfoTip Title="Empty State Pattern"
+                     Description="When no notifications exist, a centered icon (fa-bell-slash) and text tell the user. This empty state prevents a confusing blank screen. Every production list page has an empty state with an icon and helpful message."
+                     Code="@_codeEmptyState" />
+        </div>
+        <div class="d-flex justify-content-between mb-3"><h5>Notification Center</h5><button class="btn btn-sm btn-outline-primary" @onclick="SimulateNotification"><i class="fa-solid fa-plus me-1"></i> Simulate Notification</button></div>
+        @foreach (var n in _notifications) {
+            <div class="alert alert-@n.Type d-flex align-items-start mb-2 py-2 shadow-sm"><i class="fa-solid @n.Icon me-2 mt-1"></i><div class="flex-grow-1"><div class="small fw-semibold">@n.Title</div><div class="small">@n.Message</div><div class="small text-muted">@n.Time</div></div><button class="btn-close btn-close-sm" @onclick="@(() => _notifications.Remove(n))"></button></div>
+        }
+        @if (!_notifications.Any()) { <div class="text-center py-5 text-muted"><i class="fa-solid fa-bell-slash fa-3x opacity-25 mb-2"></i><div class="small">No notifications</div></div> }
+    }
+}
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "signalrv1";
+    private string _codeAlertTypes = "<div class=\"alert alert-@n.Type\">\n  <i class=\"fa-solid @n.Icon\"></i>\n  @n.Title: @n.Message\n</div>";
+    private string _codeDismissible = "<button class=\"btn-close\"\n  @onclick=\"() => _notifications.Remove(n)\">\n</button>";
+    private string _codeEmptyState = "<div class=\"text-center py-5 text-muted\">\n  <i class=\"fa-solid fa-bell-slash fa-3x opacity-25\"></i>\n  <div>No notifications</div>\n</div>";
+    private List<NotifItem> _notifications = new() {
+        new("New Comment", "Sarah commented on your sample item", "fa-comment", "info", "2 min ago"),
+        new("Build Succeeded", "Pipeline #482 completed successfully", "fa-circle-check", "success", "15 min ago"),
+        new("Warning", "Database replica lag exceeded 5 seconds", "fa-triangle-exclamation", "warning", "1 hour ago"),
+    };
+    private int _counter = 0;
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) Model.TenantCodeFromUrl = TenantCode; if (Model.Loaded && Model.LoggedIn && !_loadedData) { _loadedData = true; _loading = false; StateHasChanged(); } }
+    private void SimulateNotification() { _counter++; _notifications.Insert(0, new($"Event #{_counter}", "A new real-time event was pushed via SignalR", "fa-bolt", "primary", "Just now")); }
+    private record NotifItem(string Title, string Message, string Icon, string Type, string Time);
+}

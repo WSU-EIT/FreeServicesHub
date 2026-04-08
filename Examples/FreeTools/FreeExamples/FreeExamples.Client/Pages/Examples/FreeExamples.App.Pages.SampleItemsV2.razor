@@ -1,0 +1,115 @@
+@page "/Examples/SampleItemsV2"
+@page "/{TenantCode}/Examples/SampleItemsV2"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V2: Split Panel — list on left, detail panel on right *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-table-columns me-1"></i> Split Panel</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title"><i class="fa-solid fa-table-columns me-1"></i> V2: Sample Items — Split Panel <StickyMenuIcon /></h1>
+        </div>
+
+        <ExampleNav />
+        <AboutSection Title="Split Panel View" Subtitle="Master-detail layout — Outlook/VS Code Explorer pattern" IconClass="fa-solid fa-table-columns">
+            <p class="small text-muted mb-0">Click an item in the left list to see its full details in the right panel. This is the Outlook email pane, VS Code file explorer, or Jira issue panel pattern.</p>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Master-Detail Split Panel"
+                     Description="A row with col-md-4 (list) and col-md-8 (detail) creates the master-detail layout. The list uses list-group-flush inside a card. Clicking an item sets _selected which populates the right panel. This is the Outlook/VS Code pattern used in Credentials and DependencyManager."
+                     Code="@_codeSplitPanel" />
+            <InfoTip Title="list-group-item-action Active State"
+                     Description="list-group-item-action makes items clickable with hover highlight. The 'active' class marks the selected item with the primary color. Combined with list-group-flush for no outer borders. The filter input in the card-header narrows the list client-side."
+                     Code="@_codeListGroupActive" />
+            <InfoTip Title="Empty State Placeholder"
+                     Description="When nothing is selected, the detail panel shows a centered icon and message. This uses d-flex align-items-center justify-content-center with text-muted. Every production detail panel has this placeholder — it tells users what to do."
+                     Code="@_codeEmptyState" />
+        </div>
+
+        <div class="row" style="min-height:500px;">
+            @* Left: Item List *@
+            <div class="col-md-4 col-lg-3">
+                <div class="card shadow-sm border-0 h-100">
+                    <div class="card-header bg-white py-2">
+                        <input type="text" class="form-control form-control-sm" placeholder="Filter..." @bind="_filter" @bind:event="oninput" />
+                    </div>
+                    <div class="card-body p-0" style="max-height:500px; overflow-y:auto;">
+                        <div class="list-group list-group-flush">
+                            @foreach (var item in FilteredItems) {
+                                <button class="list-group-item list-group-item-action py-2 @(_selected?.SampleItemId == item.SampleItemId ? "active" : "")"
+                                        @onclick="@(() => _selected = item)">
+                                    <div class="small fw-semibold">@item.Name</div>
+                                    <div class="d-flex gap-1">
+                                        <span class="badge bg-light text-dark border" style="font-size:0.5rem;">@item.Category</span>
+                                        <span class="badge @GetStatusBadge(item.Status)" style="font-size:0.5rem;">@item.Status</span>
+                                    </div>
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @* Right: Detail Panel *@
+            <div class="col-md-8 col-lg-9">
+                <div class="card shadow-sm border-0 h-100">
+                    @if (_selected != null) {
+                        <div class="card-header bg-white d-flex justify-content-between">
+                            <span class="fw-semibold">@_selected.Name</span>
+                            <span class="badge @GetStatusBadge(_selected.Status)">@_selected.Status</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="row mb-3">
+                                <div class="col-md-3 mb-2"><strong class="small text-muted">Category</strong><div><span class="badge bg-light text-dark border">@_selected.Category</span></div></div>
+                                <div class="col-md-3 mb-2"><strong class="small text-muted">Priority</strong><div>P@_selected.Priority</div></div>
+                                <div class="col-md-3 mb-2"><strong class="small text-muted">Amount</strong><div class="fw-semibold text-primary">@_selected.Amount.ToString("C")</div></div>
+                                <div class="col-md-3 mb-2"><strong class="small text-muted">Enabled</strong><div>@(_selected.Enabled ? "Yes" : "No")</div></div>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(_selected.Description)) {
+                                <div><strong class="small text-muted">Description</strong><div class="small mt-1">@_selected.Description</div></div>
+                            }
+                        </div>
+                    } else {
+                        <div class="card-body d-flex align-items-center justify-content-center">
+                            <div class="text-center text-muted">
+                                <i class="fa-solid fa-arrow-left fa-2x opacity-25 mb-2"></i>
+                                <div class="small">Select an item from the list</div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "sampleitemsv2";
+    private string _filter = "";
+    private string _codeSplitPanel = "<div class=\"row\">\n  <div class=\"col-md-4\"><!-- list --></div>\n  <div class=\"col-md-8\"><!-- detail --></div>\n</div>";
+    private string _codeListGroupActive = "<button class=\"list-group-item list-group-item-action\n  @(_selected == item ? \"active\" : \"\")\">\n  @item.Name\n</button>";
+    private string _codeEmptyState = "<div class=\"text-center text-muted\">\n  <i class=\"fa-solid fa-arrow-left fa-2x opacity-25\"></i>\n  <div>Select an item</div>\n</div>";
+    private List<DataObjects.SampleItem> _items = new();
+    private DataObjects.SampleItem? _selected;
+    private IEnumerable<DataObjects.SampleItem> FilteredItems => string.IsNullOrWhiteSpace(_filter) ? _items : _items.Where(i => i.Name.Contains(_filter, StringComparison.OrdinalIgnoreCase));
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            var result = await Helpers.GetOrPost<List<DataObjects.SampleItem>>("api/Data/GetSampleItems", new List<Guid>());
+            if (result != null) _items = result.Where(i => !i.Deleted).OrderBy(i => i.Name).ToList();
+            _loading = false; StateHasChanged();
+        }
+    }
+    private string GetStatusBadge(DataObjects.SampleItemStatus s) => s switch { DataObjects.SampleItemStatus.Active => "bg-success", DataObjects.SampleItemStatus.Completed => "bg-primary", DataObjects.SampleItemStatus.Archived => "bg-dark", _ => "bg-secondary" };
+}

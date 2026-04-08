@@ -1,0 +1,619 @@
+﻿@* FreeGLBA.App.ComplianceReportsPage.razor - List page for ComplianceReport *@
+@page "/ComplianceReports"
+@page "/{TenantCode}/ComplianceReports"
+@implements IDisposable
+@inject BlazorDataModel Model
+@inject HttpClient Http
+
+@if (Model.Loaded && Model.LoggedIn && Model.View == _pageName) {
+    <div class="container-fluid">
+        <div class="@Model.StickyMenuClass">
+            <div class="d-flex justify-content-between align-items-center">
+                <h1 class="page-title mb-0">
+                    <i class="fa-solid fa-file-contract me-2"></i>Compliance Reports
+                </h1>
+                <button class="btn btn-primary" @onclick="CreateNew">
+                    <i class="fa-solid fa-plus me-1"></i>Custom Report
+                </button>
+            </div>
+        </div>
+
+        @* About Compliance Reports - Collapsible Help *@
+        <div class="card shadow-sm mb-3 border-info">
+            <div class="card-header bg-info bg-opacity-10 cursor-pointer py-2" @onclick="() => _helpExpanded = !_helpExpanded">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span>
+                        <i class="fa-solid fa-circle-info me-2 text-info"></i>
+                        <strong>What are Compliance Reports?</strong>
+                        <span class="text-muted ms-2">— Audit summaries for your Helpdesk/ticketing system</span>
+                    </span>
+                    <i class="fa-solid @(_helpExpanded ? "fa-chevron-up" : "fa-chevron-down") text-info"></i>
+                </div>
+            </div>
+            @if (_helpExpanded) {
+                <div class="card-body py-2">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <h6 class="text-info"><i class="fa-solid fa-clipboard-check me-1"></i>Purpose</h6>
+                            <p class="small text-muted mb-0">
+                                Generate formatted <strong>compliance summaries</strong> that you copy/paste into your 
+                                Helpdesk or Jira ticketing system. Your compliance team then uses those tickets to 
+                                track and validate access reviews using your organization's standard tools.
+                            </p>
+                        </div>
+                        <div class="col-md-3">
+                            <h6 class="text-info"><i class="fa-solid fa-list-ul me-1"></i>Report Types</h6>
+                            <ul class="small text-muted mb-0 ps-3">
+                                <li><strong>Monthly/Quarterly</strong> — Routine summaries</li>
+                                <li><strong>Export Review</strong> — All data exports</li>
+                                <li><strong>High Volume</strong> — Unusual access patterns</li>
+                                <li><strong>Audit Response</strong> — For regulators</li>
+                                <li><strong>Subject Request</strong> — DSAR responses</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-3">
+                            <h6 class="text-info"><i class="fa-solid fa-arrows-rotate me-1"></i>Workflow</h6>
+                            <ol class="small text-muted mb-0 ps-3">
+                                <li>Generate report here</li>
+                                <li>Copy formatted summary</li>
+                                <li>Paste into Helpdesk/Jira</li>
+                                <li>Assign to reviewer</li>
+                                <li>Track completion there</li>
+                            </ol>
+                        </div>
+                        <div class="col-md-3">
+                            <h6 class="text-info"><i class="fa-solid fa-lightbulb me-1"></i>Key Point</h6>
+                            <p class="small text-muted mb-0">
+                                This system <strong>logs events</strong> and <strong>generates reports</strong>. 
+                                Your Helpdesk/Jira system handles <strong>task assignment</strong> and 
+                                <strong>completion tracking</strong>. No duplicate workflow management needed!
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        @* Quick Report Generation Buttons *@
+        <div class="card shadow-sm mb-3 border-success">
+            <div class="card-header bg-success bg-opacity-10 py-2">
+                <i class="fa-solid fa-bolt me-2 text-success"></i>
+                <strong>Quick Reports</strong>
+                <span class="text-muted ms-2">— Generate common compliance reports with one click</span>
+            </div>
+            <div class="card-body py-3">
+                <div class="row g-2">
+                    <div class="col-auto">
+                        <button class="btn btn-outline-primary" @onclick="() => GenerateQuickReport_LastMonth()">
+                            <i class="fa-solid fa-calendar-day me-1"></i>Last Month
+                        </button>
+                    </div>
+                    <div class="col-auto">
+                        <button class="btn btn-outline-primary" @onclick="() => GenerateQuickReport_LastQuarter()">
+                            <i class="fa-solid fa-calendar-week me-1"></i>Last Quarter
+                        </button>
+                    </div>
+                    <div class="col-auto">
+                        <button class="btn btn-outline-primary" @onclick="() => GenerateQuickReport_YTD()">
+                            <i class="fa-solid fa-calendar me-1"></i>Year to Date
+                        </button>
+                    </div>
+                    <div class="col-auto">
+                        <button class="btn btn-outline-warning" @onclick="() => GenerateQuickReport_ExportReview()">
+                            <i class="fa-solid fa-file-export me-1"></i>Export Review (Last 30 Days)
+                        </button>
+                    </div>
+                    <div class="col-auto">
+                        <button class="btn btn-outline-danger" @onclick="() => GenerateQuickReport_HighVolume()">
+                            <i class="fa-solid fa-chart-line me-1"></i>High Volume (Last 30 Days)
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-body py-2">
+                <div class="row g-2 align-items-center">
+                    <div class="col-md-3">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text"><i class="fa-solid fa-search"></i></span>
+                            <input type="text" class="form-control" placeholder="Search by type, generated by..."
+                                   @bind="_filter.Search" @bind:event="oninput" @bind:after="LoadData" />
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <select class="form-select form-select-sm" @bind="_filter.PageSize" @bind:after="@(() => { _filter.Page = 1; LoadData(); })">
+                            <option value="10">10 per page</option>
+                            <option value="25">25 per page</option>
+                            <option value="50">50 per page</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select form-select-sm" @bind="_sortOption" @bind:after="ApplySortOption">
+                            <option value="GeneratedAt-desc">Newest First</option>
+                            <option value="GeneratedAt-asc">Oldest First</option>
+                            <option value="ReportType-asc">Type (A-Z)</option>
+                            <option value="ReportType-desc">Type (Z-A)</option>
+                            <option value="TotalEvents-desc">Most Events</option>
+                            <option value="TotalEvents-asc">Fewest Events</option>
+                            <option value="PeriodStart-desc">Period (Recent)</option>
+                            <option value="PeriodStart-asc">Period (Oldest)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <button class="btn btn-sm @(_showMoreFilters ? "btn-secondary" : "btn-outline-secondary")" @onclick="() => _showMoreFilters = !_showMoreFilters">
+                            <i class="fa-solid fa-filter me-1"></i>More Filters
+                            @if (HasAdvancedFilters()) { <span class="badge bg-primary ms-1">@GetAdvancedFilterCount()</span> }
+                        </button>
+                    </div>
+                </div>
+
+                @* Advanced Filters - Expandable *@
+                @if (_showMoreFilters) {
+                    <div class="mt-3 pt-3 border-top">
+                        <div class="row g-2">
+                            <div class="col-md-3">
+                                <label class="form-label small text-muted mb-1">Report Type</label>
+                                <select class="form-select form-select-sm" @bind="_filter.ReportTypeFilter" @bind:after="@(() => { _filter.Page = 1; _ = LoadData(); })">
+                                    <option value="">All Types</option>
+                                    <option value="Monthly Summary">Monthly Summary</option>
+                                    <option value="Quarterly Review">Quarterly Review</option>
+                                    <option value="Annual Compliance">Annual Compliance</option>
+                                    <option value="Audit Response">Audit Response</option>
+                                    <option value="Subject Request">Subject Request</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small text-muted mb-1">Generated After</label>
+                                <input type="date" class="form-control form-control-sm" @bind="_filter.GeneratedAfter" @bind:after="@(() => { _filter.Page = 1; _ = LoadData(); })" />
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small text-muted mb-1">Generated Before</label>
+                                <input type="date" class="form-control form-control-sm" @bind="_filter.GeneratedBefore" @bind:after="@(() => { _filter.Page = 1; _ = LoadData(); })" />
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small text-muted mb-1">Min Total Events</label>
+                                <input type="number" class="form-control form-control-sm" placeholder="Min" 
+                                       @bind="_filter.MinTotalEvents" @bind:after="@(() => { _filter.Page = 1; _ = LoadData(); })" />
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <button class="btn btn-sm btn-outline-danger" @onclick="ClearAdvancedFilters">
+                                <i class="fa-solid fa-times me-1"></i>Clear Advanced Filters
+                            </button>
+                        </div>
+                    </div>
+                }
+
+                @* Active Filter Pills *@
+                @if (HasActiveFilters()) {
+                    <div class="mt-2 d-flex flex-wrap gap-1 align-items-center">
+                        <small class="text-muted me-1">Filters:</small>
+                        @if (!string.IsNullOrWhiteSpace(_filter.Search)) {
+                            <span class="badge bg-primary d-inline-flex align-items-center">
+                                <i class="fa-solid fa-search me-1"></i>@_filter.Search
+                                <button type="button" class="btn-close btn-close-white ms-1" style="font-size: 0.5rem;" 
+                                        @onclick="@(() => { _filter.Search = ""; _filter.Page = 1; _ = LoadData(); })"></button>
+                            </span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_filter.ReportTypeFilter)) {
+                            <span class="badge bg-info d-inline-flex align-items-center">
+                                Type: @_filter.ReportTypeFilter
+                                <button type="button" class="btn-close btn-close-white ms-1" style="font-size: 0.5rem;" 
+                                        @onclick="@(() => { _filter.ReportTypeFilter = null; _filter.Page = 1; _ = LoadData(); })"></button>
+                            </span>
+                        }
+                        @if (_filter.GeneratedAfter.HasValue || _filter.GeneratedBefore.HasValue) {
+                            <span class="badge bg-warning text-dark d-inline-flex align-items-center">
+                                Generated: @(_filter.GeneratedAfter?.ToString("M/d") ?? "…")–@(_filter.GeneratedBefore?.ToString("M/d") ?? "…")
+                                <button type="button" class="btn-close ms-1" style="font-size: 0.5rem;" 
+                                        @onclick="@(() => { _filter.GeneratedAfter = null; _filter.GeneratedBefore = null; _filter.Page = 1; _ = LoadData(); })"></button>
+                            </span>
+                        }
+                        @if (_filter.MinTotalEvents.HasValue) {
+                            <span class="badge bg-warning text-dark d-inline-flex align-items-center">
+                                Min Events: @_filter.MinTotalEvents
+                                <button type="button" class="btn-close ms-1" style="font-size: 0.5rem;" 
+                                        @onclick="@(() => { _filter.MinTotalEvents = null; _filter.Page = 1; _ = LoadData(); })"></button>
+                            </span>
+                        }
+                        <span class="badge bg-secondary d-inline-flex align-items-center">
+                            <i class="fa-solid fa-sort me-1"></i>@GetSortDisplayName()
+                        </span>
+                        <button class="btn btn-link btn-sm text-danger p-0 ms-2" @onclick="ClearAllFilters">
+                            <i class="fa-solid fa-times me-1"></i>Clear All
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+
+        @if (_loading) {
+            <div class="text-center py-5"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>
+        } else if (_result.Records.Count == 0) {
+            <div class="text-center py-5 text-muted">
+                <i class="fa-solid fa-file-contract fa-4x mb-3 opacity-50"></i>
+                <h4>No compliance reports generated</h4>
+                <p>Generate reports to document GLBA compliance activities.</p>
+                <button class="btn btn-primary mt-2" @onclick="CreateNew">
+                    <i class="fa-solid fa-plus me-1"></i>Generate First Report
+                </button>
+            </div>
+        } else {
+            <div class="card shadow-sm">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="sortable @SortClass("ReportType")" @onclick="@(() => Sort("ReportType"))">
+                                    Report Type <i class="fa-solid @SortIcon("ReportType") ms-1"></i>
+                                </th>
+                                <th class="sortable @SortClass("GeneratedAt")" @onclick="@(() => Sort("GeneratedAt"))">
+                                    Generated <i class="fa-solid @SortIcon("GeneratedAt") ms-1"></i>
+                                </th>
+                                <th class="sortable @SortClass("GeneratedBy")" @onclick="@(() => Sort("GeneratedBy"))">
+                                    Generated By <i class="fa-solid @SortIcon("GeneratedBy") ms-1"></i>
+                                </th>
+                                <th class="sortable @SortClass("PeriodStart")" @onclick="@(() => Sort("PeriodStart"))">
+                                    Report Period <i class="fa-solid @SortIcon("PeriodStart") ms-1"></i>
+                                </th>
+                                <th class="sortable @SortClass("TotalEvents")" @onclick="@(() => Sort("TotalEvents"))">
+                                    Events <i class="fa-solid @SortIcon("TotalEvents") ms-1"></i>
+                                </th>
+                                <th style="width: 120px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in _result.Records) {
+                                <tr>
+                                    <td>
+                                        @{
+                                            var typeIcon = item.ReportType?.ToLower() switch {
+                                                "annual" => "fa-calendar",
+                                                "quarterly" => "fa-calendar-days",
+                                                "monthly" => "fa-calendar-day",
+                                                "audit" => "fa-clipboard-check",
+                                                "investigation" => "fa-magnifying-glass",
+                                                _ => "fa-file"
+                                            };
+                                            var typeBadge = item.ReportType?.ToLower() switch {
+                                                "annual" => "bg-primary",
+                                                "quarterly" => "bg-info",
+                                                "monthly" => "bg-secondary",
+                                                "audit" => "bg-warning text-dark",
+                                                "investigation" => "bg-danger",
+                                                _ => "bg-secondary"
+                                            };
+                                        }
+                                        <span class="badge @typeBadge">
+                                            <i class="fa-solid @typeIcon me-1"></i>
+                                            @(string.IsNullOrEmpty(item.ReportType) ? "General" : item.ReportType)
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span title="@item.GeneratedAt.ToString("f")">
+                                            @item.GeneratedAt.ToString("MMM dd, yyyy HH:mm")
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <i class="fa-solid fa-user me-1 text-muted"></i>
+                                        @(string.IsNullOrEmpty(item.GeneratedBy) ? "System" : item.GeneratedBy)
+                                    </td>
+                                    <td>
+                                        <span class="text-nowrap">
+                                            @item.PeriodStart.ToString("MMM dd, yyyy") — @item.PeriodEnd.ToString("MMM dd, yyyy")
+                                        </span>
+                                        <br />
+                                        <small class="text-muted">@GetPeriodDuration(item.PeriodStart, item.PeriodEnd)</small>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-info">@item.TotalEvents.ToString("N0")</span>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <button class="btn btn-outline-success" @onclick="@(() => DownloadReport(item))" title="Download">
+                                                <i class="fa-solid fa-download"></i>
+                                            </button>
+                                            <button class="btn btn-outline-primary" @onclick="@(() => Edit(item))" title="View/Edit">
+                                                <i class="fa-solid fa-eye"></i>
+                                            </button>
+                                            <button class="btn btn-outline-danger" @onclick="@(() => ConfirmDelete(item))" title="Delete">
+                                                <i class="fa-solid fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                
+                @* Pagination *@
+                @if (_result.TotalPages > 1) {
+                    <div class="card-footer d-flex justify-content-between align-items-center">
+                        <span class="text-muted small">
+                            Showing @((_filter.Page - 1) * _filter.PageSize + 1) - @Math.Min(_filter.Page * _filter.PageSize, _result.TotalRecords) of @_result.TotalRecords
+                        </span>
+                        <nav>
+                            <ul class="pagination pagination-sm mb-0">
+                                <li class="page-item @(_filter.Page <= 1 ? "disabled" : "")">
+                                    <button class="page-link" @onclick="@(() => GoToPage(1))" disabled="@(_filter.Page <= 1)">
+                                        <i class="fa-solid fa-angles-left"></i>
+                                    </button>
+                                </li>
+                                <li class="page-item @(_filter.Page <= 1 ? "disabled" : "")">
+                                    <button class="page-link" @onclick="@(() => GoToPage(_filter.Page - 1))" disabled="@(_filter.Page <= 1)">
+                                        <i class="fa-solid fa-angle-left"></i>
+                                    </button>
+                                </li>
+                                @foreach (var p in GetPageNumbers()) {
+                                    <li class="page-item @(p == _filter.Page ? "active" : "")">
+                                        <button class="page-link" @onclick="@(() => GoToPage(p))">@p</button>
+                                    </li>
+                                }
+                                <li class="page-item @(_filter.Page >= _result.TotalPages ? "disabled" : "")">
+                                    <button class="page-link" @onclick="@(() => GoToPage(_filter.Page + 1))" disabled="@(_filter.Page >= _result.TotalPages)">
+                                        <i class="fa-solid fa-angle-right"></i>
+                                    </button>
+                                </li>
+                                <li class="page-item @(_filter.Page >= _result.TotalPages ? "disabled" : "")">
+                                    <button class="page-link" @onclick="@(() => GoToPage(_result.TotalPages))" disabled="@(_filter.Page >= _result.TotalPages)">
+                                        <i class="fa-solid fa-angles-right"></i>
+                                    </button>
+                                </li>
+                            </ul>
+                        </nav>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    @if (_showEdit) {
+        <FreeGLBA_App_EditComplianceReport Item="_editItem" OnSave="SaveItem" OnCancel="CloseEdit" />
+    }
+
+    @* Delete Confirmation Modal *@
+    @if (_showDeleteConfirm) {
+        <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title"><i class="fa-solid fa-triangle-exclamation me-2"></i>Confirm Delete</h5>
+                        <button type="button" class="btn-close btn-close-white" @onclick="CancelDelete"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Are you sure you want to delete this <strong>@_deleteItem?.ReportType</strong> report?</p>
+                        <p class="text-muted small">This action cannot be undone.</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CancelDelete">Cancel</button>
+                        <button type="button" class="btn btn-danger" @onclick="DeleteConfirmed">Delete</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+<style>
+    .sortable { cursor: pointer; user-select: none; }
+    .sortable:hover { background-color: #e9ecef; }
+    .sort-active { font-weight: bold; }
+</style>
+
+@code {
+[Parameter] public string? TenantCode { get; set; }
+    
+private string _pageName = "compliancereports";
+private bool _loading = true;
+private bool _showMoreFilters = false;
+private DataObjects.ComplianceReportFilter _filter = new() { SortColumn = "GeneratedAt", SortDescending = true };
+private DataObjects.ComplianceReportFilterResult _result = new();
+private string _sortOption = "GeneratedAt-desc";
+private bool _showEdit = false;
+private DataObjects.ComplianceReport _editItem = new();
+private bool _showDeleteConfirm = false;
+private DataObjects.ComplianceReport? _deleteItem = null;
+private bool _helpExpanded = false;
+
+public void Dispose() { Model.OnChange -= StateHasChanged; }
+
+protected override void OnInitialized() {
+    Model.View = _pageName;
+    Model.OnChange += StateHasChanged;
+}
+
+protected override async Task OnAfterRenderAsync(bool firstRender) {
+    if (firstRender) await LoadData();
+}
+
+private async Task LoadData() {
+    _loading = true;
+    StateHasChanged();
+    _result = await Helpers.GetOrPost<DataObjects.ComplianceReportFilterResult>(
+        DataObjects.Endpoints.FreeGLBA.GetComplianceReports, _filter) ?? new();
+    _loading = false;
+    StateHasChanged();
+}
+
+private bool HasActiveFilters() => !string.IsNullOrWhiteSpace(_filter.Search) || HasAdvancedFilters();
+
+private bool HasAdvancedFilters() =>
+    !string.IsNullOrWhiteSpace(_filter.ReportTypeFilter) ||
+    _filter.GeneratedAfter.HasValue || _filter.GeneratedBefore.HasValue ||
+    _filter.MinTotalEvents.HasValue;
+
+private int GetAdvancedFilterCount() {
+    int count = 0;
+    if (!string.IsNullOrWhiteSpace(_filter.ReportTypeFilter)) count++;
+    if (_filter.GeneratedAfter.HasValue || _filter.GeneratedBefore.HasValue) count++;
+    if (_filter.MinTotalEvents.HasValue) count++;
+    return count;
+}
+
+private void ClearAdvancedFilters() {
+    _filter.ReportTypeFilter = null;
+    _filter.GeneratedAfter = null;
+    _filter.GeneratedBefore = null;
+    _filter.MinTotalEvents = null;
+    _filter.Page = 1;
+    _ = LoadData();
+}
+
+private void ClearAllFilters() {
+    _filter.Search = "";
+    _sortOption = "GeneratedAt-desc";
+    _filter.SortColumn = "GeneratedAt";
+    _filter.SortDescending = true;
+    ClearAdvancedFilters();
+}
+
+private void ApplySortOption() {
+    var parts = _sortOption.Split('-');
+    if (parts.Length == 2) {
+        _filter.SortColumn = parts[0];
+        _filter.SortDescending = parts[1] == "desc";
+        _filter.Page = 1;
+        _ = LoadData();
+    }
+}
+
+private string GetSortDisplayName() => _sortOption switch {
+    "GeneratedAt-desc" => "Newest First",
+    "GeneratedAt-asc" => "Oldest First",
+    "ReportType-asc" => "Type (A-Z)",
+    "ReportType-desc" => "Type (Z-A)",
+    "TotalEvents-desc" => "Most Events",
+    "TotalEvents-asc" => "Fewest Events",
+    "PeriodStart-desc" => "Period (Recent)",
+    "PeriodStart-asc" => "Period (Oldest)",
+    _ => "Custom"
+};
+
+private void Sort(string column) {
+    if (_filter.SortColumn == column) {
+        _filter.SortDescending = !_filter.SortDescending;
+    } else {
+        _filter.SortColumn = column;
+        _filter.SortDescending = column == "GeneratedAt" || column == "TotalEvents";
+    }
+    _sortOption = $"{column}-{(_filter.SortDescending ? "desc" : "asc")}";
+    _filter.Page = 1;
+    _ = LoadData();
+}
+
+private string SortClass(string column) => _filter.SortColumn == column ? "sort-active" : "";
+private string SortIcon(string column) {
+    if (_filter.SortColumn != column) return "fa-sort text-muted";
+    return _filter.SortDescending ? "fa-sort-down" : "fa-sort-up";
+}
+
+private async Task GoToPage(int page) {
+    _filter.Page = page;
+    await LoadData();
+}
+
+private IEnumerable<int> GetPageNumbers() {
+    var start = Math.Max(1, _filter.Page - 2);
+    var end = Math.Min(_result.TotalPages, _filter.Page + 2);
+    return Enumerable.Range(start, end - start + 1);
+}
+
+private string GetPeriodDuration(DateTime start, DateTime end) {
+    var days = (end - start).Days;
+    if (days >= 365) return $"{days / 365} year(s)";
+    if (days >= 30) return $"{days / 30} month(s)";
+    if (days >= 7) return $"{days / 7} week(s)";
+    return $"{days} day(s)";
+}
+
+private void DownloadReport(DataObjects.ComplianceReport item) {
+    // TODO: Implement report download
+    // Helpers.NavigateTo($"api/glba/reports/{item.ComplianceReportId}/download");
+}
+
+private void CreateNew() { _editItem = new DataObjects.ComplianceReport(); _showEdit = true; }
+private void Edit(DataObjects.ComplianceReport item) { _editItem = item; _showEdit = true; }
+private void CloseEdit() { _showEdit = false; }
+
+private async Task SaveItem(DataObjects.ComplianceReport item) {
+    var saved = await Helpers.GetOrPost<DataObjects.ComplianceReport>(DataObjects.Endpoints.FreeGLBA.SaveComplianceReport, item);
+    if (saved != null) {
+        // After saving, show the generated report so user can copy it
+        _editItem = saved;
+        }
+        await LoadData();
+    }
+
+    private void ConfirmDelete(DataObjects.ComplianceReport item) { _deleteItem = item; _showDeleteConfirm = true; }
+    private void CancelDelete() { _deleteItem = null; _showDeleteConfirm = false; }
+
+    private async Task DeleteConfirmed() {
+        if (_deleteItem != null) {
+            await Helpers.GetOrPost<bool>(DataObjects.Endpoints.FreeGLBA.DeleteComplianceReport, _deleteItem.ComplianceReportId);
+            _deleteItem = null;
+            _showDeleteConfirm = false;
+            await LoadData();
+        }
+    }
+
+    // Quick Report Generation Methods - Create and save reports with pre-configured periods
+    private async Task GenerateQuickReport_LastMonth() {
+        var now = DateTime.Now;
+        var start = new DateTime(now.Year, now.Month, 1).AddMonths(-1);
+        var end = start.AddMonths(1).AddDays(-1);
+        await GenerateAndSaveReport("Monthly", start, end);
+    }
+
+    private async Task GenerateQuickReport_LastQuarter() {
+        var now = DateTime.Now;
+        var currentQuarter = (now.Month - 1) / 3;
+        var lastQuarterStart = currentQuarter == 0 
+            ? new DateTime(now.Year - 1, 10, 1) 
+            : new DateTime(now.Year, (currentQuarter - 1) * 3 + 1, 1);
+        var lastQuarterEnd = lastQuarterStart.AddMonths(3).AddDays(-1);
+        await GenerateAndSaveReport("Quarterly", lastQuarterStart, lastQuarterEnd);
+    }
+
+    private async Task GenerateQuickReport_YTD() {
+        var now = DateTime.Now;
+        var start = new DateTime(now.Year, 1, 1);
+        await GenerateAndSaveReport("Annual", start, now.Date);
+    }
+
+    private async Task GenerateQuickReport_ExportReview() {
+        var now = DateTime.Now;
+        await GenerateAndSaveReport("Export Review", now.AddDays(-30).Date, now.Date);
+    }
+
+    private async Task GenerateQuickReport_HighVolume() {
+        var now = DateTime.Now;
+        await GenerateAndSaveReport("High Volume", now.AddDays(-30).Date, now.Date);
+    }
+
+    private async Task GenerateAndSaveReport(string reportType, DateTime periodStart, DateTime periodEnd) {
+        _loading = true;
+        StateHasChanged();
+
+        var newReport = new DataObjects.ComplianceReport {
+            ReportType = reportType,
+            PeriodStart = periodStart,
+            PeriodEnd = periodEnd
+        };
+
+        Model.Message_Saving($"Generating {reportType} report...");
+        
+        var saved = await Helpers.GetOrPost<DataObjects.ComplianceReport>(
+            DataObjects.Endpoints.FreeGLBA.SaveComplianceReport, newReport);
+        
+        if (saved != null) {
+            _editItem = saved;
+            _showEdit = true;
+            Model.Message_Saved($"{reportType} report generated! Copy the summary to your ticketing system.");
+        }
+
+        await LoadData();
+    }
+}

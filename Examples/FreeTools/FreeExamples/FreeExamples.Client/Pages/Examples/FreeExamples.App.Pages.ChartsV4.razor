@@ -1,0 +1,54 @@
+@page "/Examples/ChartsV4"
+@page "/{TenantCode}/Examples/ChartsV4"
+@implements IDisposable
+@inject BlazorDataModel Model
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) { <h1 class="page-title"><i class="fa-solid fa-people-group me-1"></i> HR Analytics</h1><LoadingMessage /> } else {
+        <div class="@Model.StickyMenuClass"><h1 class="page-title"><i class="fa-solid fa-people-group me-1"></i> V4: HR Analytics Dashboard <StickyMenuIcon /></h1></div>
+
+        <ExampleNav />
+        <AboutSection Title="Charts in Context: HR / People Analytics" Subtitle="Headcount, department distribution, turnover, and hiring pipeline" IconClass="fa-solid fa-people-group">
+            <p class="small text-muted mb-0">Charts in a human resources context — workforce demographics, department headcount, hiring pipeline, and turnover metrics.</p>
+        </AboutSection>
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="HR Metrics Dashboard"
+                     Description="HR dashboards track headcount, turnover rate, open positions, and satisfaction scores. Color-coded KPI cards (text-success for positive trends, text-danger for negative) give instant status. This is the BambooHR/Workday dashboard pattern."
+                     Code="@_codeHrMetrics" />
+            <InfoTip Title="Department Breakdown Table"
+                     Description="A table showing each department with headcount, budget, and utilization creates a structured view. table-hover with small text keeps it compact. Progress bars in cells visualize utilization percentage without a separate chart."
+                     Code="@_codeDeptTable" />
+            <InfoTip Title="Trend Indicators"
+                     Description="Small arrows (fa-arrow-up text-success or fa-arrow-down text-danger) next to KPI values show month-over-month change. The percentage is displayed next to the arrow. This micro-trend pattern appears on every production dashboard."
+                     Code="@_codeTrend" />
+        </div>
+        <div class="row row-cols-2 row-cols-md-4 g-2 mb-3">
+            <div class="col"><div class="card border-0 shadow-sm text-center py-2"><div class="h4 mb-0 text-primary">847</div><div class="small text-muted">Total Employees</div></div></div>
+            <div class="col"><div class="card border-0 shadow-sm text-center py-2"><div class="h4 mb-0 text-success">23</div><div class="small text-muted">New Hires (Q)</div></div></div>
+            <div class="col"><div class="card border-0 shadow-sm text-center py-2"><div class="h4 mb-0 text-danger">4.2%</div><div class="small text-muted">Turnover Rate</div></div></div>
+            <div class="col"><div class="card border-0 shadow-sm text-center py-2"><div class="h4 mb-0 text-info">32</div><div class="small text-muted">Open Positions</div></div></div>
+        </div>
+        <div class="row g-3 mb-3">
+            <div class="col-md-6"><div class="card shadow-sm border-0"><div class="card-header bg-white py-2"><span class="small fw-semibold">Department Headcount</span></div><div class="card-body p-0">
+                @foreach (var d in new[] { ("Engineering", 245, "bg-primary"), ("Sales", 182, "bg-success"), ("Marketing", 98, "bg-info"), ("HR", 42, "bg-warning"), ("Finance", 67, "bg-secondary"), ("Operations", 128, "bg-dark"), ("Support", 85, "bg-danger") }) {
+                    <div class="px-3 py-2 border-bottom d-flex align-items-center gap-2"><span class="small" style="min-width:90px;">@d.Item1</span><div class="flex-grow-1"><div class="progress" style="height:6px;"><div class="progress-bar @d.Item3" style="width:@(d.Item2*100/245)%"></div></div></div><span class="small fw-semibold">@d.Item2</span></div>
+                }
+            </div></div></div>
+            <div class="col-md-6"><div class="card shadow-sm border-0"><div class="card-header bg-white py-2"><span class="small fw-semibold">Hiring Pipeline</span></div><div class="card-body p-0"><div class="list-group list-group-flush">
+                @foreach (var s in new[] { ("Applications Received", "482", "bg-light text-dark border"), ("Phone Screens", "124", "bg-info"), ("On-site Interviews", "48", "bg-warning text-dark"), ("Offers Extended", "18", "bg-primary"), ("Offers Accepted", "14", "bg-success") }) {
+                    <div class="list-group-item py-2 d-flex justify-content-between align-items-center"><span class="small">@s.Item1</span><span class="badge @s.Item3">@s.Item2</span></div>
+                }
+            </div></div></div></div>
+        </div>
+    }
+}
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "chartsv4";
+    private string _codeHrMetrics = "<div class=\"h4 text-primary\">2,847</div>\n<div class=\"small text-muted\">Total Headcount</div>\n<div class=\"small text-success\"><i class=\"fa-solid fa-arrow-up\"></i> 3%</div>";
+    private string _codeDeptTable = "<table class=\"table table-hover table-sm\">\n  <tr>\n    <td>Engineering</td>\n    <td><div class=\"progress\"><div style=\"width:92%\"></div></div></td>\n  </tr>\n</table>";
+    private string _codeTrend = "<span class=\"small @(trend > 0 ? \"text-success\" : \"text-danger\")\">\n  <i class=\"fa-solid @(trend > 0 ? \"fa-arrow-up\" : \"fa-arrow-down\")\"></i> @Math.Abs(trend)%\n</span>";
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) Model.TenantCodeFromUrl = TenantCode; if (Model.Loaded && Model.LoggedIn && !_loadedData) { _loadedData = true; _loading = false; StateHasChanged(); } }
+}

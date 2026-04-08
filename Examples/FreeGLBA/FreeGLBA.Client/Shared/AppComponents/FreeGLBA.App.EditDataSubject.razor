@@ -1,0 +1,141 @@
+﻿@* FreeGLBA.App.EditDataSubject.razor - Edit/Create form for DataSubject *@
+@inject BlazorDataModel Model
+
+<div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fa-solid @(IsNew ? "fa-plus" : "fa-pen") me-2"></i>
+                    @(IsNew ? "New" : "Edit") Data Subject
+                </h5>
+                <button type="button" class="btn-close" @onclick="Cancel" disabled="@_saving"></button>
+            </div>
+            <div class="modal-body">
+                <EditForm Model="Item" OnValidSubmit="Save">
+                    <DataAnnotationsValidator />
+                    <div class="mb-3">
+                        <label class="form-label">External ID <span class="text-danger">*</span></label>
+                        <input type="text" id="edit-datasubject-ExternalId" class="form-control @Helpers.MissingValue(Item.ExternalId)" 
+                               @bind="Item.ExternalId" placeholder="Unique identifier (Student ID, Employee ID, Account #, etc.)" />
+                        <div class="form-text">The unique identifier used by source systems to identify this individual.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Subject Type</label>
+                        <input type="text" class="form-control" list="subjectTypeList" @bind="Item.SubjectType" placeholder="e.g., Student, Employee, Customer" />
+                        <datalist id="subjectTypeList">
+                            <option value="Student" />
+                            <option value="Employee" />
+                            <option value="Customer" />
+                            <option value="Applicant" />
+                            <option value="Vendor" />
+                            <option value="Patient" />
+                            <option value="Member" />
+                            <option value="Contractor" />
+                        </datalist>
+                    </div>
+
+                    @if (!IsNew)
+                    {
+                        <hr />
+                        <h6 class="text-muted">Access Statistics</h6>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-muted small">First Accessed</label>
+                                <div class="form-control-plaintext">
+                                    @Item.FirstAccessedAt.ToString("MMM dd, yyyy h:mm tt")
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-muted small">Last Accessed</label>
+                                <div class="form-control-plaintext">
+                                    @Item.LastAccessedAt.ToString("MMM dd, yyyy h:mm tt")
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-muted small">Total Access Count</label>
+                                <div class="form-control-plaintext">@Item.TotalAccessCount.ToString("N0")</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-muted small">Unique Accessors</label>
+                                <div class="form-control-plaintext">@Item.UniqueAccessorCount.ToString("N0")</div>
+                            </div>
+                        </div>
+                        <div class="alert alert-info small">
+                            <i class="fa-solid fa-info-circle me-1"></i>
+                            Statistics are automatically calculated from access events and cannot be edited manually.
+                        </div>
+                    }
+                </EditForm>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="Cancel" disabled="@_saving">
+                    @Helpers.ConfirmButtonTextCancel
+                </button>
+                <button type="button" class="btn btn-primary" @onclick="Save" disabled="@_saving">
+                    @if (_saving) {
+                        <i class="fa-solid fa-spinner fa-spin me-1"></i>
+                        <span>Saving...</span>
+                    } else {
+                        <i class="fa-solid fa-save me-1"></i>
+                        <span>Save</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public DataObjects.DataSubject Item { get; set; } = new();
+    [Parameter] public EventCallback<DataObjects.DataSubject> OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private bool IsNew => Item.DataSubjectId == default;
+    private bool _saving = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Helpers.DelayedFocus("edit-datasubject-ExternalId");
+        }
+    }
+
+    private async Task Save()
+    {
+        // Validation
+        if (string.IsNullOrWhiteSpace(Item.ExternalId))
+        {
+            Model.ErrorMessages(new List<string> { Helpers.MissingRequiredField("External ID") });
+            await Helpers.DelayedFocus("edit-datasubject-ExternalId");
+            return;
+        }
+
+        _saving = true;
+        Model.Message_Saving();
+        StateHasChanged();
+
+        try
+        {
+            await OnSave.InvokeAsync(Item);
+            Model.ClearMessages();
+            Model.Message_Saved();
+        }
+        finally
+        {
+            _saving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task Cancel()
+    {
+        if (!_saving)
+        {
+            await OnCancel.InvokeAsync();
+        }
+    }
+}

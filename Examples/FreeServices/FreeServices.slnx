@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="FreeServices.Installer/FreeServices.Installer.csproj" />
+  <Project Path="FreeServices.Service/FreeServices.Service.csproj" />
+  <Project Path="FreeServices.TestMe/FreeServices.TestMe.csproj" />
+</Solution>

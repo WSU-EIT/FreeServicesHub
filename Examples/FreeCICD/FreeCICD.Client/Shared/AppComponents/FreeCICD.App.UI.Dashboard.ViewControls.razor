@@ -1,0 +1,119 @@
+﻿@* Pipeline View Controls Component *@
+@* Provides view mode toggle (Card/Table), grouping toggle, sort dropdown, and expand/collapse controls *@
+
+<div class="pipeline-view-controls mb-3">
+    <div class="d-flex flex-wrap gap-3 align-items-center justify-content-between">
+        <div class="d-flex flex-wrap gap-3 align-items-center">
+            @* View Mode Toggle *@
+            <div class="btn-group" role="group" aria-label="View mode">
+                <button type="button"
+                        class="btn @(ViewMode == "card" ? "btn-primary" : "btn-outline-primary")"
+                        @onclick="SetCardView"
+                        title="Card View">
+                    <i class="fa fa-th-large me-1"></i>
+                    Cards
+                </button>
+                <button type="button"
+                        class="btn @(ViewMode == "table" ? "btn-primary" : "btn-outline-primary")"
+                        @onclick="SetTableView"
+                        title="Table View">
+                    <i class="fa fa-list me-1"></i>
+                    Table
+                </button>
+            </div>
+
+            @* Group By Toggle *@
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" role="switch" id="groupByFolderSwitch"
+                       checked="@GroupByFolder" @onchange="OnGroupByChanged" />
+                <label class="form-check-label" for="groupByFolderSwitch">
+                    <i class="fa fa-folder-o me-1"></i>
+                    Group by Folder
+                </label>
+            </div>
+
+            @* Sort Dropdown *@
+            <div class="d-flex align-items-center gap-2">
+                <label class="form-label mb-0 text-muted small">Sort:</label>
+                <select class="form-select form-select-sm" style="width: auto;" @bind="SortBy" @bind:after="OnSortChanged">
+                    <option value="name-asc">Name (A-Z)</option>
+                    <option value="name-desc">Name (Z-A)</option>
+                    <option value="lastrun-desc">Last Run (Newest)</option>
+                    <option value="lastrun-asc">Last Run (Oldest)</option>
+                    <option value="status-failed">Status (Failed First)</option>
+                    <option value="status-success">Status (Succeeded First)</option>
+                    <option value="branch-asc">Branch (A-Z)</option>
+                    <option value="branch-desc">Branch (Z-A)</option>
+                    <option value="repository-asc">Repository (A-Z)</option>
+                    <option value="repository-desc">Repository (Z-A)</option>
+                    <option value="duration-desc">Duration (Longest)</option>
+                    <option value="duration-asc">Duration (Shortest)</option>
+                    <option value="trigger-type">Trigger Type</option>
+                    <option value="trigger-manual">Trigger (Manual First)</option>
+                    <option value="trigger-automated">Trigger (Automated First)</option>
+                </select>
+            </div>
+        </div>
+
+        @* Expand/Collapse All (only when grouped) *@
+        @if (GroupByFolder) {
+            <div class="btn-group" role="group" aria-label="Expand/Collapse">
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="OnExpandAll" title="Expand All">
+                    <i class="fa fa-expand me-1"></i>
+                    Expand All
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="OnCollapseAll" title="Collapse All">
+                    <i class="fa fa-compress me-1"></i>
+                    Collapse All
+                </button>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string ViewMode { get; set; } = "card";
+    [Parameter] public EventCallback<string> ViewModeChanged { get; set; }
+
+    [Parameter] public bool GroupByFolder { get; set; } = true;
+    [Parameter] public EventCallback<bool> GroupByFolderChanged { get; set; }
+
+    [Parameter] public string SortBy { get; set; } = "lastrun-desc";
+    [Parameter] public EventCallback<string> SortByChanged { get; set; }
+
+    [Parameter] public EventCallback ExpandAllRequested { get; set; }
+    [Parameter] public EventCallback CollapseAllRequested { get; set; }
+
+    private async Task SetCardView()
+    {
+        ViewMode = "card";
+        await ViewModeChanged.InvokeAsync("card");
+    }
+
+    private async Task SetTableView()
+    {
+        ViewMode = "table";
+        await ViewModeChanged.InvokeAsync("table");
+    }
+
+    private async Task OnGroupByChanged(ChangeEventArgs e)
+    {
+        GroupByFolder = (bool)(e.Value ?? false);
+        await GroupByFolderChanged.InvokeAsync(GroupByFolder);
+    }
+
+    private async Task OnSortChanged()
+    {
+        await SortByChanged.InvokeAsync(SortBy);
+    }
+
+    private async Task OnExpandAll()
+    {
+        await ExpandAllRequested.InvokeAsync();
+    }
+
+    private async Task OnCollapseAll()
+    {
+        await CollapseAllRequested.InvokeAsync();
+    }
+}

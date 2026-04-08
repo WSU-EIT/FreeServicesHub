@@ -1,0 +1,182 @@
+﻿@* Pipeline Filter Bar Component *@
+@* Provides search, status/result/repo/trigger filters, and quick filter options *@
+
+<div class="pipeline-filter-bar mb-3">
+    <div class="row g-2 align-items-center">
+        @* Search Input *@
+        <div class="col-12 col-md-4 col-lg-3">
+            <div class="input-group">
+                <span class="input-group-text bg-white border-end-0">
+                    <i class="fa fa-search text-muted"></i>
+                </span>
+                <input type="text"
+                       class="form-control border-start-0"
+                       placeholder="Search pipelines..."
+                       @bind="SearchTerm"
+                       @bind:event="oninput"
+                       @onkeyup="OnSearchChanged" />
+                @if (!string.IsNullOrWhiteSpace(SearchTerm)) {
+                    <button class="btn btn-outline-secondary border-start-0" type="button" @onclick="ClearSearch">
+                        <i class="fa fa-times"></i>
+                    </button>
+                }
+            </div>
+        </div>
+
+        @* Status Filter *@
+        <div class="col-6 col-md-2">
+            <select class="form-select" @bind="SelectedStatus" @bind:after="OnFiltersChanged">
+                <option value="">All Statuses</option>
+                <option value="completed">Completed</option>
+                <option value="inprogress">In Progress</option>
+                <option value="queued">Queued</option>
+                <option value="notstarted">Not Started</option>
+            </select>
+        </div>
+
+        @* Result Filter *@
+        <div class="col-6 col-md-2">
+            <select class="form-select" @bind="SelectedResult" @bind:after="OnFiltersChanged">
+                <option value="">All Results</option>
+                <option value="succeeded">Succeeded</option>
+                <option value="failed">Failed</option>
+                <option value="partiallysucceeded">Partial</option>
+                <option value="canceled">Canceled</option>
+            </select>
+        </div>
+
+        @* Trigger Filter *@
+        <div class="col-6 col-md-2">
+            <select class="form-select" @bind="SelectedTrigger" @bind:after="OnFiltersChanged">
+                <option value="">All Triggers</option>
+                <option value="manual">👤 Manual</option>
+                <option value="codepush">⚡ Code Push (CI)</option>
+                <option value="scheduled">⏰ Scheduled</option>
+                <option value="pullrequest">🔀 Pull Request</option>
+                <option value="pipelinecompletion">🔗 Pipeline</option>
+                <option value="other">Other</option>
+            </select>
+        </div>
+
+        @* Repository Filter *@
+        @if (Repositories?.Any() == true) {
+            <div class="col-6 col-md-2">
+                <select class="form-select" @bind="SelectedRepository" @bind:after="OnFiltersChanged">
+                    <option value="">All Repos</option>
+                    @foreach (var repo in Repositories) {
+                        <option value="@repo">@repo</option>
+                    }
+                </select>
+            </div>
+        }
+
+        @* Failed Only Checkbox *@
+        <div class="col-auto">
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="failedOnlyCheck"
+                       @bind="FailedOnly" @bind:after="OnFiltersChanged" />
+                <label class="form-check-label text-nowrap" for="failedOnlyCheck">
+                    <i class="fa fa-times-circle text-danger me-1"></i>
+                    Failed Only
+                </label>
+            </div>
+        </div>
+
+        @* Clear Filters Button *@
+        @if (HasActiveFilters) {
+            <div class="col-auto">
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ClearAllFilters">
+                    <i class="fa fa-filter me-1"></i>
+                    Clear Filters
+                    <span class="badge bg-primary ms-1">@ActiveFilterCount</span>
+                </button>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string SearchTerm { get; set; } = "";
+    [Parameter] public EventCallback<string> SearchTermChanged { get; set; }
+
+    [Parameter] public string SelectedStatus { get; set; } = "";
+    [Parameter] public EventCallback<string> SelectedStatusChanged { get; set; }
+
+    [Parameter] public string SelectedResult { get; set; } = "";
+    [Parameter] public EventCallback<string> SelectedResultChanged { get; set; }
+
+    [Parameter] public string SelectedRepository { get; set; } = "";
+    [Parameter] public EventCallback<string> SelectedRepositoryChanged { get; set; }
+
+    [Parameter] public string SelectedTrigger { get; set; } = "";
+    [Parameter] public EventCallback<string> SelectedTriggerChanged { get; set; }
+
+    [Parameter] public bool FailedOnly { get; set; }
+    [Parameter] public EventCallback<bool> FailedOnlyChanged { get; set; }
+
+    [Parameter] public List<string>? Repositories { get; set; }
+
+    [Parameter] public EventCallback OnFiltersUpdated { get; set; }
+
+    private bool HasActiveFilters =>
+        !string.IsNullOrWhiteSpace(SearchTerm) ||
+        !string.IsNullOrWhiteSpace(SelectedStatus) ||
+        !string.IsNullOrWhiteSpace(SelectedResult) ||
+        !string.IsNullOrWhiteSpace(SelectedRepository) ||
+        !string.IsNullOrWhiteSpace(SelectedTrigger) ||
+        FailedOnly;
+
+    private int ActiveFilterCount {
+        get {
+            int count = 0;
+            if (!string.IsNullOrWhiteSpace(SearchTerm)) count++;
+            if (!string.IsNullOrWhiteSpace(SelectedStatus)) count++;
+            if (!string.IsNullOrWhiteSpace(SelectedResult)) count++;
+            if (!string.IsNullOrWhiteSpace(SelectedRepository)) count++;
+            if (!string.IsNullOrWhiteSpace(SelectedTrigger)) count++;
+            if (FailedOnly) count++;
+            return count;
+        }
+    }
+
+    private async Task OnSearchChanged()
+    {
+        await SearchTermChanged.InvokeAsync(SearchTerm);
+        await OnFiltersUpdated.InvokeAsync();
+    }
+
+    private async Task ClearSearch()
+    {
+        SearchTerm = "";
+        await SearchTermChanged.InvokeAsync(SearchTerm);
+        await OnFiltersUpdated.InvokeAsync();
+    }
+
+    private async Task OnFiltersChanged()
+    {
+        await SelectedStatusChanged.InvokeAsync(SelectedStatus);
+        await SelectedResultChanged.InvokeAsync(SelectedResult);
+        await SelectedRepositoryChanged.InvokeAsync(SelectedRepository);
+        await SelectedTriggerChanged.InvokeAsync(SelectedTrigger);
+        await FailedOnlyChanged.InvokeAsync(FailedOnly);
+        await OnFiltersUpdated.InvokeAsync();
+    }
+
+    private async Task ClearAllFilters()
+    {
+        SearchTerm = "";
+        SelectedStatus = "";
+        SelectedResult = "";
+        SelectedRepository = "";
+        SelectedTrigger = "";
+        FailedOnly = false;
+
+        await SearchTermChanged.InvokeAsync(SearchTerm);
+        await SelectedStatusChanged.InvokeAsync(SelectedStatus);
+        await SelectedResultChanged.InvokeAsync(SelectedResult);
+        await SelectedRepositoryChanged.InvokeAsync(SelectedRepository);
+        await SelectedTriggerChanged.InvokeAsync(SelectedTrigger);
+        await FailedOnlyChanged.InvokeAsync(FailedOnly);
+        await OnFiltersUpdated.InvokeAsync();
+    }
+}

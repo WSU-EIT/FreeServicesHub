@@ -1,0 +1,74 @@
+﻿@* WizardStepPreview.razor - YAML preview and diff step *@
+
+@if (IsPreviewLoading)
+{
+    <div class="alert alert-info d-flex align-items-center" role="alert">
+        <div class="spinner-border spinner-border-sm me-2" role="status" aria-label="Generating YAML preview">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <div>
+            Generating YAML preview… this can take a little while. Please be patient.
+        </div>
+    </div>
+}
+
+<div class="mt-3">
+    @if (IsPreviewLoading)
+    {
+        <h5>YAML Preview</h5>
+        <div class="d-flex flex-column justify-content-center align-items-center my-4">
+            <div class="spinner-border text-primary" role="status" aria-label="Loading YAML Preview">
+                <span class="visually-hidden">Loading YAML Preview…</span>
+            </div>
+            <div class="mt-3">Preparing YAML preview…</div>
+        </div>
+    }
+    else if (string.IsNullOrWhiteSpace(NewYamlContent))
+    {
+        <h5>YAML Preview</h5>
+        <div class="alert alert-warning">
+            <i class="fa fa-exclamation-triangle me-2"></i>
+            No YAML content was generated. Please go back and verify your settings.
+        </div>
+    }
+    else if (string.IsNullOrWhiteSpace(ExistingYamlContent))
+    {
+        @* New pipeline - no existing file to diff against, just show the new content *@
+        <h5>
+            <i class="fa fa-file-code-o me-2 text-success"></i>
+            New YAML File Preview
+        </h5>
+        <div class="alert alert-success mb-3">
+            <i class="fa fa-info-circle me-2"></i>
+            This is a new pipeline. The following YAML file will be created.
+        </div>
+        <MonacoEditor Id="yaml-new-editor"
+                      Language="@MonacoEditor.MonacoLanguage.yaml"
+                      ReadOnly="true"
+                      @bind-Value="NewYamlContent" />
+    }
+    else
+    {
+        @* Existing pipeline - show diff view *@
+        <h5>
+            <i class="fa fa-files-o me-2 text-info"></i>
+            YAML Diff (Existing vs New)
+        </h5>
+        <div class="alert alert-info mb-3">
+            <i class="fa fa-info-circle me-2"></i>
+            Review the changes below. Left side shows the existing file, right side shows the new content.
+        </div>
+        <MonacoEditor Id="yaml-diff-editor"
+                      Language="@MonacoEditor.MonacoLanguage.yaml"
+                      ReadOnly="true"
+                      ValueToDiff="@ExistingYamlContent"
+                      @bind-Value="NewYamlContent" />
+    }
+</div>
+
+@code {
+    [Parameter] public bool IsPreviewLoading { get; set; }
+    [Parameter] public string ExistingYamlContent { get; set; } = "";
+    [Parameter] public string NewYamlContent { get; set; } = "";
+    [Parameter] public EventCallback<string> NewYamlContentChanged { get; set; }
+}

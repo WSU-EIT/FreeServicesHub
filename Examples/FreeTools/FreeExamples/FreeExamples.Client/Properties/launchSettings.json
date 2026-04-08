@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "FreeExamples.Client": {
+      "commandName": "Project",
+      "nativeDebugging": false
+    }
+  }
+}

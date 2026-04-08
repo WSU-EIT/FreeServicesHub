@@ -1,0 +1,48 @@
+﻿@* WizardStepPAT.razor - PAT and Organization Name input step *@
+
+<div class="mb-3">
+    <label for="patInput" class="form-label">Personal Access Token (PAT):</label>
+    <input type="password" 
+           disabled="@IsDisabled" 
+           id="patInput" 
+           class="form-control" 
+           value="@DevOpsPAT"
+           @oninput="HandlePATInput"
+           placeholder="Enter your Azure DevOps PAT" />
+</div>
+<div class="mb-3">
+    <label for="orgNameInput" class="form-label">Organization Name:</label>
+    <input type="text" 
+           disabled="@IsDisabled" 
+           id="orgNameInput" 
+           class="form-control" 
+           value="@OrgName"
+           @oninput="HandleOrgNameInput"
+           placeholder="Enter your Organization Name" />
+</div>
+<div class="mb-3">
+    <p>Or <a href="@LoginUrl">Login</a> to use the PAT and Org Information stored in the appsettings.json file.</p>
+</div>
+
+@code {
+    [Parameter] public string DevOpsPAT { get; set; } = "";
+    [Parameter] public EventCallback<string> OnDevOpsPATChanged { get; set; }
+    
+    [Parameter] public string OrgName { get; set; } = "";
+    [Parameter] public EventCallback<string> OnOrgNameChanged { get; set; }
+    
+    [Parameter] public bool IsDisabled { get; set; }
+    [Parameter] public string LoginUrl { get; set; } = "";
+
+    private async Task HandlePATInput(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString() ?? "";
+        await OnDevOpsPATChanged.InvokeAsync(value);
+    }
+
+    private async Task HandleOrgNameInput(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString() ?? "";
+        await OnOrgNameChanged.InvokeAsync(value);
+    }
+}

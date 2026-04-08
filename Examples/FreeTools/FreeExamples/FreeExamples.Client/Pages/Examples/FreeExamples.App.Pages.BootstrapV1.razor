@@ -1,0 +1,101 @@
+@page "/Examples/BootstrapV1"
+@page "/{TenantCode}/Examples/BootstrapV1"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V1: Email Template Builder — Bootstrap components in an email template context *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) { <h1 class="page-title"><i class="fa-solid fa-envelope-open-text me-1"></i> Email Builder</h1><LoadingMessage /> } else {
+        <div class="@Model.StickyMenuClass"><h1 class="page-title"><i class="fa-solid fa-envelope-open-text me-1"></i> V1: Email Template Builder <StickyMenuIcon /></h1></div>
+
+        <ExampleNav />
+        <AboutSection Title="Bootstrap in Context: Email Template Builder" Subtitle="Build a notification email using Bootstrap components" IconClass="fa-solid fa-envelope-open-text">
+            <p class="small text-muted mb-0">Same Bootstrap components (alerts, badges, cards, buttons) used to compose a notification email template. Toggle components on/off to see how they compose together.</p>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Toggle Composition Pattern"
+                     Description="Checkboxes on the left toggle sections in the preview on the right. Each Blazor bind directive connects to a bool that wraps a section in an if block. This compose-on-the-fly pattern is used in Helpdesk email template settings where admins toggle header, footer, and signature blocks."
+                     Code="@_codeToggle" />
+            <InfoTip Title="Live Preview Panel"
+                     Description="The right column (col-md-8) shows a live preview that updates instantly as you type or toggle. The bg-light card-body simulates an email client. The centered max-width:600px div mimics a real email width. This is the same pattern used in email template editing."
+                     Code="@_codePreview" />
+            <InfoTip Title="Alert Type Switching"
+                     Description="The alert class dynamically changes color based on the _alertType variable. Selecting danger turns the banner red, success turns it green, etc. This demonstrates dynamic Bootstrap class binding in Blazor — the same technique used throughout production apps for status-dependent styling."
+                     Code="@_codeAlertSwitch" />
+        </div>
+
+        <div class="row">
+            <div class="col-md-4 mb-3">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-white py-2"><span class="small fw-semibold"><i class="fa-solid fa-sliders me-1"></i> Template Options</span></div>
+                    <div class="card-body">
+                        <div class="form-check mb-2"><input type="checkbox" class="form-check-input" @bind="_showLogo" /><label class="form-check-label small">Header with Logo</label></div>
+                        <div class="form-check mb-2"><input type="checkbox" class="form-check-input" @bind="_showAlert" /><label class="form-check-label small">Alert Banner</label></div>
+                        <div class="form-check mb-2"><input type="checkbox" class="form-check-input" @bind="_showTable" /><label class="form-check-label small">Data Table</label></div>
+                        <div class="form-check mb-2"><input type="checkbox" class="form-check-input" @bind="_showButton" /><label class="form-check-label small">CTA Button</label></div>
+                        <div class="form-check mb-2"><input type="checkbox" class="form-check-input" @bind="_showFooter" /><label class="form-check-label small">Footer</label></div>
+                        <hr />
+                        <label class="form-label small">Alert Type</label>
+                        <select class="form-select form-select-sm" @bind="_alertType"><option>info</option><option>success</option><option>warning</option><option>danger</option></select>
+                        <label class="form-label small mt-2">Subject</label>
+                        <input type="text" class="form-control form-control-sm" @bind="_subject" />
+                        <label class="form-label small mt-2">Body Text</label>
+                        <textarea class="form-control form-control-sm" rows="3" @bind="_bodyText"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-8 mb-3">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-white py-2"><span class="small fw-semibold"><i class="fa-solid fa-eye me-1"></i> Preview</span></div>
+                    <div class="card-body bg-light p-4">
+                        <div class="bg-white rounded shadow-sm mx-auto" style="max-width:600px;">
+                            @if (_showLogo) {
+                                <div class="bg-primary text-white text-center py-3 rounded-top">
+                                    <i class="fa-solid fa-paper-plane fa-2x mb-1"></i>
+                                    <div class="fw-semibold">FreeExamples Notifications</div>
+                                </div>
+                            }
+                            <div class="p-4">
+                                @if (_showAlert) { <div class="alert alert-@_alertType small"><i class="fa-solid fa-info-circle me-1"></i> @_subject</div> }
+                                <p class="small">@(string.IsNullOrWhiteSpace(_bodyText) ? "Your email body text will appear here." : _bodyText)</p>
+                                @if (_showTable) {
+                                    <table class="table table-sm table-bordered small mb-3">
+                                        <thead class="table-light"><tr><th>Item</th><th>Status</th><th class="text-end">Amount</th></tr></thead>
+                                        <tbody>
+                                            <tr><td>Widget Alpha</td><td><span class="badge bg-success">Active</span></td><td class="text-end">$1,200</td></tr>
+                                            <tr><td>Beta Module</td><td><span class="badge bg-warning text-dark">Draft</span></td><td class="text-end">$800</td></tr>
+                                        </tbody>
+                                    </table>
+                                }
+                                @if (_showButton) { <div class="text-center"><a href="#" class="btn btn-primary btn-sm">View Details <i class="fa-solid fa-arrow-right ms-1"></i></a></div> }
+                            </div>
+                            @if (_showFooter) {
+                                <div class="border-top px-4 py-3 bg-light rounded-bottom text-center">
+                                    <div class="small text-muted">You received this because you're subscribed to FreeExamples alerts.</div>
+                                    <a href="#" class="small text-muted">Unsubscribe</a> · <a href="#" class="small text-muted">Preferences</a>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "bootstrapv1";
+    private bool _showLogo = true, _showAlert = true, _showTable = true, _showButton = true, _showFooter = true;
+    private string _alertType = "info", _subject = "Your weekly report is ready", _bodyText = "Hi there! Your weekly activity report has been generated. Here's a summary of recent items:";
+    private string _codeToggle = "<input type=\"checkbox\" @bind=\"_showLogo\" />\n@if (_showLogo) {\n  <div class=\"bg-primary text-white\">Logo</div>\n}";
+    private string _codePreview = "<div class=\"bg-light p-4\">\n  <div class=\"bg-white rounded mx-auto\"\n    style=\"max-width:600px\">\n    <!-- live preview sections -->\n  </div>\n</div>";
+    private string _codeAlertSwitch = "<select @bind=\"_alertType\">\n  <option>info</option><option>danger</option>\n</select>\n<div class=\"alert alert-@_alertType\">Message</div>";
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) Model.TenantCodeFromUrl = TenantCode; if (Model.Loaded && Model.LoggedIn && !_loadedData) { _loadedData = true; _loading = false; StateHasChanged(); } }
+}

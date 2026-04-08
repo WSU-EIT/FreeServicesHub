@@ -1,0 +1,397 @@
+@page "/Examples/PipelineTracker"
+@page "/{TenantCode}/Examples/PipelineTracker"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-timeline me-1"></i> Pipeline Tracker</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title">
+                <i class="fa-solid fa-timeline me-1"></i> Pipeline / Status Tracker Demo
+                <StickyMenuIcon />
+            </h1>
+        </div>
+
+        <ExampleNav />
+
+        <AboutSection Title="About Pipeline Trackers" Subtitle="Visualize where something is in a process — the Dominos / FedEx / Azure DevOps pattern" IconClass="fa-solid fa-timeline">
+            <div class="row">
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-question-circle me-1"></i>What Is This Page?</h6>
+                    <p class="small text-muted mb-0">
+                        A <strong>pipeline tracker</strong> shows where something is in a multi-step process.
+                        Dominos shows your pizza going from "Order Placed" to "Baking" to "Delivery". FedEx shows
+                        your package moving between cities. Azure DevOps shows Build → Test → Deploy. This is NOT
+                        a wizard (which is an interactive form) — it's a <strong>read-only status visualization</strong>.
+                    </p>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-lightbulb me-1"></i>What You'll Learn</h6>
+                    <ul class="small text-muted mb-0 ps-3">
+                        <li><strong>Horizontal stage layout</strong> — connected steps with icons and labels</li>
+                        <li><strong>Stage states</strong> — completed (green), current (blue pulse), upcoming (grey)</li>
+                        <li><strong>Error state</strong> — a stage that failed mid-process (red)</li>
+                        <li><strong>Stage details</strong> — click a stage to see who did it and when</li>
+                        <li><strong>Multiple pipeline types</strong> — different processes with different stages</li>
+                    </ul>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-road me-1"></i>How Is It Different from the Wizard?</h6>
+                    <p class="small text-muted mb-0">
+                        The Wizard Demo is an <strong>interactive form stepper</strong> — you fill in fields and click Next.
+                        This is a <strong>status display</strong> — it shows where something already is in a process.
+                        Users don't fill in forms here; they read the status and optionally advance it with a button.
+                        Think "tracking page" not "setup assistant".
+                    </p>
+                </div>
+            </div>
+        </AboutSection>
+
+        @* ── Pipeline Selector ── *@
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+            <label class="form-label mb-0 small text-muted">Pipeline:</label>
+            <select class="form-select form-select-sm" style="width:auto;" @bind="_selectedPipeline" @bind:after="LoadPipeline">
+                <option value="order">🍕 Order Tracking</option>
+                <option value="ticket">🎫 Support Ticket</option>
+                <option value="deploy">🚀 Deployment Pipeline</option>
+                <option value="approval">📋 Approval Chain</option>
+            </select>
+            <InfoTip Title="Pipeline Types"
+                     Description="Different processes have different stages. An order goes from Placed → Preparing → Shipping → Delivered. A support ticket goes from New → Assigned → In Progress → Resolved → Closed. The stage names and icons change, but the visualization pattern is the same."
+                     Code="@_codePipelineTypes" />
+        </div>
+
+        @* ── Horizontal Pipeline ── *@
+        <div class="card shadow-sm border-0 mb-3">
+            <div class="card-body">
+                <div class="d-flex align-items-center flex-wrap justify-content-between position-relative py-3">
+                    @for (int i = 0; i < _stages.Count; i++) {
+                        int idx = i;
+                        var stage = _stages[i];
+                        string state = GetStageState(idx);
+
+                        @* Connector line (before each stage except first) *@
+                        @if (i > 0) {
+                            <div class="flex-grow-1 mx-1" style="height:3px; min-width:20px;">
+                                <div class="h-100 rounded @(idx <= _currentStageIndex ? "bg-success" : "bg-secondary bg-opacity-25")"></div>
+                            </div>
+                        }
+
+                        @* Stage circle + label *@
+                        <div class="text-center" role="button" @onclick="@(() => SelectStage(idx))">
+                            @* Circle *@
+                            <div class="rounded-circle d-flex align-items-center justify-content-center mx-auto mb-1 @GetCircleClasses(state)"
+                                 style="width:48px; height:48px; font-size:1.1rem; cursor:pointer; transition: all 0.3s;"
+                                 title="@stage.Title">
+                                @if (state == "completed") {
+                                    <i class="fa-solid fa-check"></i>
+                                } else if (state == "error") {
+                                    <i class="fa-solid fa-times"></i>
+                                } else {
+                                    <i class="@stage.Icon"></i>
+                                }
+                            </div>
+                            @* Label *@
+                            <div class="small @(state == "current" ? "fw-bold text-primary" : state == "error" ? "fw-bold text-danger" : state == "completed" ? "text-success" : "text-muted")">
+                                @stage.Title
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        @* ── Stage Detail Panel ── *@
+        @if (_selectedStageIndex >= 0 && _selectedStageIndex < _stages.Count) {
+            var detail = _stages[_selectedStageIndex];
+            string detailState = GetStageState(_selectedStageIndex);
+
+            <div class="card shadow-sm border-0 mb-3 @(detailState == "error" ? "border-danger border" : "")">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold">
+                        <i class="@detail.Icon me-1"></i> @detail.Title
+                        <span class="badge @GetStateBadge(detailState) ms-1">@detailState</span>
+                    </span>
+                    <span class="small text-muted">Stage @(_selectedStageIndex + 1) of @_stages.Count</span>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-2">
+                            <strong class="small text-muted d-block">Description</strong>
+                            <span class="small">@detail.Description</span>
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <strong class="small text-muted d-block">Completed By</strong>
+                            <span class="small">@(detailState == "upcoming" ? "—" : detail.CompletedBy)</span>
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <strong class="small text-muted d-block">Timestamp</strong>
+                            <span class="small">@(detail.CompletedAt.HasValue ? detail.CompletedAt.Value.ToString("MMM d, h:mm tt") : "—")</span>
+                        </div>
+                    </div>
+                    @if (detailState == "error" && !string.IsNullOrWhiteSpace(detail.ErrorMessage)) {
+                        <div class="alert alert-danger small mt-2 mb-0">
+                            <i class="fa-solid fa-circle-exclamation me-1"></i> @detail.ErrorMessage
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        @* ── Controls ── *@
+        <div class="d-flex flex-wrap gap-2 mb-3">
+            <button class="btn btn-success btn-sm" @onclick="AdvanceStage" disabled="@(!CanAdvance())">
+                <i class="fa-solid fa-forward me-1"></i> Advance to Next Stage
+            </button>
+            <button class="btn btn-danger btn-sm" @onclick="FailCurrentStage" disabled="@(!CanAdvance())">
+                <i class="fa-solid fa-circle-exclamation me-1"></i> Simulate Error
+            </button>
+            <button class="btn btn-outline-secondary btn-sm" @onclick="ResetPipeline">
+                <i class="fa-solid fa-arrows-rotate me-1"></i> Reset
+            </button>
+            <InfoTip Title="Advance / Error"
+                     Description="In a real app, stages advance automatically when a server-side event completes (e.g., a build finishes, a shipment arrives). Here you can manually advance or simulate a failure. The error state turns the stage red and shows an error message in the detail panel."
+                     Code="@_codeAdvance" />
+        </div>
+
+        @* ── Vertical Timeline (alternate view) ── *@
+        <div class="card shadow-sm border-0 mb-3">
+            <div class="card-header bg-white py-2">
+                <span class="small fw-semibold"><i class="fa-solid fa-list-timeline me-1"></i> Timeline View
+                    <InfoTip Title="Vertical Timeline"
+                             Description="This is the same data as the horizontal pipeline above, but displayed as a vertical timeline. Mobile-friendly since it doesn't need horizontal space. Each event shows the stage name, timestamp, and status. This is the FedEx / UPS tracking page layout."
+                             Code="@_codeTimeline" />
+                </span>
+            </div>
+            <div class="card-body py-2">
+                @for (int i = 0; i < _stages.Count; i++) {
+                    int idx = i;
+                    var stage = _stages[i];
+                    string state = GetStageState(idx);
+                    bool isLast = i == _stages.Count - 1;
+
+                    <div class="d-flex @(!isLast ? "mb-3" : "")">
+                        @* Timeline indicator *@
+                        <div class="d-flex flex-column align-items-center me-3">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center @GetCircleClassesSm(state)"
+                                 style="width:24px; height:24px; font-size:0.6rem;">
+                                @if (state == "completed") {
+                                    <i class="fa-solid fa-check"></i>
+                                } else if (state == "error") {
+                                    <i class="fa-solid fa-times"></i>
+                                } else if (state == "current") {
+                                    <i class="fa-solid fa-circle fa-xs"></i>
+                                } else {
+                                    <i class="fa-solid fa-circle fa-xs text-muted"></i>
+                                }
+                            </div>
+                            @if (!isLast) {
+                                <div class="flex-grow-1" style="width:2px; min-height:20px;">
+                                    <div class="h-100 @(idx < _currentStageIndex ? "bg-success" : "bg-secondary bg-opacity-25")"></div>
+                                </div>
+                            }
+                        </div>
+                        @* Content *@
+                        <div class="flex-grow-1 pb-1">
+                            <div class="small fw-semibold @(state == "current" ? "text-primary" : state == "error" ? "text-danger" : state == "completed" ? "" : "text-muted")">
+                                @stage.Title
+                            </div>
+                            <div class="small text-muted">
+                                @(stage.CompletedAt.HasValue ? stage.CompletedAt.Value.ToString("MMM d, h:mm tt") : "Pending")
+                                @if (!string.IsNullOrWhiteSpace(stage.CompletedBy) && state != "upcoming") {
+                                    <span> — @stage.CompletedBy</span>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+
+    private bool _loading = true;
+    private bool _loadedData = false;
+    private string _pageName = "pipelinetracker";
+
+    // InfoTip snippets
+    private string _codePipelineTypes = "var stages = pipeline switch {\n    \"order\" => new[] { \"Placed\", \"Preparing\", \"Shipping\", \"Delivered\" },\n    \"ticket\" => new[] { \"New\", \"Assigned\", \"In Progress\", \"Resolved\", \"Closed\" },\n    ...";
+    private string _codeAdvance = "_currentStageIndex++;\n_stages[_currentStageIndex].CompletedAt = DateTime.Now;\n_stages[_currentStageIndex].CompletedBy = \"System\";";
+    private string _codeTimeline = "<div class=\"d-flex mb-3\">\n    <div class=\"rounded-circle ...\">✓</div>\n    <div class=\"flex-grow-1\">Stage Name</div>\n</div>";
+
+    // State
+    private string _selectedPipeline = "order";
+    private List<PipelineStage> _stages = new();
+    private int _currentStageIndex = 0;
+    private int _selectedStageIndex = 0;
+    private int _errorStageIndex = -1;
+
+    // ── Lifecycle ──
+
+    public void Dispose()
+    {
+        Model.OnChange -= OnDataModelUpdated;
+        Model.Subscribers_OnChange.Remove(_pageName);
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.View = _pageName;
+        Model.OnChange += OnDataModelUpdated;
+        if (!Model.Subscribers_OnChange.Contains(_pageName)) { Model.Subscribers_OnChange.Add(_pageName); }
+        LoadPipeline();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnDataModelUpdated()
+    {
+        if (Model.View == _pageName) StateHasChanged();
+    }
+
+    // ── Pipeline Data ──
+
+    private void LoadPipeline()
+    {
+        _currentStageIndex = 1;
+        _errorStageIndex = -1;
+        _selectedStageIndex = 0;
+
+        _stages = _selectedPipeline switch {
+            "order" => new List<PipelineStage> {
+                new("Order Placed", "fa-solid fa-receipt", "Your order has been received and confirmed.", "Customer", DateTime.Now.AddMinutes(-45)),
+                new("Preparing", "fa-solid fa-utensils", "Kitchen is preparing your order.", "Kitchen Staff", DateTime.Now.AddMinutes(-30)),
+                new("Quality Check", "fa-solid fa-clipboard-check", "Order is being inspected for accuracy.", "", null),
+                new("Out for Delivery", "fa-solid fa-truck", "Your order is on its way.", "", null),
+                new("Delivered", "fa-solid fa-house-circle-check", "Order has been delivered successfully.", "", null),
+            },
+            "ticket" => new List<PipelineStage> {
+                new("New", "fa-solid fa-plus", "Ticket created and awaiting triage.", "System", DateTime.Now.AddHours(-2)),
+                new("Assigned", "fa-solid fa-user-check", "Ticket assigned to a support agent.", "Auto-Router", DateTime.Now.AddHours(-1)),
+                new("In Progress", "fa-solid fa-spinner", "Agent is actively working on the issue.", "", null),
+                new("Waiting on Customer", "fa-solid fa-clock", "Awaiting response from the customer.", "", null),
+                new("Resolved", "fa-solid fa-check-double", "Issue has been resolved.", "", null),
+                new("Closed", "fa-solid fa-lock", "Ticket is closed. No further action needed.", "", null),
+            },
+            "deploy" => new List<PipelineStage> {
+                new("Build", "fa-solid fa-hammer", "Compiling source code and running build scripts.", "CI Agent", DateTime.Now.AddMinutes(-15)),
+                new("Unit Tests", "fa-solid fa-vial", "Running automated unit test suite.", "CI Agent", DateTime.Now.AddMinutes(-10)),
+                new("Integration Tests", "fa-solid fa-network-wired", "Testing API integrations and database connections.", "", null),
+                new("Staging Deploy", "fa-solid fa-server", "Deploying to staging environment for review.", "", null),
+                new("Approval", "fa-solid fa-shield-check", "Awaiting manual approval from team lead.", "", null),
+                new("Production Deploy", "fa-solid fa-rocket", "Deploying to production environment.", "", null),
+            },
+            "approval" => new List<PipelineStage> {
+                new("Submitted", "fa-solid fa-paper-plane", "Request has been submitted for approval.", "Requester", DateTime.Now.AddDays(-1)),
+                new("Manager Review", "fa-solid fa-user-tie", "Direct manager is reviewing the request.", "Jane Smith", DateTime.Now.AddHours(-4)),
+                new("Finance Review", "fa-solid fa-building-columns", "Finance department review for budget approval.", "", null),
+                new("VP Approval", "fa-solid fa-stamp", "Vice President final sign-off required.", "", null),
+                new("Completed", "fa-solid fa-circle-check", "Request has been fully approved.", "", null),
+            },
+            _ => new(),
+        };
+    }
+
+    // ── Actions ──
+
+    private void AdvanceStage()
+    {
+        if (!CanAdvance()) return;
+
+        _currentStageIndex++;
+        _stages[_currentStageIndex].CompletedAt = DateTime.Now;
+        _stages[_currentStageIndex].CompletedBy = (Model.User.FirstName + " " + Model.User.LastName).Trim();
+        _selectedStageIndex = _currentStageIndex;
+    }
+
+    private void FailCurrentStage()
+    {
+        if (!CanAdvance()) return;
+
+        _currentStageIndex++;
+        _stages[_currentStageIndex].CompletedAt = DateTime.Now;
+        _stages[_currentStageIndex].CompletedBy = "System";
+        _stages[_currentStageIndex].ErrorMessage = "Process failed: Unexpected error occurred at this stage. Check logs for details.";
+        _errorStageIndex = _currentStageIndex;
+        _selectedStageIndex = _currentStageIndex;
+    }
+
+    private void ResetPipeline()
+    {
+        LoadPipeline();
+    }
+
+    private bool CanAdvance() => _currentStageIndex < _stages.Count - 1 && _errorStageIndex < 0;
+
+    private void SelectStage(int idx)
+    {
+        _selectedStageIndex = idx;
+    }
+
+    // ── Helpers ──
+
+    private string GetStageState(int idx)
+    {
+        if (idx == _errorStageIndex) return "error";
+        if (idx < _currentStageIndex) return "completed";
+        if (idx == _currentStageIndex) return "current";
+        return "upcoming";
+    }
+
+    private string GetCircleClasses(string state) => state switch {
+        "completed" => "bg-success text-white",
+        "current" => "bg-primary text-white shadow",
+        "error" => "bg-danger text-white",
+        _ => "bg-light text-muted border",
+    };
+
+    private string GetCircleClassesSm(string state) => state switch {
+        "completed" => "bg-success text-white",
+        "current" => "bg-primary text-white",
+        "error" => "bg-danger text-white",
+        _ => "bg-light text-muted border",
+    };
+
+    private string GetStateBadge(string state) => state switch {
+        "completed" => "bg-success",
+        "current" => "bg-primary",
+        "error" => "bg-danger",
+        _ => "bg-secondary",
+    };
+
+    // ── Inner Types ──
+
+    private class PipelineStage
+    {
+        public string Title { get; set; }
+        public string Icon { get; set; }
+        public string Description { get; set; }
+        public string CompletedBy { get; set; }
+        public DateTime? CompletedAt { get; set; }
+        public string? ErrorMessage { get; set; }
+
+        public PipelineStage(string title, string icon, string desc, string by, DateTime? at)
+        {
+            Title = title;
+            Icon = icon;
+            Description = desc;
+            CompletedBy = by;
+            CompletedAt = at;
+        }
+    }
+}

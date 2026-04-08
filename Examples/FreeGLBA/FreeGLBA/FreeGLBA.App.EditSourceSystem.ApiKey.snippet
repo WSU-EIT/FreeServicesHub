@@ -1,0 +1,71 @@
+﻿@* API Key Generation Section - Add to EditSourceSystem.razor *@
+
+@if (!_isNew) {
+    <div class="card mb-3">
+        <div class="card-header">
+            <h6 class="mb-0"><i class="fa-solid fa-key me-2"></i>API Key</h6>
+        </div>
+        <div class="card-body">
+            @if (string.IsNullOrEmpty(_newApiKey)) {
+                <p class="text-muted mb-2">
+                    <i class="fa-solid fa-circle-info me-1"></i>
+                    API key is stored securely (hashed). Generate a new key if needed.
+                </p>
+                <button type="button" class="btn btn-warning" @onclick="GenerateNewApiKey">
+                    <i class="fa-solid fa-rotate me-1"></i>Generate New API Key
+                </button>
+                <small class="text-danger d-block mt-2">
+                    Warning: This will invalidate the existing key!
+                </small>
+            } else {
+                <div class="alert alert-success">
+                    <h6 class="alert-heading"><i class="fa-solid fa-check-circle me-1"></i>New API Key Generated</h6>
+                    <p class="mb-2">Copy this key now. <strong>It will not be shown again!</strong></p>
+                    <div class="input-group">
+                        <input type="text" class="form-control font-monospace" value="@_newApiKey" readonly />
+                        <button class="btn btn-outline-secondary" type="button" @onclick="CopyApiKey">
+                            <i class="fa-solid fa-copy"></i>
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private string _newApiKey = "";
+
+    private async Task GenerateNewApiKey()
+    {
+        try
+        {
+            var result = await Http.PostAsJsonAsync($"api/api/glba/sources/{_item.SourceSystemId}/generate-key", new {});
+            if (result.IsSuccessStatusCode)
+            {
+                var response = await result.Content.ReadFromJsonAsync<GenerateKeyResponse>();
+                _newApiKey = response?.ApiKey ?? "";
+                StateHasChanged();
+            }
+            else
+            {
+                Model.ErrorMessage("Failed to generate API key");
+            }
+        }
+        catch (Exception ex)
+        {
+            Model.ErrorMessage($"Error: {ex.Message}");
+        }
+    }
+
+    private async Task CopyApiKey()
+    {
+        await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", _newApiKey);
+        Model.SuccessMessage("API key copied to clipboard");
+    }
+
+    private class GenerateKeyResponse
+    {
+        public string ApiKey { get; set; } = "";
+    }
+}

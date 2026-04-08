@@ -1,0 +1,157 @@
+@page "/Examples/SignatureV3"
+@page "/{TenantCode}/Examples/SignatureV3"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V3: File Upload + Signature — upload a doc and sign to verify you agree *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-file-arrow-up me-1"></i> Upload & Sign</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title">
+                <i class="fa-solid fa-file-arrow-up me-1"></i> V3: Document Upload + Signature
+                <StickyMenuIcon />
+            </h1>
+        </div>
+
+        <ExampleNav />
+
+        <AboutSection Title="Signature in Context: Upload & Sign" Subtitle="Upload supporting documents then sign to certify authenticity" IconClass="fa-solid fa-file-arrow-up">
+            <div class="row">
+                <div class="col-md-6 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-question-circle me-1"></i>What Is This Variant?</h6>
+                    <p class="small text-muted mb-0">
+                        Insurance claims, grant applications, and regulatory filings all follow this pattern:
+                        upload supporting documents (receipts, transcripts, certificates), then sign at the bottom
+                        certifying that the uploaded materials are authentic and complete.
+                    </p>
+                </div>
+                <div class="col-md-6 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-lightbulb me-1"></i>Combining Components</h6>
+                    <p class="small text-muted mb-0">
+                        This combines the <strong>File Demo</strong> upload pattern with the <strong>Signature Demo</strong>
+                        pad. The submit button only enables when at least one file is "uploaded" and the attestation
+                        is signed. Real apps would save the signature image alongside the uploaded files.
+                    </p>
+                </div>
+            </div>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Upload vs Draw Signature Options"
+                     Description="Users can either draw a signature on the pad OR upload a scanned signature image. A btn-group toggles between 'Draw' and 'Upload' modes. This accommodates users who have a pre-scanned signature file, common in legal and banking workflows."
+                     Code="@_codeDrawUpload" />
+            <InfoTip Title="Signature Preview and Confirmation"
+                     Description="After signing or uploading, a preview shows the signature with an 'Accept' or 'Redo' option. The preview displays in a bordered area. Accepting locks the signature and enables the submit button. This two-step confirm prevents accidental submissions."
+                     Code="@_codeSignPreview" />
+            <InfoTip Title="Multiple Signature Points"
+                     Description="Some documents require signatures in multiple places (initial here, sign there, date here). Each point has its own pad instance with a label. The submit button enables only when ALL signature points are completed."
+                     Code="@_codeMultiSign" />
+        </div>
+
+        <div class="card shadow-sm border-0 mb-3">
+            <div class="card-header bg-white py-2"><span class="small fw-semibold"><i class="fa-solid fa-folder-open me-1"></i> Expense Reimbursement Submission</span></div>
+            <div class="card-body">
+                @* Upload section *@
+                <h6 class="text-primary border-bottom pb-2 mb-3"><i class="fa-solid fa-cloud-arrow-up me-1"></i> Step 1: Upload Receipts</h6>
+                <div class="mb-3">
+                    <label class="form-label small">Description <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control form-control-sm" placeholder="e.g. Conference travel expenses — March 2024" @bind="_description" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small">Amount <span class="text-danger">*</span></label>
+                    <div class="input-group input-group-sm" style="max-width:200px;">
+                        <span class="input-group-text">$</span>
+                        <input type="number" class="form-control" @bind="_amount" step="0.01" />
+                    </div>
+                </div>
+                <div class="border rounded p-3 bg-light text-center mb-3">
+                    <i class="fa-solid fa-cloud-arrow-up fa-2x text-muted mb-2"></i>
+                    <div class="small text-muted mb-2">Drag & drop files here or click to browse</div>
+                    <button class="btn btn-sm btn-outline-primary" @onclick="SimulateUpload">
+                        <i class="fa-solid fa-plus me-1"></i> Add Mock File
+                    </button>
+                </div>
+                @if (_uploadedFiles.Any()) {
+                    <div class="list-group mb-3">
+                        @foreach (var file in _uploadedFiles) {
+                            <div class="list-group-item d-flex justify-content-between align-items-center py-1">
+                                <span class="small"><i class="fa-solid fa-file-pdf text-danger me-1"></i> @file</span>
+                                <button class="btn btn-sm btn-outline-danger py-0" @onclick="@(() => _uploadedFiles.Remove(file))">
+                                    <i class="fa-solid fa-times"></i>
+                                </button>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @* Signature section *@
+                <h6 class="text-primary border-bottom pb-2 mb-3 mt-4"><i class="fa-solid fa-signature me-1"></i> Step 2: Sign & Certify</h6>
+                <div class="alert alert-warning small">
+                    <i class="fa-solid fa-triangle-exclamation me-1"></i>
+                    By signing below, I certify that the uploaded documents are authentic, that the claimed amount
+                    of <strong>@(_amount > 0 ? _amount.ToString("C") : "$0.00")</strong> is accurate, and that these
+                    expenses were incurred for legitimate business purposes.
+                </div>
+                <div class="row">
+                    <div class="col-md-8">
+                        <Signature @ref="_signaturePad" @bind-Value="_signatureValue" Class="border rounded" />
+                    </div>
+                    <div class="col-md-4">
+                        <div class="small text-muted mb-2">Submission checklist:</div>
+                        <div class="small @(_uploadedFiles.Any() ? "text-success" : "text-danger")">
+                            <i class="fa-solid @(_uploadedFiles.Any() ? "fa-check" : "fa-times") me-1"></i>
+                            At least one receipt uploaded
+                        </div>
+                        <div class="small @(!string.IsNullOrWhiteSpace(_description) ? "text-success" : "text-danger")">
+                            <i class="fa-solid @(!string.IsNullOrWhiteSpace(_description) ? "fa-check" : "fa-times") me-1"></i>
+                            Description provided
+                        </div>
+                        <div class="small @(_amount > 0 ? "text-success" : "text-danger")">
+                            <i class="fa-solid @(_amount > 0 ? "fa-check" : "fa-times") me-1"></i>
+                            Amount entered
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer bg-light d-flex justify-content-end">
+                <button class="btn btn-success" @onclick="Submit"
+                        disabled="@(!_uploadedFiles.Any() || string.IsNullOrWhiteSpace(_description) || _amount <= 0)">
+                    <i class="fa-solid fa-paper-plane me-1"></i> Submit for Reimbursement
+                </button>
+            </div>
+        </div>
+
+        @if (_submitted) {
+            <div class="alert alert-success">
+                <i class="fa-solid fa-circle-check me-1"></i> <strong>Submitted!</strong>
+                Expense claim for @_amount.ToString("C") with @_uploadedFiles.Count receipt(s) has been submitted for approval.
+            </div>
+        }
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false, _submitted = false;
+    private string _pageName = "signaturev3";
+    private string _codeDrawUpload = "<div class=\"btn-group\">\n  <button class=\"btn @(_mode == \"draw\" ? \"btn-primary\" : \"btn-outline-primary\")\">Draw</button>\n  <button class=\"btn @(_mode == \"upload\" ? \"btn-primary\" : \"btn-outline-primary\")\">Upload</button>\n</div>";
+    private string _codeSignPreview = "<div class=\"border rounded p-2\">\n  <!-- signature preview -->\n  <button>Accept</button>\n  <button>Redo</button>\n</div>";
+    private string _codeMultiSign = "@foreach (var point in _signaturePoints) {\n  <SignaturePad Label=\"@point.Label\" />\n}\n<button disabled=\"@(!_signaturePoints.All(s => s.Signed))\">Submit</button>";
+    private string _description = "";
+    private decimal _amount = 0;
+    private List<string> _uploadedFiles = new();
+    private Signature? _signaturePad;
+    private string _signatureValue = "";
+    private int _fileCounter = 0;
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) Model.TenantCodeFromUrl = TenantCode; if (Model.Loaded && Model.LoggedIn && !_loadedData) { _loadedData = true; _loading = false; StateHasChanged(); } }
+
+    private void SimulateUpload() { _fileCounter++; _uploadedFiles.Add($"receipt_{_fileCounter:D3}.pdf"); }
+    private void Submit() { _submitted = true; }
+}

@@ -1,0 +1,151 @@
+﻿@page "/Examples/WorkOrdersV2"
+@page "/{TenantCode}/Examples/WorkOrdersV2"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V2: Dispatch Board — Kanban columns by status, drag to assign *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-clipboard-list me-1"></i> Dispatch Board</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title"><i class="fa-solid fa-clipboard-list me-1"></i> V2: Dispatch Board <StickyMenuIcon /></h1>
+        </div>
+
+        <ExampleNav />
+        <AboutSection Title="Dispatch Board" Subtitle="Kanban-style dispatch board — drag work orders between status columns" IconClass="fa-solid fa-clipboard-list">
+            <p class="small text-muted mb-0">Work order cards organized by status. Drag a card to a new column to change its status. Urgency badges and building/room info visible on each card.</p>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Drag-and-Drop Status Board"
+                     Description="@_descDragBoard"
+                     Code="@_codeDragBoard" />
+            <InfoTip Title="Drop Target Highlighting"
+                     Description="@_descDropHighlight"
+                     Code="@_codeDropHighlight" />
+            <InfoTip Title="Urgency Color-Coded Cards"
+                     Description="GetUrgencyColor() returns a hex color based on urgency level (Emergency=#dc3545, High=#fd7e14, Normal=#0d6efd, Low=#6c757d). The color is used for the left border (border-left:3px solid) and the urgency badge background. Inline styles handle the dynamic color."
+                     Code="@_codeUrgencyColor" />
+        </div>
+
+        <div class="d-flex gap-2 overflow-auto pb-3">
+            @foreach (var status in _columns) {
+                var colItems = _all.Where(w => w.Status == status).OrderByDescending(w => w.Urgency).ToList();
+                var isTarget = _dragOverCol == status;
+                <div class="flex-shrink-0" style="width:240px;">
+                    <div class="card border-0 shadow-sm @(isTarget ? "border-primary border-2" : "")"
+                         @ondragover="() => _dragOverCol = status" @ondragover:preventDefault="true"
+                         @ondrop="() => HandleDrop(status)" @ondragleave="() => _dragOverCol = null">
+                        <div class="card-header bg-dark text-white py-1 d-flex justify-content-between small">
+                            <span>@status</span><span class="badge bg-white text-dark rounded-pill">@colItems.Count</span>
+                        </div>
+                        <div class="card-body p-1" style="min-height:200px; max-height:500px; overflow-y:auto;">
+                            @foreach (var w in colItems) {
+                                <div class="card mb-1 border-0 shadow-sm" draggable="true" @ondragstart="() => _dragging = w" @ondragend="() => _dragging = null"
+                                     style="cursor:grab; border-left:3px solid @GetUrgencyColor(w.Urgency) !important;">
+                                    <div class="card-body p-2 small">
+                                        <div class="fw-semibold" style="font-size:0.75rem;">@w.Title</div>
+                                        <div class="text-muted" style="font-size:0.65rem;"><i class="fa-solid fa-building me-1"></i>@w.Building @w.Floor-@w.RoomNumber</div>
+                                        <div class="d-flex gap-1 mt-1">
+                                            <span class="badge" style="background-color:@GetUrgencyColor(w.Urgency); color:white; font-size:0.5rem;">@w.Urgency</span>
+                                            <span class="badge bg-info bg-opacity-25 text-dark" style="font-size:0.5rem;">@w.Category</span>
+                                        </div>
+                                        @if (!string.IsNullOrEmpty(w.AssignedTo)) {
+                                            <div class="text-muted mt-1" style="font-size:0.6rem;"><i class="fa-solid fa-user me-1"></i>@w.AssignedTo</div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            @if (!colItems.Any()) { <div class="text-center text-muted small py-3 opacity-50">Empty</div> }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "workordersv2";
+    private List<DataObjects.WorkOrder> _all = new();
+    private DataObjects.WorkOrder? _dragging;
+    private DataObjects.WorkOrderStatus? _dragOverCol;
+
+    private string _descDragBoard = "Each card has draggable='true' and @ondragstart to capture the work order being dragged. Each column uses @ondragover:preventDefault, @ondrop to call HandleDrop(status), and @ondragleave to clear the highlight. When dropped, the work order's Status is updated and saved via API.";
+    private string _descDropHighlight = "_dragOverCol tracks which column the user is hovering over. When it matches, the column card gets 'border-primary border-2' classes added dynamically. @ondragleave resets it to null. This gives the user clear visual feedback about where they're dropping.";
+
+    private static readonly DataObjects.WorkOrderStatus[] _columns = [DataObjects.WorkOrderStatus.Submitted, DataObjects.WorkOrderStatus.Assigned, DataObjects.WorkOrderStatus.InProgress, DataObjects.WorkOrderStatus.OnHold, DataObjects.WorkOrderStatus.Completed, DataObjects.WorkOrderStatus.Closed];
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            _all = await Helpers.GetOrPost<List<DataObjects.WorkOrder>>("api/Data/GetWorkOrders", new List<Guid>()) ?? new();
+            _loading = false; StateHasChanged();
+        }
+    }
+
+    private async Task HandleDrop(DataObjects.WorkOrderStatus newStatus) {
+        _dragOverCol = null;
+        if (_dragging == null || _dragging.Status == newStatus) return;
+        _dragging.Status = newStatus;
+        await Helpers.GetOrPost<List<DataObjects.WorkOrder>>("api/Data/SaveWorkOrders", new List<DataObjects.WorkOrder> { _dragging });
+        _dragging = null; StateHasChanged();
+    }
+
+    private static string GetUrgencyColor(DataObjects.WorkOrderUrgency u) => u switch { DataObjects.WorkOrderUrgency.Emergency => "#dc3545", DataObjects.WorkOrderUrgency.High => "#fd7e14", DataObjects.WorkOrderUrgency.Normal => "#0d6efd", _ => "#6c757d" };
+
+    private string _codeDragBoard = @"<div class=""card"" draggable=""true""
+     @ondragstart=""() => _dragging = w""
+     @ondragend=""() => _dragging = null"">
+  @w.Title
+</div>
+
+<div @ondragover=""() => _dragOverCol = status""
+     @ondragover:preventDefault=""true""
+     @ondrop=""() => HandleDrop(status)""
+     @ondragleave=""() => _dragOverCol = null"">
+  @* Column drop target *@
+</div>
+
+async Task HandleDrop(WorkOrderStatus status) {
+  _dragging.Status = status;
+  await SaveWorkOrders(new[] { _dragging });
+  _dragging = null;
+}";
+
+    private string _codeDropHighlight = @"@* Dynamic highlight on the drop target *@
+WorkOrderStatus? _dragOverCol;
+
+<div class=""card @(isTarget
+  ? ""border-primary border-2"" : """")"">
+  @* Column content *@
+</div>
+
+@* Set on hover, clear on leave *@
+@ondragover=""() => _dragOverCol = status""
+@ondragleave=""() => _dragOverCol = null""";
+
+    private string _codeUrgencyColor = @"static string GetUrgencyColor(
+    WorkOrderUrgency u) => u switch {
+  Emergency => ""#dc3545"",  // red
+  High      => ""#fd7e14"",  // orange
+  Normal    => ""#0d6efd"",  // blue
+  _         => ""#6c757d""   // gray
+};
+
+@* Used for left border and badge *@
+<div style=""border-left:3px solid
+  @GetUrgencyColor(w.Urgency) !important;"">
+<span class=""badge"" style=""background-color:
+  @GetUrgencyColor(w.Urgency);"">
+  @w.Urgency
+</span>";
+}

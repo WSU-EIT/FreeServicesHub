@@ -1,0 +1,199 @@
+﻿@page "/Examples/BoardViewsV2"
+@page "/{TenantCode}/Examples/BoardViewsV2"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V2: Sprint Board — Kanban scoped to a single sprint with burndown *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-person-running me-1"></i> Sprint Board</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title"><i class="fa-solid fa-person-running me-1"></i> V2: Sprint Board <StickyMenuIcon /></h1>
+        </div>
+
+        <ExampleNav />
+        <AboutSection Title="Sprint Board" Subtitle="Kanban board scoped to a single sprint with goal display and mini burndown" IconClass="fa-solid fa-person-running">
+            <p class="small text-muted mb-0">Select a sprint to see only its tickets on the board. Sprint goal is displayed at top. A mini burndown shows ideal vs. actual progress.</p>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Sprint-Scoped Filtering"
+                     Description="@_descSprintFilter"
+                     Code="@_codeSprintFilter" />
+            <InfoTip Title="Mini Burndown Progress Bar"
+                     Description="A Bootstrap progress bar shows done points / total points as a percentage. Computed properties (BurndownTotal, BurndownDone) keep the logic out of markup. The remaining count is displayed as text beside the bar."
+                     Code="@_codeBurndown" />
+            <InfoTip Title="Drag-and-Drop Kanban Columns"
+                     Description="@_descDragDrop"
+                     Code="@_codeDragDrop" />
+        </div>
+
+        @* Sprint selector *@
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+            <select class="form-select form-select-sm" style="width:auto;" @bind="_selectedSprint" @bind:after="ApplyFilter">
+                <option value="">Select Sprint...</option>
+                @foreach (var s in _sprints.OrderByDescending(s => s.StartDate)) {
+                    <option value="@s.RecordId">@s.Name (@s.Status)</option>
+                }
+            </select>
+            @if (_activeSprint != null) {
+                <span class="badge bg-info">@_activeSprint.Status</span>
+                @if (!string.IsNullOrEmpty(_activeSprint.Goal)) {
+                    <span class="small text-muted"><i class="fa-solid fa-bullseye me-1"></i>@_activeSprint.Goal</span>
+                }
+                @if (_activeSprint.EndDate.HasValue) {
+                    var days = (_activeSprint.EndDate.Value - DateTime.Now).Days;
+                    <span class="badge @(days <= 2 ? "bg-danger" : days <= 5 ? "bg-warning text-dark" : "bg-secondary")">@days days left</span>
+                }
+            }
+        </div>
+
+        @if (_activeSprint != null) {
+            @* Mini burndown *@
+            <div class="card border-0 shadow-sm mb-3">
+                <div class="card-body py-2 d-flex align-items-center gap-3">
+                    <div class="small fw-semibold">Burndown:</div>
+                    <div class="progress flex-grow-1" style="height:12px;">
+                        <div class="progress-bar bg-success" style="width:@BurndownPct%"></div>
+                    </div>
+                    <span class="small text-muted">@BurndownDone / @BurndownTotal pts (@BurndownRemaining remaining)</span>
+                </div>
+            </div>
+
+            @* Board columns *@
+            <div class="d-flex gap-2 overflow-auto pb-3">
+                @foreach (var status in _columns) {
+                    var colTickets = _sprintTickets.Where(t => t.Status == status).OrderBy(t => t.SortOrder).ToList();
+                    <div class="flex-shrink-0" style="width:220px;">
+                        <div class="card border-0 shadow-sm"
+                             @ondragover:preventDefault="true" @ondrop="() => HandleDrop(status)">
+                            <div class="card-header bg-dark text-white py-1 d-flex justify-content-between small">
+                                <span>@status</span><span class="badge bg-white text-dark rounded-pill">@colTickets.Count</span>
+                            </div>
+                            <div class="card-body p-1" style="min-height:150px; max-height:400px; overflow-y:auto;">
+                                @foreach (var t in colTickets) {
+                                    <div class="card mb-1 border-0 shadow-sm" draggable="true" @ondragstart="() => _dragging = t" style="cursor:grab;">
+                                        <div class="card-body p-2 small">
+                                            <code style="font-size:0.6rem;">@t.TicketNumber</code>
+                                            <div class="fw-semibold" style="font-size:0.75rem;">@t.Title</div>
+                                            <div class="d-flex justify-content-between mt-1">
+                                                <span class="text-muted" style="font-size:0.6rem;">@(t.AssignedTo ?? "—")</span>
+                                                @if (t.StoryPoints.HasValue) { <span class="badge bg-secondary rounded-pill" style="font-size:0.5rem;">@t.StoryPoints</span> }
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                                @if (!colTickets.Any()) { <div class="text-center text-muted small py-3 opacity-50">Empty</div> }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        } else {
+            <div class="text-center text-muted py-5"><i class="fa-solid fa-person-running fa-2x mb-2 opacity-50"></i><div>Select a sprint above to see its board</div></div>
+        }
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "boardviewsv2";
+    private string _selectedSprint = "";
+    private List<DataObjects.Ticket> _allTickets = new(), _sprintTickets = new();
+    private List<DataObjects.Sprint> _sprints = new();
+    private DataObjects.Sprint? _activeSprint;
+    private DataObjects.Ticket? _dragging;
+
+    private string _descSprintFilter = "A select dropdown bound with @bind and @bind:after calls ApplyFilter(), which sets _activeSprint and rebuilds _sprintTickets from the master list. The board only shows tickets for the selected sprint \u2014 a common filter-and-render pattern.";
+    private string _descDragDrop = "Each card has draggable='true' with @ondragstart to set _dragging. Each column uses @ondragover:preventDefault and @ondrop to call HandleDrop(status), which updates the ticket status and saves via API. Pure Blazor \u2014 no JS interop needed.";
+
+    private static readonly DataObjects.TicketStatus[] _columns = [DataObjects.TicketStatus.Backlog, DataObjects.TicketStatus.ToDo, DataObjects.TicketStatus.InProgress, DataObjects.TicketStatus.InReview, DataObjects.TicketStatus.Done];
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            _allTickets = await Helpers.GetOrPost<List<DataObjects.Ticket>>("api/Data/GetTickets", new List<Guid>()) ?? new();
+            _sprints = await Helpers.GetOrPost<List<DataObjects.Sprint>>("api/Data/GetSprints", new List<Guid>()) ?? new();
+            var active = _sprints.FirstOrDefault(s => s.Status == DataObjects.SprintStatus.Active);
+            if (active != null) { _selectedSprint = active.RecordId.ToString(); ApplyFilter(); }
+            _loading = false; StateHasChanged();
+        }
+    }
+
+    private void ApplyFilter() {
+        _activeSprint = Guid.TryParse(_selectedSprint, out var sid) ? _sprints.FirstOrDefault(s => s.RecordId == sid) : null;
+        _sprintTickets = _activeSprint != null ? _allTickets.Where(t => t.SprintId == _activeSprint.RecordId).ToList() : new();
+    }
+
+    private async Task HandleDrop(DataObjects.TicketStatus newStatus) {
+        if (_dragging == null || _dragging.Status == newStatus) return;
+        _dragging.Status = newStatus;
+        if (newStatus == DataObjects.TicketStatus.Done) _dragging.CompletedDate = DateTime.Now;
+        await Helpers.GetOrPost<List<DataObjects.Ticket>>("api/Data/SaveTickets", new List<DataObjects.Ticket> { _dragging });
+        _dragging = null; StateHasChanged();
+    }
+
+    private int BurndownTotal => _sprintTickets.Where(t => t.StoryPoints.HasValue).Sum(t => t.StoryPoints!.Value);
+    private int BurndownDone => _sprintTickets.Where(t => (t.Status == DataObjects.TicketStatus.Done || t.Status == DataObjects.TicketStatus.Closed) && t.StoryPoints.HasValue).Sum(t => t.StoryPoints!.Value);
+    private int BurndownRemaining => BurndownTotal - BurndownDone;
+    private int BurndownPct => BurndownTotal > 0 ? (int)(BurndownDone * 100.0 / BurndownTotal) : 0;
+
+    private string _codeSprintFilter = @"<select @bind=""_selectedSprint""
+       @bind:after=""ApplyFilter"">
+  @foreach (var s in _sprints) {
+    <option value=""@s.RecordId"">
+      @s.Name (@s.Status)
+    </option>
+  }
+</select>
+
+@code {
+  void ApplyFilter() {
+    _activeSprint = _sprints.FirstOrDefault(
+      s => s.RecordId == sid);
+    _sprintTickets = _allTickets
+      .Where(t => t.SprintId == _activeSprint.RecordId)
+      .ToList();
+  }
+}";
+
+    private string _codeBurndown = @"@* Computed properties keep logic out of markup *@
+int BurndownTotal => _sprintTickets
+  .Where(t => t.StoryPoints.HasValue)
+  .Sum(t => t.StoryPoints!.Value);
+int BurndownDone => _sprintTickets
+  .Where(t => t.Status == Done && t.StoryPoints.HasValue)
+  .Sum(t => t.StoryPoints!.Value);
+int BurndownPct => BurndownTotal > 0
+  ? (int)(BurndownDone * 100.0 / BurndownTotal) : 0;
+
+<div class=""progress"" style=""height:12px;"">
+  <div class=""progress-bar bg-success""
+       style=""width:@BurndownPct%""></div>
+</div>";
+
+    private string _codeDragDrop = @"<div class=""card"" draggable=""true""
+     @ondragstart=""() => _dragging = t"">
+  @t.Title
+</div>
+
+<div @ondragover:preventDefault=""true""
+     @ondrop=""() => HandleDrop(status)"">
+  @* Column drop target *@
+</div>
+
+@code {
+  async Task HandleDrop(TicketStatus newStatus) {
+    _dragging.Status = newStatus;
+    await SaveTickets(new[] { _dragging });
+    _dragging = null;
+  }
+}";
+}

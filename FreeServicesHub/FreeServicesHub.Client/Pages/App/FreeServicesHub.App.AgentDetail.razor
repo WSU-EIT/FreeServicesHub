@@ -1,0 +1,466 @@
+@page "/AgentDetail/{agentid}"
+@page "/{TenantCode}/AgentDetail/{agentid}"
+@implements IDisposable
+@using Blazored.LocalStorage
+@inject IJSRuntime jsRuntime
+@inject HttpClient Http
+@inject ILocalStorageService LocalStorage
+@inject BlazorDataModel Model
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title">
+            <Language Tag="AgentDetail" IncludeIcon="true" />
+        </h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title">
+                <Language Tag="AgentDetail" IncludeIcon="true" />
+                <StickyMenuIcon />
+            </h1>
+            <div class="btn-group mb-2" role="group">
+                <a href="@(Helpers.BuildUrl("AgentDashboard"))" class="btn btn-dark">
+                    <Language Tag="Back" IncludeIcon="true" />
+                </a>
+                <button type="button" class="btn btn-primary" @onclick="LoadAgent">
+                    <Icon Name="Refresh" /> <Language Tag="Refresh" />
+                </button>
+            </div>
+        </div>
+
+        @if (_agent != null) {
+            @* Agent Info Header *@
+            <div class="card shadow-sm mb-3">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h4 class="mb-2">@_agent.Name</h4>
+                            <table class="table table-sm table-borderless mb-0">
+                                <tbody>
+                                    <tr>
+                                        <td class="fw-bold text-muted" style="width:140px;"><Language Tag="Hostname" /></td>
+                                        <td>@_agent.Hostname</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="fw-bold text-muted"><Language Tag="OperatingSystem" /></td>
+                                        <td>@_agent.OperatingSystem</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="fw-bold text-muted"><Language Tag="Architecture" /></td>
+                                        <td>@_agent.Architecture</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="fw-bold text-muted"><Language Tag="AgentVersion" /></td>
+                                        <td>@_agent.AgentVersion</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="fw-bold text-muted"><Language Tag="DotNetVersion" /></td>
+                                        <td>@_agent.DotNetVersion</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <table class="table table-sm table-borderless mb-0">
+                                <tbody>
+                                    <tr>
+                                        <td class="fw-bold text-muted" style="width:140px;"><Language Tag="Status" /></td>
+                                        <td><span class="badge @GetStatusBadgeClass(_agent.Status)">@_agent.Status</span></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="fw-bold text-muted"><Language Tag="RegisteredAt" /></td>
+                                        <td>@(_agent.RegisteredAt?.ToString("g") ?? "-")</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="fw-bold text-muted"><Language Tag="RegisteredBy" /></td>
+                                        <td>@_agent.RegisteredBy</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="fw-bold text-muted"><Language Tag="LastHeartbeat" /></td>
+                                        <td>@(_agent.LastHeartbeat?.ToString("g") ?? "-")</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="fw-bold text-muted"><Language Tag="Uptime" /></td>
+                                        <td>@GetUptime()</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            @if (_token != null) {
+                                <div class="mt-2">
+                                    <span class="fw-bold text-muted"><Language Tag="TokenPrefix" />: </span>
+                                    <code>@_token.TokenPrefix...</code>
+                                    @if (_token.Active) {
+                                        <button type="button" class="btn btn-sm btn-outline-danger ms-2" @onclick="RevokeToken">
+                                            <Icon Name="Delete" /> <Language Tag="Revoke" />
+                                        </button>
+                                    } else {
+                                        <span class="badge bg-secondary ms-2"><Language Tag="Revoked" /></span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @* Metric Cards *@
+            @if (_latestHeartbeat != null) {
+                <div class="row g-3 mb-3">
+                    @* CPU Card *@
+                    <div class="col-md-4">
+                        <div class="card h-100">
+                            <div class="card-body text-center">
+                                <h6 class="card-title text-muted"><Language Tag="CPU" /></h6>
+                                <h2 class="@GetMetricTextClass(_latestHeartbeat.CpuPercent, 70, 90)">
+                                    @_latestHeartbeat.CpuPercent.ToString("F1")%
+                                </h2>
+                                <div class="progress metric-bar mx-auto" style="max-width:200px;">
+                                    <div class="progress-bar @GetMetricClass(_latestHeartbeat.CpuPercent, 70, 90)" role="progressbar"
+                                         style="width: @_latestHeartbeat.CpuPercent.ToString("F0")%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    @* Memory Card *@
+                    <div class="col-md-4">
+                        <div class="card h-100">
+                            <div class="card-body text-center">
+                                <h6 class="card-title text-muted"><Language Tag="Memory" /></h6>
+                                <h2 class="@GetMetricTextClass(_latestHeartbeat.MemoryPercent, 75, 90)">
+                                    @_latestHeartbeat.MemoryPercent.ToString("F1")%
+                                </h2>
+                                <div class="small text-muted mb-1">
+                                    @_latestHeartbeat.MemoryUsedGB.ToString("F1") GB / @_latestHeartbeat.MemoryTotalGB.ToString("F1") GB
+                                </div>
+                                <div class="progress metric-bar mx-auto" style="max-width:200px;">
+                                    <div class="progress-bar @GetMetricClass(_latestHeartbeat.MemoryPercent, 75, 90)" role="progressbar"
+                                         style="width: @_latestHeartbeat.MemoryPercent.ToString("F0")%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    @* Disk Cards *@
+                    @foreach (var disk in _currentDiskMetrics) {
+                        <div class="col-md-4">
+                            <div class="card h-100">
+                                <div class="card-body text-center">
+                                    <h6 class="card-title text-muted"><Language Tag="Disk" /> @disk.Drive</h6>
+                                    <h2 class="@GetMetricTextClass(disk.Percent, 80, 95)">
+                                        @disk.Percent.ToString("F1")%
+                                    </h2>
+                                    <div class="small text-muted mb-1">
+                                        @disk.UsedGB.ToString("F1") GB / @disk.TotalGB.ToString("F1") GB
+                                    </div>
+                                    <div class="progress metric-bar mx-auto" style="max-width:200px;">
+                                        <div class="progress-bar @GetMetricClass(disk.Percent, 80, 95)" role="progressbar"
+                                             style="width: @disk.Percent.ToString("F0")%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            @* Heartbeat History *@
+            <div class="card mb-3">
+                <div class="card-header">
+                    <Icon Name="List" /> <Language Tag="HeartbeatHistory" />
+                </div>
+                <div class="card-body p-0">
+                    @if (_heartbeatHistory.Any()) {
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped mb-0">
+                                <thead>
+                                    <tr class="table-dark">
+                                        <th><Language Tag="Timestamp" /></th>
+                                        <th class="text-end"><Language Tag="CPU" /> %</th>
+                                        <th class="text-end"><Language Tag="Memory" /> %</th>
+                                        <th class="text-end"><Language Tag="MemoryUsed" /></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var hb in _heartbeatHistory.OrderByDescending(h => h.Timestamp).Take(50)) {
+                                        <tr>
+                                            <td>@hb.Timestamp.ToString("g")</td>
+                                            <td class="text-end">
+                                                <span class="@GetMetricTextClass(hb.CpuPercent, 70, 90)">@hb.CpuPercent.ToString("F1")%</span>
+                                            </td>
+                                            <td class="text-end">
+                                                <span class="@GetMetricTextClass(hb.MemoryPercent, 75, 90)">@hb.MemoryPercent.ToString("F1")%</span>
+                                            </td>
+                                            <td class="text-end">@hb.MemoryUsedGB.ToString("F1") / @hb.MemoryTotalGB.ToString("F1") GB</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    } else {
+                        <div class="p-3 text-muted">
+                            <Language Tag="NoHeartbeatHistory" />
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @* Logs Section *@
+            <div class="card mb-3">
+                <div class="card-header">
+                    <Icon Name="File" /> <Language Tag="AgentLogs" />
+                </div>
+                <div class="card-body p-0">
+                    @if (_logs.Any()) {
+                        <div class="activity-feed">
+                            <ul class="list-group list-group-flush">
+                                @foreach (var log in _logs) {
+                                    <li class="list-group-item small py-1">
+                                        <span class="text-muted me-2">@log.Timestamp.ToString("g")</span>
+                                        <span class="badge @GetStatusBadgeClass(log.Status) me-1">@log.Status</span>
+                                        @log.Message
+                                    </li>
+                                }
+                            </ul>
+                        </div>
+                    } else {
+                        <div class="p-3 text-muted">
+                            <Language Tag="NoLogsAvailable" />
+                        </div>
+                    }
+                </div>
+            </div>
+        } else {
+            <div class="alert alert-warning">
+                <Language Tag="AgentNotFound" />
+            </div>
+        }
+    }
+}
+@code {
+    [Parameter] public string? agentid { get; set; }
+    [Parameter] public string? TenantCode { get; set; }
+
+    protected bool _loading = true;
+    protected bool _loadedData = false;
+    protected bool _validatedUrl = false;
+    protected string _pageName = "agentdetail";
+
+    protected DataObjects.Agent? _agent;
+    protected DataObjects.AgentHeartbeat? _latestHeartbeat;
+    protected DataObjects.ApiClientToken? _token;
+    protected List<DataObjects.AgentHeartbeat> _heartbeatHistory = new List<DataObjects.AgentHeartbeat>();
+    protected List<DataObjects.DiskMetric> _currentDiskMetrics = new List<DataObjects.DiskMetric>();
+    protected List<LogEntry> _logs = new List<LogEntry>();
+
+    protected class LogEntry
+    {
+        public DateTime Timestamp { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string Message { get; set; } = string.Empty;
+    }
+
+    public void Dispose()
+    {
+        Model.OnChange -= OnDataModelUpdated;
+        Model.OnSignalRUpdate -= SignalRUpdate;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) {
+            Model.TenantCodeFromUrl = TenantCode;
+        }
+
+        if (Model.Loaded && Model.LoggedIn) {
+            if (!_validatedUrl) {
+                _validatedUrl = true;
+                await Helpers.ValidateUrl(TenantCode);
+            }
+
+            if (!_loadedData || Helpers.StringValue(Model.NavigationId) != Helpers.StringValue(agentid)) {
+                _loadedData = true;
+                await LoadAgent();
+            }
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.OnChange += OnDataModelUpdated;
+        Model.OnSignalRUpdate += SignalRUpdate;
+        Model.View = _pageName;
+    }
+
+    protected void OnDataModelUpdated()
+    {
+        if (Model.View == _pageName) {
+            StateHasChanged();
+        }
+    }
+
+    protected string GetMetricClass(double value, double warn, double error) =>
+        value >= error ? "bg-danger" :
+        value >= warn  ? "bg-warning text-dark" :
+                         "bg-success";
+
+    protected string GetMetricTextClass(double value, double warn, double error) =>
+        value >= error ? "text-danger" :
+        value >= warn  ? "text-warning" :
+                         "text-success";
+
+    protected string GetStatusBadgeClass(string status) => status switch {
+        DataObjects.AgentStatuses.Online  => "bg-success",
+        DataObjects.AgentStatuses.Warning => "bg-warning text-dark",
+        DataObjects.AgentStatuses.Error   => "bg-danger",
+        DataObjects.AgentStatuses.Offline => "bg-secondary",
+        DataObjects.AgentStatuses.Stale   => "bg-secondary",
+        _ => "bg-secondary"
+    };
+
+    protected string GetUptime()
+    {
+        if (_agent?.RegisteredAt == null) return "-";
+        var span = DateTime.UtcNow - _agent.RegisteredAt.Value;
+        if (span.TotalDays >= 1) return $"{(int)span.TotalDays}d {span.Hours}h {span.Minutes}m";
+        if (span.TotalHours >= 1) return $"{(int)span.TotalHours}h {span.Minutes}m";
+        return $"{(int)span.TotalMinutes}m";
+    }
+
+    protected async Task LoadAgent()
+    {
+        if (string.IsNullOrWhiteSpace(agentid)) {
+            Helpers.NavigateTo("AgentDashboard");
+            return;
+        }
+
+        Model.NavigationId = agentid;
+        Model.ViewIsEditPage = true;
+        _loading = true;
+        StateHasChanged();
+
+        _agent = await Helpers.GetOrPost<DataObjects.Agent>("api/Data/GetAgent/" + agentid);
+
+        if (_agent != null) {
+            // Load heartbeat history
+            var history = await Helpers.GetOrPost<List<DataObjects.AgentHeartbeat>>("api/Data/GetAgentHeartbeats/" + agentid);
+            if (history != null) {
+                _heartbeatHistory = history;
+                var latest = history.OrderByDescending(h => h.Timestamp).FirstOrDefault();
+                if (latest != null) {
+                    _latestHeartbeat = latest;
+                    if (!string.IsNullOrWhiteSpace(latest.DiskMetricsJson)) {
+                        try {
+                            var disks = Helpers.DeserializeObject<List<DataObjects.DiskMetric>>(latest.DiskMetricsJson);
+                            if (disks != null) {
+                                _currentDiskMetrics = disks;
+                            }
+                        } catch { }
+                    }
+                }
+            }
+
+            // Load token for this agent
+            _token = await Helpers.GetOrPost<DataObjects.ApiClientToken>("api/Data/GetAgentToken/" + agentid);
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    protected async Task RevokeToken()
+    {
+        if (_token == null) return;
+
+        Model.ClearMessages();
+        Model.Message_Saving();
+
+        var result = await Helpers.GetOrPost<DataObjects.BooleanResponse>("api/Data/RevokeToken/" + _token.ApiClientTokenId);
+
+        Model.ClearMessages();
+
+        if (result != null && result.Result) {
+            _token.Active = false;
+            _token.RevokedAt = DateTime.UtcNow;
+            StateHasChanged();
+        } else {
+            if (result != null) {
+                Model.ErrorMessages(result.Messages);
+            } else {
+                Model.UnknownError();
+            }
+        }
+    }
+
+    protected void SignalRUpdate(DataObjects.SignalRUpdate update)
+    {
+        if (Model.View != _pageName) return;
+        if (update.TenantId != null && update.TenantId != Model.TenantId) return;
+
+        Guid targetAgentId;
+        if (!Guid.TryParse(agentid, out targetAgentId)) return;
+
+        switch (update.UpdateType) {
+            case DataObjects.SignalRUpdateType.AgentHeartbeat:
+                if (update.ObjectAsString != null) {
+                    var heartbeat = Helpers.DeserializeObject<DataObjects.AgentHeartbeat>(update.ObjectAsString);
+                    if (heartbeat != null && heartbeat.AgentId == targetAgentId) {
+                        _latestHeartbeat = heartbeat;
+                        _heartbeatHistory.Insert(0, heartbeat);
+                        if (!string.IsNullOrWhiteSpace(heartbeat.DiskMetricsJson)) {
+                            try {
+                                var disks = Helpers.DeserializeObject<List<DataObjects.DiskMetric>>(heartbeat.DiskMetricsJson);
+                                if (disks != null) {
+                                    _currentDiskMetrics = disks;
+                                }
+                            } catch { }
+                        }
+                        if (_agent != null) {
+                            _agent.LastHeartbeat = heartbeat.Timestamp;
+                        }
+                        StateHasChanged();
+                    }
+                }
+                break;
+
+            case DataObjects.SignalRUpdateType.AgentStatusChanged:
+                if (update.ObjectAsString != null) {
+                    var agentStatus = Helpers.DeserializeObject<DataObjects.Agent>(update.ObjectAsString);
+                    if (agentStatus != null && agentStatus.AgentId == targetAgentId && _agent != null) {
+                        _agent.Status = agentStatus.Status;
+                        _logs.Insert(0, new LogEntry {
+                            Timestamp = DateTime.Now,
+                            Status = agentStatus.Status,
+                            Message = "Status changed to " + agentStatus.Status
+                        });
+                        StateHasChanged();
+                    }
+                }
+                break;
+
+            case DataObjects.SignalRUpdateType.AgentDisconnected:
+            case DataObjects.SignalRUpdateType.AgentShutdown:
+                if (update.ItemId.HasValue && update.ItemId.Value == targetAgentId && _agent != null) {
+                    _agent.Status = DataObjects.AgentStatuses.Offline;
+                    _logs.Insert(0, new LogEntry {
+                        Timestamp = DateTime.Now,
+                        Status = DataObjects.AgentStatuses.Offline,
+                        Message = "Agent disconnected"
+                    });
+                    StateHasChanged();
+                }
+                break;
+
+            case DataObjects.SignalRUpdateType.AgentConnected:
+                if (update.ItemId.HasValue && update.ItemId.Value == targetAgentId && _agent != null) {
+                    _agent.Status = DataObjects.AgentStatuses.Online;
+                    _logs.Insert(0, new LogEntry {
+                        Timestamp = DateTime.Now,
+                        Status = DataObjects.AgentStatuses.Online,
+                        Message = "Agent connected"
+                    });
+                    StateHasChanged();
+                }
+                break;
+        }
+    }
+}

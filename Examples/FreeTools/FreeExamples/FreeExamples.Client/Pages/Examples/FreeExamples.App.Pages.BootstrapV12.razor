@@ -1,0 +1,325 @@
+@page "/Examples/BootstrapV12"
+@page "/{TenantCode}/Examples/BootstrapV12"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-file-pen me-1"></i> Request Form</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title">
+                <i class="fa-solid fa-file-pen me-1"></i> V12: Request Submission Form
+                <StickyMenuIcon />
+            </h1>
+        </div>
+
+        <ExampleNav />
+
+        <AboutSection Title="Bootstrap in Context: Request Submission Form" Subtitle="Table-form layout with conditional fields — the Helpdesk NewRequest pattern" IconClass="fa-solid fa-file-pen">
+            <div class="row">
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-question-circle me-1"></i>What Is This Page?</h6>
+                    <p class="small text-muted mb-0">
+                        This demonstrates the <strong>request submission form</strong> from Helpdesk NewRequest. It uses
+                        a table-style layout where labels are in the left column and inputs in the right. Conditional
+                        fields appear based on the selected request type. form-floating labels provide clean input styling.
+                    </p>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-lightbulb me-1"></i>What You'll Learn</h6>
+                    <ul class="small text-muted mb-0 ps-3">
+                        <li><strong>Table-form layout</strong> (label column + input column)</li>
+                        <li><strong>Conditional fields</strong> that show/hide by type</li>
+                        <li><strong>form-floating</strong> for all text inputs</li>
+                        <li><strong>was-validated</strong> / <strong>is-invalid</strong> validation</li>
+                        <li><strong>Card sections</strong> grouping related fields</li>
+                        <li><strong>Submission summary</strong> confirmation</li>
+                    </ul>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-road me-1"></i>How Does It Work?</h6>
+                    <p class="small text-muted mb-0">
+                        The form is divided into card sections (Requester, Details, Additional). The request type
+                        dropdown controls which conditional fields appear. Validation marks required fields with
+                        is-invalid on submit. On success, a summary card shows what was submitted.
+                    </p>
+                </div>
+            </div>
+        </AboutSection>
+
+        @if (_submitted) {
+            @* ── Submission Confirmation ── *@
+            <div class="card shadow-sm border-success mb-3">
+                <div class="card-header bg-success text-white"><i class="fa-solid fa-circle-check me-1"></i> Request Submitted Successfully</div>
+                <div class="card-body">
+                    <div class="row g-2">
+                        <div class="col-md-6"><strong class="small text-muted">Name:</strong><div class="small">@_name</div></div>
+                        <div class="col-md-6"><strong class="small text-muted">Email:</strong><div class="small">@_email</div></div>
+                        <div class="col-md-6"><strong class="small text-muted">Department:</strong><div class="small">@_department</div></div>
+                        <div class="col-md-6"><strong class="small text-muted">Request Type:</strong><div class="small">@_requestType</div></div>
+                        <div class="col-12"><strong class="small text-muted">Subject:</strong><div class="small">@_subject</div></div>
+                        <div class="col-12"><strong class="small text-muted">Description:</strong><div class="small">@_description</div></div>
+                    </div>
+                </div>
+                <div class="card-footer bg-white">
+                    <button class="btn btn-primary btn-sm" @onclick="ResetForm"><i class="fa-solid fa-plus me-1"></i> Submit Another</button>
+                </div>
+            </div>
+        } else {
+            @* ── Requester Section ── *@
+            <div class="card shadow-sm border-0 mb-3">
+                <div class="card-header bg-white py-2"><span class="small fw-semibold"><i class="fa-solid fa-user me-1"></i> Requester Information</span></div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="form-floating">
+                                <input type="text" class="form-control @ValidationClass(_name)" id="reqName" placeholder="Full Name" @bind="_name" />
+                                <label for="reqName">Full Name *</label>
+                                @if (_validated && string.IsNullOrWhiteSpace(_name)) { <div class="invalid-feedback">Name is required.</div> }
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-floating">
+                                <input type="email" class="form-control @ValidationClass(_email)" id="reqEmail" placeholder="email" @bind="_email" />
+                                <label for="reqEmail">Email Address *</label>
+                                @if (_validated && string.IsNullOrWhiteSpace(_email)) { <div class="invalid-feedback">Email is required.</div> }
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-floating">
+                                <select class="form-select" id="reqDept" @bind="_department">
+                                    <option value="">Select Department...</option>
+                                    <option>Engineering</option><option>Marketing</option><option>Finance</option><option>HR</option><option>Operations</option>
+                                </select>
+                                <label for="reqDept">Department</label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-floating">
+                                <input type="tel" class="form-control" id="reqPhone" placeholder="Phone" @bind="_phone" />
+                                <label for="reqPhone">Phone (optional)</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <InfoTip Title="form-floating Validation"
+                     Description="form-floating inputs show the label floating above when focused or filled. Add 'is-invalid' class when validation fails and include an 'invalid-feedback' div for the error message. The error text appears below the input automatically."
+                     Code="@_codeFloatingValidation" />
+
+            @* ── Request Details Section ── *@
+            <div class="card shadow-sm border-0 mb-3">
+                <div class="card-header bg-white py-2"><span class="small fw-semibold"><i class="fa-solid fa-clipboard-list me-1"></i> Request Details</span></div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="form-floating">
+                                <select class="form-select @ValidationClass(_requestType)" id="reqType" @bind="_requestType">
+                                    <option value="">Select Type...</option>
+                                    <option>Bug Report</option><option>Feature Request</option><option>Access Request</option><option>Hardware</option><option>Other</option>
+                                </select>
+                                <label for="reqType">Request Type *</label>
+                                @if (_validated && string.IsNullOrWhiteSpace(_requestType)) { <div class="invalid-feedback">Type is required.</div> }
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-floating">
+                                <select class="form-select" id="reqPriority" @bind="_priority">
+                                    <option>Low</option><option>Medium</option><option>High</option><option>Critical</option>
+                                </select>
+                                <label for="reqPriority">Priority</label>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <div class="form-floating">
+                                <input type="text" class="form-control @ValidationClass(_subject)" id="reqSubject" placeholder="Subject" @bind="_subject" />
+                                <label for="reqSubject">Subject *</label>
+                                @if (_validated && string.IsNullOrWhiteSpace(_subject)) { <div class="invalid-feedback">Subject is required.</div> }
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <div class="form-floating">
+                                <textarea class="form-control @ValidationClass(_description)" id="reqDesc" placeholder="Description" style="height:100px" @bind="_description"></textarea>
+                                <label for="reqDesc">Description *</label>
+                                @if (_validated && string.IsNullOrWhiteSpace(_description)) { <div class="invalid-feedback">Description is required.</div> }
+                            </div>
+                        </div>
+                    </div>
+
+                    @* ── Conditional Fields ── *@
+                    @if (_requestType == "Bug Report") {
+                        <hr class="my-3" />
+                        <h6 class="small text-muted"><i class="fa-solid fa-bug me-1"></i> Bug Details</h6>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="form-floating">
+                                    <input type="text" class="form-control" id="bugUrl" placeholder="URL" @bind="_bugUrl" />
+                                    <label for="bugUrl">URL Where Bug Occurs</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-floating">
+                                    <select class="form-select" id="bugBrowser" @bind="_bugBrowser">
+                                        <option>Chrome</option><option>Firefox</option><option>Edge</option><option>Safari</option><option>Other</option>
+                                    </select>
+                                    <label for="bugBrowser">Browser</label>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <div class="form-floating">
+                                    <textarea class="form-control" id="bugSteps" placeholder="Steps" style="height:80px" @bind="_bugSteps"></textarea>
+                                    <label for="bugSteps">Steps to Reproduce</label>
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    @if (_requestType == "Access Request") {
+                        <hr class="my-3" />
+                        <h6 class="small text-muted"><i class="fa-solid fa-key me-1"></i> Access Details</h6>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="form-floating">
+                                    <input type="text" class="form-control" id="accessSystem" placeholder="System" @bind="_accessSystem" />
+                                    <label for="accessSystem">System/Application Name</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-floating">
+                                    <select class="form-select" id="accessLevel" @bind="_accessLevel">
+                                        <option>Read Only</option><option>Read/Write</option><option>Admin</option>
+                                    </select>
+                                    <label for="accessLevel">Access Level Needed</label>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <div class="form-floating">
+                                    <input type="text" class="form-control" id="accessJustification" placeholder="Justification" @bind="_accessJustification" />
+                                    <label for="accessJustification">Business Justification</label>
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    @if (_requestType == "Hardware") {
+                        <hr class="my-3" />
+                        <h6 class="small text-muted"><i class="fa-solid fa-computer me-1"></i> Hardware Details</h6>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="form-floating">
+                                    <select class="form-select" id="hwType" @bind="_hardwareType">
+                                        <option>Laptop</option><option>Monitor</option><option>Keyboard/Mouse</option><option>Docking Station</option><option>Other</option>
+                                    </select>
+                                    <label for="hwType">Hardware Type</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-floating">
+                                    <input type="text" class="form-control" id="hwLocation" placeholder="Location" @bind="_hardwareLocation" />
+                                    <label for="hwLocation">Delivery Location</label>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <InfoTip Title="Conditional Fields"
+                     Description="Fields appear/disappear based on the Request Type dropdown. Bug Report shows URL + Browser + Steps. Access Request shows System + Level + Justification. Hardware shows Type + Location. This is the Helpdesk NewRequest pattern where the form adapts to the ticket type."
+                     Code="@_codeConditional" />
+
+            @* ── Additional Section ── *@
+            <div class="card shadow-sm border-0 mb-3">
+                <div class="card-header bg-white py-2"><span class="small fw-semibold"><i class="fa-solid fa-paperclip me-1"></i> Additional Information</span></div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label small">Attachments (simulated)</label>
+                            <input type="file" class="form-control form-control-sm" disabled />
+                            <div class="form-text">Upload screenshots or documents.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">CC (notify additional people)</label>
+                            <input type="text" class="form-control form-control-sm" placeholder="email1@example.com, email2@example.com" @bind="_cc" />
+                        </div>
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="agreeTerms" @bind="_agreeTerms" />
+                                <label class="form-check-label small" for="agreeTerms">I confirm the information provided is accurate and I agree to the service terms.</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @* ── Submit ── *@
+            @if (_validated && _errors.Any()) {
+                <div class="alert alert-danger small py-2">
+                    <i class="fa-solid fa-triangle-exclamation me-1"></i> Please fix the following:
+                    <ul class="mb-0 ps-3 mt-1">@foreach (var e in _errors) { <li>@e</li> }</ul>
+                </div>
+            }
+
+            <div class="d-flex justify-content-end gap-2">
+                <button class="btn btn-outline-secondary" @onclick="ResetForm"><i class="fa-solid fa-arrows-rotate me-1"></i> Reset</button>
+                <button class="btn btn-success" @onclick="SubmitForm"><i class="fa-solid fa-paper-plane me-1"></i> Submit Request</button>
+            </div>
+        }
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false, _validated = false, _submitted = false;
+    private string _pageName = "bootstrapv12";
+
+    private string _codeFloatingValidation = "<div class=\"form-floating\">\n  <input class=\"form-control is-invalid\" placeholder=\"...\" />\n  <label>Name *</label>\n  <div class=\"invalid-feedback\">Name is required.</div>\n</div>";
+    private string _codeConditional = "@if (_requestType == \"Bug Report\") {\n  <div class=\"form-floating\">\n    <input placeholder=\"URL\" @bind=\"_bugUrl\" />\n    <label>URL Where Bug Occurs</label>\n  </div>\n}";
+
+    // Requester
+    private string _name = "", _email = "", _department = "", _phone = "";
+    // Details
+    private string _requestType = "", _priority = "Medium", _subject = "", _description = "";
+    // Bug-specific
+    private string _bugUrl = "", _bugBrowser = "Chrome", _bugSteps = "";
+    // Access-specific
+    private string _accessSystem = "", _accessLevel = "Read Only", _accessJustification = "";
+    // Hardware-specific
+    private string _hardwareType = "Laptop", _hardwareLocation = "";
+    // Additional
+    private string _cc = "";
+    private bool _agreeTerms = false;
+
+    private List<string> _errors = new();
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) Model.TenantCodeFromUrl = TenantCode; if (Model.Loaded && Model.LoggedIn && !_loadedData) { _loadedData = true; _loading = false; StateHasChanged(); } }
+
+    private void SubmitForm() {
+        _validated = true;
+        _errors.Clear();
+        if (string.IsNullOrWhiteSpace(_name)) _errors.Add("Full Name is required.");
+        if (string.IsNullOrWhiteSpace(_email)) _errors.Add("Email Address is required.");
+        if (string.IsNullOrWhiteSpace(_requestType)) _errors.Add("Request Type is required.");
+        if (string.IsNullOrWhiteSpace(_subject)) _errors.Add("Subject is required.");
+        if (string.IsNullOrWhiteSpace(_description)) _errors.Add("Description is required.");
+        if (_errors.Any()) return;
+        _submitted = true;
+    }
+
+    private void ResetForm() {
+        _name = ""; _email = ""; _department = ""; _phone = "";
+        _requestType = ""; _priority = "Medium"; _subject = ""; _description = "";
+        _bugUrl = ""; _bugBrowser = "Chrome"; _bugSteps = "";
+        _accessSystem = ""; _accessLevel = "Read Only"; _accessJustification = "";
+        _hardwareType = "Laptop"; _hardwareLocation = "";
+        _cc = ""; _agreeTerms = false;
+        _validated = false; _submitted = false; _errors.Clear();
+    }
+
+    private string ValidationClass(string value) => _validated && string.IsNullOrWhiteSpace(value) ? "is-invalid" : "";
+}

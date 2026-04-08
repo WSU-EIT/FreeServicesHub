@@ -1,0 +1,20 @@
+﻿@* WizardStepBranch.razor - Branch selection dropdown step *@
+
+<label class="form-label">Branch:</label>
+<select class="form-select" @onchange="OnBranchChanged" disabled="@IsDisabled">
+    <option value="">-- Select Branch --</option>
+    @if (SelectedRepoInfo != null)
+    {
+        @foreach (var branch in SelectedRepoInfo.GitBranches.OrderBy(o => (string.Empty + o.BranchName).ToLower()))
+        {
+            <option value="@branch.BranchName" selected="@(branch.BranchName == SelectedBranch ? "selected" : null)">@branch.BranchName</option>
+        }
+    }
+</select>
+
+@code {
+    [Parameter] public DataObjects.DevopsGitRepoInfo? SelectedRepoInfo { get; set; }
+    [Parameter] public string? SelectedBranch { get; set; }
+    [Parameter] public bool IsDisabled { get; set; }
+    [Parameter] public EventCallback<ChangeEventArgs> OnBranchChanged { get; set; }
+}

@@ -1,0 +1,101 @@
+@page "/Examples/SampleItemsV4"
+@page "/{TenantCode}/Examples/SampleItemsV4"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V4: Timeline — items displayed on a vertical timeline by creation date *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-timeline me-1"></i> Timeline</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title"><i class="fa-solid fa-timeline me-1"></i> V4: Sample Items — Timeline View <StickyMenuIcon /></h1>
+        </div>
+
+        <ExampleNav />
+        <AboutSection Title="Timeline View" Subtitle="Items arranged chronologically on a vertical timeline" IconClass="fa-solid fa-timeline">
+            <p class="small text-muted mb-0">Same SampleItem data shown as a vertical timeline. Each item is a node alternating left/right. Good for showing creation history, audit trails, or project milestones.</p>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="CSS-Only Vertical Timeline"
+                     Description="The timeline is built with pure CSS and Bootstrap utilities. A position-absolute div creates the vertical line at 50%. Each node alternates left/right using i % 2. Cards sit on either side with pe-3 or ps-3 spacing. No third-party timeline library needed."
+                     Code="@_codeTimeline" />
+            <InfoTip Title="Timeline Node Dots"
+                     Description="Each timeline node has a 12px rounded-circle div with bg-primary. It sits in a flex-shrink-0 container centered with d-flex align-items-center justify-content-center. The dot aligns perfectly with the vertical line."
+                     Code="@_codeTimelineNode" />
+            <InfoTip Title="Alternating Layout Pattern"
+                     Description="The isLeft flag (i % 2 == 0) controls which side gets the card content and which is empty. Both sides exist in every row for layout consistency. The card uses d-inline-block with max-width to prevent stretching."
+                     Code="@_codeAlternating" />
+        </div>
+
+        <div class="position-relative" style="padding-left:50%;">
+            @* Vertical line *@
+            <div class="position-absolute top-0 bottom-0" style="left:50%; width:2px; background:#dee2e6;"></div>
+
+            @for (int i = 0; i < _items.Count; i++) {
+                var item = _items[i];
+                bool isLeft = i % 2 == 0;
+                <div class="d-flex mb-3" style="margin-left:@(isLeft ? "-100%" : "0"); width:200%;">
+                    @if (isLeft) {
+                        <div class="flex-grow-1 text-end pe-3">
+                            <div class="card shadow-sm border-0 d-inline-block text-start" style="max-width:400px;">
+                                <div class="card-body py-2 px-3">
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <span class="small fw-semibold">@item.Name</span>
+                                        <span class="badge @GetStatusBadge(item.Status)" style="font-size:0.55rem;">@item.Status</span>
+                                    </div>
+                                    <div class="small text-muted">@item.Category · P@item.Priority · @item.Amount.ToString("C")</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex-shrink-0 d-flex align-items-center justify-content-center" style="width:20px;">
+                            <div class="rounded-circle bg-primary" style="width:12px; height:12px;"></div>
+                        </div>
+                        <div class="flex-grow-1"></div>
+                    } else {
+                        <div class="flex-grow-1"></div>
+                        <div class="flex-shrink-0 d-flex align-items-center justify-content-center" style="width:20px;">
+                            <div class="rounded-circle bg-primary" style="width:12px; height:12px;"></div>
+                        </div>
+                        <div class="flex-grow-1 ps-3">
+                            <div class="card shadow-sm border-0 d-inline-block" style="max-width:400px;">
+                                <div class="card-body py-2 px-3">
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <span class="small fw-semibold">@item.Name</span>
+                                        <span class="badge @GetStatusBadge(item.Status)" style="font-size:0.55rem;">@item.Status</span>
+                                    </div>
+                                    <div class="small text-muted">@item.Category · P@item.Priority · @item.Amount.ToString("C")</div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "sampleitemsv4";
+    private List<DataObjects.SampleItem> _items = new();
+    private string _codeTimeline = "<div class=\"position-relative\" style=\"padding-left:50%\">\n  <div class=\"position-absolute top-0 bottom-0\"\n    style=\"left:50%; width:2px; background:#dee2e6\"></div>\n  <!-- nodes here -->\n</div>";
+    private string _codeTimelineNode = "<div class=\"rounded-circle bg-primary\"\n  style=\"width:12px; height:12px;\"></div>";
+    private string _codeAlternating = "bool isLeft = i % 2 == 0;\n// Left card: text-end pe-3 + dot + empty\n// Right card: empty + dot + ps-3";
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            var result = await Helpers.GetOrPost<List<DataObjects.SampleItem>>("api/Data/GetSampleItems", new List<Guid>());
+            if (result != null) _items = result.Where(i => !i.Deleted).OrderBy(i => i.Name).ToList();
+            _loading = false; StateHasChanged();
+        }
+    }
+    private string GetStatusBadge(DataObjects.SampleItemStatus s) => s switch { DataObjects.SampleItemStatus.Active => "bg-success", DataObjects.SampleItemStatus.Completed => "bg-primary", DataObjects.SampleItemStatus.Archived => "bg-dark", _ => "bg-secondary" };
+}

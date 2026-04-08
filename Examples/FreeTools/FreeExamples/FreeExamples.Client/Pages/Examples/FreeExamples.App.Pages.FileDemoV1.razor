@@ -1,0 +1,92 @@
+@page "/Examples/FileDemoV1"
+@page "/{TenantCode}/Examples/FileDemoV1"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V1: Profile Photo Upload — upload/crop a user profile picture *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-user-circle me-1"></i> Profile Photo</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title"><i class="fa-solid fa-user-circle me-1"></i> V1: Profile Photo Upload <StickyMenuIcon /></h1>
+        </div>
+
+        <ExampleNav />
+        <AboutSection Title="File Upload in Context: Profile Photo" Subtitle="Upload a profile picture with preview — the Settings page pattern" IconClass="fa-solid fa-user-circle">
+            <p class="small text-muted mb-0">A user settings page where you upload a profile photo. Shows a circular preview, drag-drop zone, and file type validation. Same FileUpload API but in a realistic settings form context.</p>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Drag-Drop Upload Zone"
+                     Description="The dashed-border zone uses border-dashed with bg-light to create a visual drop target. A cloud-upload icon and 'Drag here' text tell users what to do. The 'Choose Photo' button triggers file selection. This is the same upload pattern used on every production profile page."
+                     Code="@_codeDragDrop" />
+            <InfoTip Title="Avatar Initials Preview"
+                     Description="The circular preview shows initials from the first/last name fields, updating live as you type. The rounded-circle with bg-primary and d-inline-flex creates the avatar. When a photo is uploaded, it would replace the initials. This is the standard user avatar component."
+                     Code="@_codeAvatarPreview" />
+            <InfoTip Title="File Type Validation"
+                     Description="The 'JPG, PNG, or GIF. Max 5MB.' text communicates file constraints. In production, the server validates MIME type and file size. The client-side InputFile component can filter with accept='.jpg,.png,.gif'. Rejected files show an alert-danger message."
+                     Code="@_codeFileValidation" />
+        </div>
+
+        <div class="row">
+            <div class="col-md-4 mb-3">
+                <div class="card shadow-sm border-0 text-center">
+                    <div class="card-body py-4">
+                        <div class="rounded-circle bg-primary text-white d-inline-flex align-items-center justify-content-center mx-auto mb-3"
+                             style="width:120px; height:120px; font-size:2.5rem; font-weight:600;">
+                            @(_firstName.Length > 0 ? _firstName[0].ToString().ToUpper() : "?")@(_lastName.Length > 0 ? _lastName[0].ToString().ToUpper() : "")
+                        </div>
+                        <h5 class="mb-1">@(string.IsNullOrWhiteSpace(_firstName) ? "First" : _firstName) @(string.IsNullOrWhiteSpace(_lastName) ? "Last" : _lastName)</h5>
+                        <div class="small text-muted mb-3">@(string.IsNullOrWhiteSpace(_role) ? "No role set" : _role)</div>
+                        <div class="border-2 border-dashed rounded p-3 bg-light" style="border-style:dashed;">
+                            <i class="fa-solid fa-cloud-arrow-up fa-2x text-muted mb-2"></i>
+                            <div class="small text-muted">Drag photo here or</div>
+                            <button class="btn btn-sm btn-outline-primary mt-1" @onclick="SimulatePhotoUpload">
+                                <i class="fa-solid fa-camera me-1"></i> Choose Photo
+                            </button>
+                            @if (_photoUploaded) {
+                                <div class="small text-success mt-2"><i class="fa-solid fa-check me-1"></i>profile_photo.jpg uploaded</div>
+                            }
+                        </div>
+                        <div class="small text-muted mt-2">JPG, PNG, or GIF. Max 5MB.</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-8 mb-3">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-white py-2"><span class="fw-semibold small"><i class="fa-solid fa-user-pen me-1"></i> Profile Settings</span></div>
+                    <div class="card-body">
+                        <div class="row mb-3">
+                            <div class="col-md-6"><label class="form-label small">First Name</label><input type="text" class="form-control form-control-sm" @bind="_firstName" /></div>
+                            <div class="col-md-6"><label class="form-label small">Last Name</label><input type="text" class="form-control form-control-sm" @bind="_lastName" /></div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-6"><label class="form-label small">Email</label><input type="email" class="form-control form-control-sm" @bind="_email" /></div>
+                            <div class="col-md-6"><label class="form-label small">Role</label><input type="text" class="form-control form-control-sm" @bind="_role" /></div>
+                        </div>
+                        <div class="mb-3"><label class="form-label small">Bio</label><textarea class="form-control form-control-sm" rows="3" @bind="_bio"></textarea></div>
+                        <button class="btn btn-primary btn-sm"><i class="fa-solid fa-save me-1"></i> Save Profile</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false, _photoUploaded = false;
+    private string _pageName = "filedemov1";
+    private string _firstName = "", _lastName = "", _email = "", _role = "", _bio = "";
+    private string _codeDragDrop = "<div class=\"border-dashed rounded p-3 bg-light\">\n  <i class=\"fa-solid fa-cloud-arrow-up fa-2x\"></i>\n  <div>Drag photo here or</div>\n  <button>Choose Photo</button>\n</div>";
+    private string _codeAvatarPreview = "<div class=\"rounded-circle bg-primary text-white\"\n  style=\"width:120px;height:120px\">\n  @(_firstName[0])@(_lastName[0])\n</div>";
+    private string _codeFileValidation = "<InputFile accept=\".jpg,.png,.gif\"\n  OnChange=\"HandleFile\" />\n// Server: check file.Size <= 5MB";
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) Model.TenantCodeFromUrl = TenantCode; if (Model.Loaded && Model.LoggedIn && !_loadedData) { _loadedData = true; _loading = false; StateHasChanged(); } }
+    private void SimulatePhotoUpload() { _photoUploaded = true; }
+}

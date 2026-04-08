@@ -1,0 +1,49 @@
+@page "/Examples/NetworkGraphV1"
+@page "/{TenantCode}/Examples/NetworkGraphV1"
+@implements IDisposable
+@inject BlazorDataModel Model
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) { <h1 class="page-title"><i class="fa-solid fa-sitemap me-1"></i> Org Chart</h1><LoadingMessage /> } else {
+        <div class="@Model.StickyMenuClass"><h1 class="page-title"><i class="fa-solid fa-sitemap me-1"></i> V1: Organization Chart <StickyMenuIcon /></h1></div>
+
+        <ExampleNav />
+        <AboutSection Title="Network Graph in Context: Org Chart" Subtitle="Hierarchical org chart showing reporting structure — the HR portal pattern" IconClass="fa-solid fa-sitemap">
+            <p class="small text-muted mb-0">Same node-and-edge visualization, but as an organizational chart showing people and their reporting relationships.</p>
+        </AboutSection>
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Hierarchical Card Layout"
+                     Description="The org chart uses nested d-flex and row layouts to create a tree structure. The CEO card sits on top (d-inline-block centered). VP cards use d-flex gap-4 below. Manager cards use a row with col-auto. No SVG needed for simple hierarchies."
+                     Code="@_codeHierarchy" />
+            <InfoTip Title="Connector Lines with CSS"
+                     Description="Vertical lines between levels use border-top on a 2px-wide div. The margin:auto centers the line under the parent card. For complex trees, SVG lines (like in NetworkGraph) are better, but CSS works for simple 2-3 level hierarchies."
+                     Code="@_codeConnectors" />
+            <InfoTip Title="Card Highlight for Selection"
+                     Description="The CEO card has border-primary border-2 to highlight it as the root. Clicking any card could show details in a side panel. In production, org charts are interactive — click to expand/collapse sub-trees or view profile details."
+                     Code="@_codeCardHighlight" />
+        </div>
+        <div class="text-center mb-3">
+            <div class="card d-inline-block shadow-sm border-primary border-2 mb-3"><div class="card-body py-2 px-3"><div class="small fw-semibold">Alice Johnson</div><div class="small text-muted">CEO</div></div></div>
+            <div class="d-flex justify-content-center gap-4">
+                @foreach (var vp in new[] { ("Bob Smith", "VP Engineering"), ("Carol White", "VP Sales"), ("David Lee", "VP Operations") }) {
+                    <div><div class="border-top border-2 border-primary" style="width:2px; height:20px; margin:auto;"></div><div class="card d-inline-block shadow-sm"><div class="card-body py-2 px-3"><div class="small fw-semibold">@vp.Item1</div><div class="small text-muted">@vp.Item2</div></div></div></div>
+                }
+            </div>
+            <div class="row mt-3 justify-content-center g-2">
+                @foreach (var mgr in new[] { ("Eve Adams", "Eng Manager"), ("Frank Chen", "Eng Manager"), ("Grace Hall", "Sales Dir"), ("Henry Wu", "Sales Dir"), ("Iris Patel", "Ops Manager") }) {
+                    <div class="col-auto"><div class="card shadow-sm"><div class="card-body py-1 px-2"><div class="small fw-semibold" style="font-size:0.7rem;">@mgr.Item1</div><div class="small text-muted" style="font-size:0.6rem;">@mgr.Item2</div></div></div></div>
+                }
+            </div>
+        </div>
+    }
+}
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "networkgraphv1";
+    private string _codeHierarchy = "<div class=\"text-center\">\n  <div class=\"card d-inline-block\">CEO</div>\n  <div class=\"d-flex justify-content-center gap-4\">\n    <div class=\"card\">VP 1</div>\n    <div class=\"card\">VP 2</div>\n  </div>\n</div>";
+    private string _codeConnectors = "<div class=\"border-top border-2 border-primary\"\n  style=\"width:2px; height:20px; margin:auto;\">\n</div>";
+    private string _codeCardHighlight = "<div class=\"card @(isSelected ? \"border-primary border-2\" : \"\")\"\n  @onclick=\"() => Select(person)\">\n  @person.Name\n</div>";
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) Model.TenantCodeFromUrl = TenantCode; if (Model.Loaded && Model.LoggedIn && !_loadedData) { _loadedData = true; _loading = false; StateHasChanged(); } }
+}

@@ -1,0 +1,231 @@
+﻿@* WizardStepCompleted.razor - Completion state showing saving, error, or success *@
+
+@if (IsSaving)
+{
+    @* Saving state - show spinner and warning *@
+    <div class="text-center py-5">
+        <div class="mb-4">
+            <div class="spinner-border text-warning" style="width: 4rem; height: 4rem;" role="status">
+                <span class="visually-hidden">Saving...</span>
+            </div>
+        </div>
+        <h4 class="text-warning">Saving Pipeline Changes</h4>
+        <p class="text-muted">
+            Please don't navigate away until this finishes. This may take a moment...
+        </p>
+    </div>
+}
+else if (!string.IsNullOrWhiteSpace(SaveErrorMessage))
+{
+    @* Error state - show error message and retry options *@
+    <div class="text-center py-4">
+        <div class="mb-3">
+            <i class="fa fa-exclamation-circle text-danger" style="font-size: 4rem;"></i>
+        </div>
+        <h4 class="text-danger">Failed to Save Pipeline</h4>
+        <div class="alert alert-danger mt-3 text-start" style="max-width: 600px; margin: 0 auto;">
+            <strong>Error:</strong> @SaveErrorMessage
+        </div>
+        <p class="text-muted mt-3">
+            You can go back to review your settings and try again, or start over.
+        </p>
+    </div>
+}
+else if (SaveCompleted)
+{
+    @* Success state - show green check and resources *@
+    <div class="text-center py-4">
+        <div class="mb-3">
+            <i class="fa fa-check-circle text-success" style="font-size: 4rem;"></i>
+        </div>
+        <h4 class="text-success">Pipeline Created Successfully!</h4>
+        <p class="lead">
+            Remember to edit your variable groups before triggering a deployment.
+        </p>
+        <div class="mt-4 text-start" style="max-width: 700px; margin: 0 auto;">
+            <h5>Resources Created / Accessible</h5>
+            <ul class="list-group list-group-flush mb-4">
+                @if (LastSavedPipelineDefinition != null && !string.IsNullOrWhiteSpace(LastSavedPipelineDefinition.ResourceUrl))
+                {
+                    <li class="list-group-item">
+                        <i class="fa fa-rocket text-success me-2"></i>
+                        <a target="_blank" href="@LastSavedPipelineDefinition.ResourceUrl">
+                            <strong>Pipeline:</strong> @LastSavedPipelineDefinition.Name
+                        </a>
+                        <i class="fa fa-external-link ms-1 small text-muted"></i>
+                    </li>
+                }
+
+                @if (SelectedProjectInfo != null && !string.IsNullOrWhiteSpace(SelectedProjectInfo.ResourceUrl))
+                {
+                    <li class="list-group-item">
+                        <i class="fa fa-folder text-primary me-2"></i>
+                        <a target="_blank" href="@SelectedProjectInfo.ResourceUrl">Project: @SelectedProjectInfo.ProjectName</a>
+                        <i class="fa fa-external-link ms-1 small text-muted"></i>
+                    </li>
+                }
+                
+                @if (SelectedBranchInfo != null && !string.IsNullOrWhiteSpace(SelectedBranchInfo.ResourceUrl))
+                {
+                    <li class="list-group-item">
+                        <i class="fa fa-code-branch text-primary me-2"></i>
+                        <a target="_blank" href="@SelectedBranchInfo.ResourceUrl">Branch: @SelectedBranchInfo.BranchName</a>
+                        <i class="fa fa-external-link ms-1 small text-muted"></i>
+                    </li>
+                }
+            </ul>
+
+            @* Variable Groups Section - Always build from EnvironmentSettings with URL lookup *@
+            @if (GetEffectiveVariableGroupRefs()?.Any() == true)
+            {
+                <h5>
+                    <i class="fa fa-database text-info me-2"></i>
+                    Variable Groups (for appsettings.json)
+                </h5>
+                <div class="alert alert-info mb-3">
+                    <i class="fa fa-info-circle me-1"></i>
+                    <strong>Important:</strong> Configure the variables in these groups before running the pipeline.
+                    They will be used for appsettings.json value replacement during deployment.
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Environment</th>
+                                <th>Variable Group</th>
+                                <th>Variables</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var vgRef in GetEffectiveVariableGroupRefs())
+                            {
+                                <tr>
+                                    <td>
+                                        <span class="badge @GetEnvironmentBadgeClass(vgRef.Environment)">
+                                            @(vgRef.Environment ?? "Unknown")
+                                        </span>
+                                    </td>
+                                    <td>@vgRef.Name</td>
+                                    <td>
+                                        @if (vgRef.VariableCount > 0)
+                                        {
+                                            <span class="text-muted">@vgRef.VariableCount variable(s)</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-warning">
+                                                <i class="fa fa-exclamation-triangle me-1"></i>
+                                                Not configured
+                                            </span>
+                                        }
+                                    </td>
+                                    <td class="text-end">
+                                        @if (!string.IsNullOrWhiteSpace(vgRef.ResourceUrl))
+                                        {
+                                            <a href="@vgRef.ResourceUrl" target="_blank" class="btn btn-sm btn-outline-info">
+                                                <i class="fa fa-pencil me-1"></i>
+                                                Edit
+                                                <i class="fa fa-external-link ms-1"></i>
+                                            </a>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsSaving { get; set; }
+    [Parameter] public bool SaveCompleted { get; set; }
+    [Parameter] public string SaveErrorMessage { get; set; } = "";
+    [Parameter] public DataObjects.BuildDefinition? LastSavedPipelineDefinition { get; set; }
+    [Parameter] public DataObjects.DevopsProjectInfo? SelectedProjectInfo { get; set; }
+    [Parameter] public DataObjects.DevopsGitRepoBranchInfo? SelectedBranchInfo { get; set; }
+    
+    /// <summary>
+    /// Environment settings from the wizard, containing variable group names.
+    /// </summary>
+    [Parameter] public Dictionary<GlobalSettings.EnvironmentType, DataObjects.EnvSetting>? EnvironmentSettings { get; set; }
+    
+    /// <summary>
+    /// Variable group references with URLs (populated after save if available).
+    /// </summary>
+    [Parameter] public List<DataObjects.PipelineVariableGroupRef>? VariableGroupRefs { get; set; }
+
+    /// <summary>
+    /// Gets the effective list of variable group references, building from EnvironmentSettings if needed.
+    /// </summary>
+    private List<DataObjects.PipelineVariableGroupRef>? GetEffectiveVariableGroupRefs()
+    {
+        // If VariableGroupRefs was provided and has items with URLs, use it
+        if (VariableGroupRefs?.Any() == true)
+        {
+            // Ensure URLs are populated by looking them up from project variable groups
+            foreach (var vgRef in VariableGroupRefs)
+            {
+                if (string.IsNullOrWhiteSpace(vgRef.ResourceUrl))
+                {
+                    vgRef.ResourceUrl = GetVariableGroupUrl(vgRef.Name);
+                }
+            }
+            return VariableGroupRefs;
+        }
+        
+        // Build from EnvironmentSettings
+        if (EnvironmentSettings?.Any() != true)
+            return null;
+            
+        var result = new List<DataObjects.PipelineVariableGroupRef>();
+        
+        foreach (var kvp in EnvironmentSettings.OrderBy(e => e.Key))
+        {
+            var env = kvp.Value;
+            if (!string.IsNullOrWhiteSpace(env.VariableGroupName))
+            {
+                var vgUrl = GetVariableGroupUrl(env.VariableGroupName);
+                var vg = SelectedProjectInfo?.DevopsVariableGroups?
+                    .FirstOrDefault(g => g.Name?.Equals(env.VariableGroupName, StringComparison.OrdinalIgnoreCase) == true);
+                    
+                result.Add(new DataObjects.PipelineVariableGroupRef
+                {
+                    Name = env.VariableGroupName,
+                    Environment = kvp.Key.ToString(),
+                    Id = vg?.Id,
+                    VariableCount = vg?.Variables?.Count ?? 0,
+                    ResourceUrl = vgUrl
+                });
+            }
+        }
+        
+        return result.Count > 0 ? result : null;
+    }
+
+    private string GetEnvironmentBadgeClass(string? environment)
+    {
+        return environment?.ToUpper() switch {
+            "DEV" => "bg-info",
+            "PROD" => "bg-danger",
+            "CMS" => "bg-warning text-dark",
+            "STAGING" => "bg-secondary",
+            _ => "bg-secondary"
+        };
+    }
+
+    private string? GetVariableGroupUrl(string? variableGroupName)
+    {
+        if (string.IsNullOrWhiteSpace(variableGroupName))
+            return null;
+            
+        // Try to find the variable group in the project's variable groups
+        var vg = SelectedProjectInfo?.DevopsVariableGroups?
+            .FirstOrDefault(g => g.Name?.Equals(variableGroupName, StringComparison.OrdinalIgnoreCase) == true);
+            
+        return vg?.ResourceUrl;
+    }
+}

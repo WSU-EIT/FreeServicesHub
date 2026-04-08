@@ -1,0 +1,80 @@
+<Solution>
+  <Folder Name="/FreeCICD/">
+    <Project Path="Examples/FreeCICD/FreeCICD/FreeCICD.csproj" />
+    <Project Path="Examples/FreeCICD/FreeCICD.Client/FreeCICD.Client.csproj" />
+    <Project Path="Examples/FreeCICD/FreeCICD.DataAccess/FreeCICD.DataAccess.csproj" />
+    <Project Path="Examples/FreeCICD/FreeCICD.DataObjects/FreeCICD.DataObjects.csproj" />
+    <Project Path="Examples/FreeCICD/FreeCICD.EFModels/FreeCICD.EFModels.csproj" />
+    <Project Path="Examples/FreeCICD/FreeCICD.Plugins/FreeCICD.Plugins.csproj" />
+  </Folder>
+  <Folder Name="/FreeCRM/">
+    <Project Path="Examples/FreeCRM/CRM/CRM.csproj" />
+    <Project Path="Examples/FreeCRM/CRM.Client/CRM.Client.csproj" />
+    <Project Path="Examples/FreeCRM/CRM.DataAccess/CRM.DataAccess.csproj" />
+    <Project Path="Examples/FreeCRM/CRM.DataObjects/CRM.DataObjects.csproj" />
+    <Project Path="Examples/FreeCRM/CRM.EFModels/CRM.EFModels.csproj" />
+    <Project Path="Examples/FreeCRM/CRM.Plugins/CRM.Plugins.csproj" />
+  </Folder>
+  <Folder Name="/FreeExamples/">
+    <Project Path="Examples/FreeTools/FreeExamples/FreeExamples/FreeExamples.csproj" />
+    <Project Path="Examples/FreeTools/FreeExamples/FreeExamples.Client/FreeExamples.Client.csproj" />
+    <Project Path="Examples/FreeTools/FreeExamples/FreeExamples.DataAccess/FreeExamples.DataAccess.csproj" />
+    <Project Path="Examples/FreeTools/FreeExamples/FreeExamples.DatabaseMigration/FreeExamples.DatabaseMigration.csproj" />
+    <Project Path="Examples/FreeTools/FreeExamples/FreeExamples.DataObjects/FreeExamples.DataObjects.csproj" />
+    <Project Path="Examples/FreeTools/FreeExamples/FreeExamples.EFModels/FreeExamples.EFModels.csproj" />
+    <Project Path="Examples/FreeTools/FreeExamples/FreeExamples.NuGetClient/FreeExamples.NuGetClient.csproj" />
+    <Project Path="Examples/FreeTools/FreeExamples/FreeExamples.NuGetClientPublisher/FreeExamples.NuGetClientPublisher.csproj" />
+    <Project Path="Examples/FreeTools/FreeExamples/FreeExamples.Plugins/FreeExamples.Plugins.csproj" />
+    <Project Path="Examples/FreeTools/FreeExamples/FreeExamples.TestClient/FreeExamples.TestClient.csproj" />
+    <Project Path="Examples/FreeTools/FreeExamples/Docs/Docs.csproj" />
+  </Folder>
+  <Folder Name="/FreeGLBA/">
+    <Project Path="Examples/FreeGLBA/FreeGLBA/FreeGLBA.csproj" />
+    <Project Path="Examples/FreeGLBA/FreeGLBA.Client/FreeGLBA.Client.csproj" />
+    <Project Path="Examples/FreeGLBA/FreeGLBA.DataAccess/FreeGLBA.DataAccess.csproj" />
+    <Project Path="Examples/FreeGLBA/FreeGLBA.DataObjects/FreeGLBA.DataObjects.csproj" />
+    <Project Path="Examples/FreeGLBA/FreeGLBA.EFModels/FreeGLBA.EFModels.csproj" />
+    <Project Path="Examples/FreeGLBA/FreeGLBA.Plugins/FreeGLBA.Plugins.csproj" />
+    <Project Path="Examples/FreeGLBA/FreeGLBA.NugetClient/FreeGLBA.NugetClient.csproj" />
+    <Project Path="Examples/FreeGLBA/FreeGLBA.NugetClientPublisher/FreeGLBA.NugetClientPublisher.csproj" />
+    <Project Path="Examples/FreeGLBA/FreeGLBA.TestClient/FreeGLBA.TestClient.csproj" />
+    <Project Path="Examples/FreeGLBA/FreeGLBA.TestClientWithNugetPackage/FreeGLBA.TestClientWithNugetPackage.csproj" />
+  </Folder>
+  <Folder Name="/FreeServices/">
+    <Project Path="Examples/FreeServices/FreeServices.Installer/FreeServices.Installer.csproj" />
+    <Project Path="Examples/FreeServices/FreeServices.Service/FreeServices.Service.csproj" />
+    <Project Path="Examples/FreeServices/FreeServices.TestMe/FreeServices.TestMe.csproj" />
+  </Folder>
+  <Folder Name="/FreeServicesHub/">
+    <Project Path="FreeServicesHub/FreeServicesHub/FreeServicesHub.csproj" />
+    <Project Path="FreeServicesHub/FreeServicesHub.Client/FreeServicesHub.Client.csproj" />
+    <Project Path="FreeServicesHub/FreeServicesHub.DataAccess/FreeServicesHub.DataAccess.csproj" />
+    <Project Path="FreeServicesHub/FreeServicesHub.DataObjects/FreeServicesHub.DataObjects.csproj" />
+    <Project Path="FreeServicesHub/FreeServicesHub.EFModels/FreeServicesHub.EFModels.csproj" />
+    <Project Path="FreeServicesHub/FreeServicesHub.Plugins/FreeServicesHub.Plugins.csproj" />
+    <Project Path="FreeServicesHub/Docs/Docs.csproj" />
+  </Folder>
+  <Folder Name="/FreeSmartsheets/">
+    <Project Path="Examples/FreeSmartsheets/FreeSmartsheets/FreeSmartsheets/FreeSmartsheets.csproj" />
+    <Project Path="Examples/FreeSmartsheets/FreeSmartsheets/FreeSmartsheets.Client/FreeSmartsheets.Client.csproj" />
+    <Project Path="Examples/FreeSmartsheets/FreeSmartsheets/FreeSmartsheets.DataAccess/FreeSmartsheets.DataAccess.csproj" />
+    <Project Path="Examples/FreeSmartsheets/FreeSmartsheets/FreeSmartsheets.DataObjects/FreeSmartsheets.DataObjects.csproj" />
+    <Project Path="Examples/FreeSmartsheets/FreeSmartsheets/FreeSmartsheets.EFModels/FreeSmartsheets.EFModels.csproj" />
+    <Project Path="Examples/FreeSmartsheets/FreeSmartsheets/FreeSmartsheets.Plugins/FreeSmartsheets.Plugins.csproj" />
+  </Folder>
+  <Folder Name="/FreeTools/">
+    <Project Path="Examples/FreeTools/FreeTools/FreeTools.Core/FreeTools.Core.csproj" />
+    <Project Path="Examples/FreeTools/FreeTools/FreeTools.AppHost/FreeTools.AppHost.csproj" />
+    <Project Path="Examples/FreeTools/FreeTools/FreeTools.AppExtractor/FreeTools.AppExtractor.csproj" />
+    <Project Path="Examples/FreeTools/FreeTools/FreeTools.AccessibilityScanner/FreeTools.AccessibilityScanner.csproj" />
+    <Project Path="Examples/FreeTools/FreeTools/FreeTools.BrowserSnapshot/FreeTools.BrowserSnapshot.csproj" />
+    <Project Path="Examples/FreeTools/FreeTools/FreeTools.EndpointMapper/FreeTools.EndpointMapper.csproj" />
+    <Project Path="Examples/FreeTools/FreeTools/FreeTools.EndpointPoker/FreeTools.EndpointPoker.csproj" />
+    <Project Path="Examples/FreeTools/FreeTools/FreeTools.ForkCRM/FreeTools.ForkCRM.csproj" />
+    <Project Path="Examples/FreeTools/FreeTools/FreeTools.WorkspaceInventory/FreeTools.WorkspaceInventory.csproj" />
+    <Project Path="Examples/FreeTools/FreeTools/FreeTools.WorkspaceReporter/FreeTools.WorkspaceReporter.csproj" />
+  </Folder>
+  <Folder Name="/Solution Items/">
+    <File Path="README.md" />
+  </Folder>
+</Solution>

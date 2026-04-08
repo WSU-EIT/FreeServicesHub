@@ -1,0 +1,76 @@
+@page "/Examples/BootstrapV4"
+@page "/{TenantCode}/Examples/BootstrapV4"
+@implements IDisposable
+@inject BlazorDataModel Model
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) { <h1 class="page-title"><i class="fa-solid fa-id-card me-1"></i> User Profile</h1><LoadingMessage /> } else {
+        <div class="@Model.StickyMenuClass"><h1 class="page-title"><i class="fa-solid fa-id-card me-1"></i> V4: User Profile Card <StickyMenuIcon /></h1></div>
+
+        <ExampleNav />
+        <AboutSection Title="Bootstrap in Context: User Profile" Subtitle="A social-media-style profile card with tabs and activity feed" IconClass="fa-solid fa-id-card">
+            <p class="small text-muted mb-0">Bootstrap cards, badges, nav-tabs, and list-groups composed into a profile page like GitHub, LinkedIn, or Slack.</p>
+        </AboutSection>
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Avatar Initials Circle"
+                     Description="A rounded-circle with bg-primary and fixed width/height creates a circular avatar. When no image is available, initials (JD) display centered with d-inline-flex align-items-center justify-content-center. This is the same pattern used in production user lists and comment threads."
+                     Code="@_codeAvatar" />
+            <InfoTip Title="Stats Row with Borders"
+                     Description="The profile stats row uses a three-column layout with border-start on the 2nd and 3rd columns to create visual dividers. Each stat has an h5 number and small text-muted label. border-top separates stats from the profile content above."
+                     Code="@_codeStatsRow" />
+            <InfoTip Title="Activity Feed with Icons"
+                     Description="The activity feed uses list-group-flush inside a card. Each item has a colored icon (fa-code-commit, fa-code-pull-request, etc.) to indicate the action type. d-flex gap-2 aligns icon + text + timestamp. ms-auto pushes the timestamp right."
+                     Code="@_codeActivityFeed" />
+        </div>
+
+        <div class="row">
+            <div class="col-md-4 mb-3">
+                <div class="card shadow-sm border-0 text-center">
+                    <div class="card-body py-4">
+                        <div class="rounded-circle bg-gradient bg-primary text-white d-inline-flex align-items-center justify-content-center mb-3" style="width:80px;height:80px;font-size:2rem;font-weight:600;">JD</div>
+                        <h5 class="mb-1">Jane Doe</h5>
+                        <div class="small text-muted mb-2">Full-Stack Developer</div>
+                        <div class="d-flex justify-content-center gap-1 mb-3">
+                            <span class="badge bg-primary">Blazor</span><span class="badge bg-success">C#</span><span class="badge bg-info text-dark">TypeScript</span>
+                        </div>
+                        <div class="row text-center border-top pt-3">
+                            <div class="col"><div class="h5 mb-0">42</div><div class="small text-muted">Projects</div></div>
+                            <div class="col border-start"><div class="h5 mb-0">1.2k</div><div class="small text-muted">Commits</div></div>
+                            <div class="col border-start"><div class="h5 mb-0">89</div><div class="small text-muted">Reviews</div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-8 mb-3">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-white p-0">
+                        <ul class="nav nav-tabs card-header-tabs">
+                            <li class="nav-item"><a class="nav-link active small" href="#">Activity</a></li>
+                            <li class="nav-item"><a class="nav-link small" href="#">Repositories</a></li>
+                            <li class="nav-item"><a class="nav-link small" href="#">Teams</a></li>
+                        </ul>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="list-group list-group-flush">
+                            <div class="list-group-item py-2"><div class="d-flex gap-2 align-items-center"><i class="fa-solid fa-code-commit text-success"></i><span class="small">Pushed 3 commits to <strong>main</strong></span><span class="small text-muted ms-auto">2h ago</span></div></div>
+                            <div class="list-group-item py-2"><div class="d-flex gap-2 align-items-center"><i class="fa-solid fa-code-pull-request text-purple"></i><span class="small">Opened PR #482: <strong>Add dropdown nav menus</strong></span><span class="small text-muted ms-auto">4h ago</span></div></div>
+                            <div class="list-group-item py-2"><div class="d-flex gap-2 align-items-center"><i class="fa-solid fa-comment text-info"></i><span class="small">Commented on issue #419</span><span class="small text-muted ms-auto">Yesterday</span></div></div>
+                            <div class="list-group-item py-2"><div class="d-flex gap-2 align-items-center"><i class="fa-solid fa-check text-success"></i><span class="small">Approved PR #478: <strong>Fix timer dispose</strong></span><span class="small text-muted ms-auto">2d ago</span></div></div>
+                            <div class="list-group-item py-2"><div class="d-flex gap-2 align-items-center"><i class="fa-solid fa-star text-warning"></i><span class="small">Starred repository <strong>WSU-EIT/FreeTools</strong></span><span class="small text-muted ms-auto">3d ago</span></div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "bootstrapv4";
+    private string _codeAvatar = "<div class=\"rounded-circle bg-primary text-white\n  d-inline-flex align-items-center justify-content-center\"\n  style=\"width:80px;height:80px\">JD</div>";
+    private string _codeStatsRow = "<div class=\"row text-center border-top pt-3\">\n  <div class=\"col\"><div class=\"h5\">42</div><div class=\"small text-muted\">Projects</div></div>\n  <div class=\"col border-start\">...</div>\n</div>";
+    private string _codeActivityFeed = "<div class=\"list-group-item py-2\">\n  <div class=\"d-flex gap-2 align-items-center\">\n    <i class=\"fa-solid fa-code-commit text-success\"></i>\n    <span class=\"small\">Pushed 3 commits</span>\n    <span class=\"small text-muted ms-auto\">2h ago</span>\n  </div>\n</div>";
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) Model.TenantCodeFromUrl = TenantCode; if (Model.Loaded && Model.LoggedIn && !_loadedData) { _loadedData = true; _loading = false; StateHasChanged(); } }
+}

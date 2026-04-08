@@ -1,0 +1,1332 @@
+﻿@* FreeCICD Pipeline Wizard Component *@
+@* This component contains all FreeCICD-specific UI logic *@
+@* It is referenced from Index.App.razor to keep base files clean for upgrades *@
+
+@implements IDisposable
+@using Humanizer
+@inject BlazorDataModel Model
+@inject NavigationManager NavigationManager
+
+@code {
+    protected bool _loadedData = false;
+    protected bool _loading = true;
+    protected string _pageName = "home";
+
+    // Import state management
+    protected int? _importPipelineId = null;
+    protected bool _isImporting = false;
+    protected bool _importCompleted = false;
+    protected string _importErrorMessage = string.Empty;
+    protected DataObjects.ParsedPipelineSettings? _parsedSettings = null;
+    protected int _importConfidenceScore = 0;
+    
+    // Track which fields were populated by import (for visual highlighting)
+    protected HashSet<string> _importedFields = new();
+
+    // Import from public repo modal
+    protected FreeCICD_App_UI_Import? _importPublicRepoModal;
+
+    public void Dispose()
+    {
+        Model.OnChange -= OnDataModelUpdated;
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.OnChange += OnDataModelUpdated;
+        
+        // Check for import parameter
+        CheckForImportParameter();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Model.Loaded && Model.LoggedIn) {
+            if (!_loadedData) {
+                _loadedData = true;
+                await LoadData();
+            }
+        }
+    }
+
+    protected void OnDataModelUpdated()
+    {
+        if (Model.View == _pageName) {
+            StateHasChanged();
+        }
+    }
+
+    protected async Task LoadData()
+    {
+        await MyLoadDataAsync();
+        _loading = false;
+        StateHasChanged();
+    }
+
+    protected string LogoUrl {
+        get {
+            if (Model.Tenant.TenantSettings.Logo.HasValue && Model.Tenant.TenantSettings.Logo != Guid.Empty) {
+                return Model.ApplicationUrl + "File/View/" + ((Guid)Model.Tenant.TenantSettings.Logo).ToString();
+            } else {
+                return String.Empty;
+            }
+        }
+    }
+}
+
+@if (Model.Loaded && Model.LoggedIn && Model.View == _pageName) {
+    if (Model.Tenant.TenantSettings.LogoIncludedOnHomePage && !String.IsNullOrWhiteSpace(LogoUrl)) {
+        <div class="home-page-logo-container">
+            <img src="@LogoUrl" class="logo-homepage" />
+        </div>
+    }
+
+    if (_loading) {
+        <LoadingMessage />
+    } else {
+        <h1 class="page-title">
+            @if (!String.IsNullOrWhiteSpace(Model.Tenant.TenantSettings.AppIcon)) {
+                <i>@((MarkupString)Model.Tenant.TenantSettings.AppIcon)</i>
+            }
+            <Language Tag="Welcome" ReplaceSpaces="true" /> @Model.User.FirstName
+        </h1>
+
+        if (Model.Loaded && Model.View == "home") {
+            @* Layout 4: Card-Based Stepper with Inline Summary - Bootstrap Only *@
+            <div class="container-fluid px-0" style="max-width: 1000px;">
+                
+                @* Import Banner - Shows when importing from existing pipeline *@
+                @if (ShowImportBanner)
+                {
+                    <div class="@ImportBannerClass mb-3">
+                        <div class="d-flex align-items-center">
+                            @if (_isImporting)
+                            {
+                                <div class="spinner-border spinner-border-sm me-2" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                            }
+                            else if (!string.IsNullOrWhiteSpace(_importErrorMessage))
+                            {
+                                <i class="fa fa-exclamation-triangle me-2"></i>
+                            }
+                            else if (_importCompleted)
+                            {
+                                <i class="fa fa-check-circle me-2"></i>
+                            }
+                            <span>@ImportStatusMessage</span>
+                            @if (_importCompleted && _parsedSettings != null)
+                            {
+                                <span class="ms-auto badge bg-secondary">
+                                    Confidence: @_importConfidenceScore%
+                                </span>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @* Quick Actions - Import from Public Repo *@
+                <div class="d-flex justify-content-end mb-3">
+                    <button class="btn btn-outline-primary btn-sm" @onclick="ShowImportPublicRepoModal">
+                        <i class="fa fa-cloud-download-alt me-1"></i>
+                        Import from GitHub/GitLab
+                    </button>
+                </div>
+
+                @* Wizard Stepper - Horizontal step indicator *@
+                <FreeCICD_App_UI_Wizard_Stepper Steps="@GetWizardSteps()" 
+                               CurrentStep="@GetAdjustedCurrentStep()" 
+                               OnStepClick="@(async (step) => await GoToStep(step + (_hidePAT ? 1 : 0)))" />
+
+                @* Selection Summary - Shows previous selections inline *@
+                @* Show when there are selections OR when past first step (to handle both import and manual flow) *@
+                @if (HasAnySelections || currentStep > (_hidePAT ? 1 : 0))
+                {
+                    <FreeCICD_App_UI_Wizard_Summary Selections="@GetSelectionSummary()" />
+                }
+
+                @* Main Wizard Card *@
+                <div class="card shadow-sm border-0">
+                    @* Step Headers using WizardStepHeader component *@
+                    @{
+                        switch (StepNames[currentStep]) {
+                            case DataObjects.StepNameList.SelectPAT:
+                                <FreeCICD_App_UI_Wizard_StepHeader StepNumber="@(currentStep + 1)"
+                                                  Title="Azure DevOps Credentials"
+                                                  ShowNext="true"
+                                                  NextDisabled="@(string.IsNullOrWhiteSpace(DevOpsPAT) || string.IsNullOrWhiteSpace(OrgName))"
+                                                  IsDisabled="@_loading"
+                                                  OnNext="@PATandOrgNameChangedWizard" />
+                                break;
+
+                            case DataObjects.StepNameList.SelectProject:
+                                <FreeCICD_App_UI_Wizard_StepHeader StepNumber="@(currentStep + 1 - (_hidePAT ? 1 : 0))"
+                                                  Title="Select Project"
+                                                  ShowStartOver="@(currentStep > (_hidePAT ? 1 : 0))"
+                                                  ShowNext="true"
+                                                  NextDisabled="@string.IsNullOrEmpty(SelectedProjectId)"
+                                                  IsDisabled="@_loading"
+                                                  OnStartOver="@StartOver"
+                                                  OnNext="@(() => NextStep(DataObjects.StepNameList.SelectProject))" />
+                                break;
+
+                            case DataObjects.StepNameList.SelectRepository:
+                                <FreeCICD_App_UI_Wizard_StepHeader StepNumber="@(currentStep + 1 - (_hidePAT ? 1 : 0))"
+                                                  Title="Select Repository"
+                                                  ShowStartOver="true"
+                                                  ShowBack="true"
+                                                  ShowNext="true"
+                                                  NextDisabled="@string.IsNullOrEmpty(SelectedRepoId)"
+                                                  IsDisabled="@_loading"
+                                                  OnStartOver="@StartOver"
+                                                  OnBack="@PrevStep"
+                                                  OnNext="@(() => NextStep(DataObjects.StepNameList.SelectRepository))" />
+                                break;
+
+                            case DataObjects.StepNameList.SelectBranch:
+                                <FreeCICD_App_UI_Wizard_StepHeader StepNumber="@(currentStep + 1 - (_hidePAT ? 1 : 0))"
+                                                  Title="Select Branch"
+                                                  ShowStartOver="true"
+                                                  ShowBack="true"
+                                                  ShowNext="true"
+                                                  NextDisabled="@string.IsNullOrEmpty(SelectedBranch)"
+                                                  IsDisabled="@_loading"
+                                                  OnStartOver="@StartOver"
+                                                  OnBack="@PrevStep"
+                                                  OnNext="@(() => NextStep(DataObjects.StepNameList.SelectBranch))" />
+                                break;
+
+                            case DataObjects.StepNameList.SelectCsprojFile:
+                                <FreeCICD_App_UI_Wizard_StepHeader StepNumber="@(currentStep + 1 - (_hidePAT ? 1 : 0))"
+                                                  Title="Select .csproj File"
+                                                  ShowStartOver="true"
+                                                  ShowBack="true"
+                                                  ShowNext="true"
+                                                  IsDisabled="@_loading"
+                                                  OnStartOver="@StartOver"
+                                                  OnBack="@PrevStep"
+                                                  OnNext="@(() => NextStep(DataObjects.StepNameList.SelectCsprojFile))" />
+                                break;
+
+                            case DataObjects.StepNameList.EnvironmentSettings:
+                                <FreeCICD_App_UI_Wizard_StepHeader StepNumber="@(currentStep + 1 - (_hidePAT ? 1 : 0))"
+                                                  Title="Environment Settings"
+                                                  ShowStartOver="true"
+                                                  ShowBack="true"
+                                                  ShowNext="true"
+                                                  IsDisabled="@_loading"
+                                                  OnStartOver="@StartOver"
+                                                  OnBack="@PrevStep"
+                                                  OnNext="@(() => NextStep(DataObjects.StepNameList.EnvironmentSettings))" />
+                                break;
+
+                            case DataObjects.StepNameList.SelectPipelineSelection:
+                                <FreeCICD_App_UI_Wizard_StepHeader StepNumber="@(currentStep + 1 - (_hidePAT ? 1 : 0))"
+                                                  Title="Pipeline Selection"
+                                                  ShowStartOver="true"
+                                                  ShowBack="true"
+                                                  ShowNext="true"
+                                                  NextDisabled="@(SelectedPipelineId <= 0 && string.IsNullOrWhiteSpace(NewPipelineName))"
+                                                  IsDisabled="@_loading"
+                                                  OnStartOver="@StartOver"
+                                                  OnBack="@PrevStep"
+                                                  OnNext="@(() => NextStep(DataObjects.StepNameList.SelectPipelineSelection))" />
+                                break;
+
+                            case DataObjects.StepNameList.YAMLPreviewAndSave:
+                                <FreeCICD_App_UI_Wizard_StepHeader StepNumber="@(currentStep + 1 - (_hidePAT ? 1 : 0))"
+                                                  Title="YAML Preview & Save"
+                                                  ShowStartOver="true"
+                                                  ShowBack="true"
+                                                  ShowSave="true"
+                                                  IsDisabled="@(_loading || _isPreviewLoading || _isSaving)"
+                                                  OnStartOver="@StartOver"
+                                                  OnBack="@PrevStep"
+                                                  OnSave="@(() => NextStep(DataObjects.StepNameList.YAMLPreviewAndSave))" />
+                                break;
+
+                            case DataObjects.StepNameList.Completed:
+                                @if (_isSaving)
+                                {
+                                    <FreeCICD_App_UI_Wizard_StepHeader HeaderClass="bg-warning text-dark"
+                                                      ShowSpinner="true"
+                                                      SpinnerText="Saving..."
+                                                      Title="Saving Pipeline..."
+                                                      InfoText="Please don't navigate away" />
+                                }
+                                else if (!string.IsNullOrWhiteSpace(_saveErrorMessage))
+                                {
+                                    <FreeCICD_App_UI_Wizard_StepHeader HeaderClass="bg-danger text-white"
+                                                      BadgeIcon="fa-times"
+                                                      BadgeClass="bg-light text-danger"
+                                                      Title="Save Failed"
+                                                      ShowBack="true"
+                                                      ShowStartOver="true"
+                                                      OnBack="@PrevStep"
+                                                      OnStartOver="@StartOver" />
+                                }
+                                else if (_saveCompleted)
+                                {
+                                    <FreeCICD_App_UI_Wizard_StepHeader HeaderClass="bg-success text-white"
+                                                      BadgeIcon="fa-check"
+                                                      BadgeClass="bg-light text-success"
+                                                      Title="Completed"
+                                                      ShowCreateAnother="true"
+                                                      OnStartOver="@StartOver" />
+                                }
+                                else
+                                {
+                                    <FreeCICD_App_UI_Wizard_StepHeader HeaderClass="bg-secondary text-white"
+                                                      Title="Processing..." />
+                                }
+                                break;
+                        }
+                    }
+
+                    <div class="card-body p-4">
+                        @* Step Content using individual step components *@
+                        @{
+                            switch (StepNames[currentStep]) {
+                                case DataObjects.StepNameList.SelectPAT:
+                                    <FreeCICD_App_UI_Wizard_StepPAT DevOpsPAT="@DevOpsPAT"
+                                                   OnDevOpsPATChanged="@(val => DevOpsPAT = val)"
+                                                   OrgName="@OrgName"
+                                                   OnOrgNameChanged="@(val => OrgName = val)"
+                                                   IsDisabled="@_loading"
+                                                   LoginUrl="@Helpers.BuildUrl("login")" />
+                                    break;
+
+                                case DataObjects.StepNameList.SelectProject:
+                                    <FreeCICD_App_UI_Wizard_StepProject Projects="@DevopsProjectInfos"
+                                                       SelectedProjectId="@SelectedProjectId"
+                                                       IsDisabled="@_loading"
+                                                       OnProjectChanged="@ProjectChangedWizard" />
+                                    break;
+
+                                case DataObjects.StepNameList.SelectRepository:
+                                    <FreeCICD_App_UI_Wizard_StepRepository SelectedProjectInfo="@SelectedProjectInfo"
+                                                          SelectedRepoId="@SelectedRepoId"
+                                                          IsDisabled="@_loading"
+                                                          OnRepoChanged="@RepoChangedWizard" />
+                                    break;
+
+                                case DataObjects.StepNameList.SelectBranch:
+                                    <FreeCICD_App_UI_Wizard_StepBranch SelectedRepoInfo="@SelectedRepoInfo"
+                                                      SelectedBranch="@SelectedBranch"
+                                                      IsDisabled="@_loading"
+                                                      OnBranchChanged="@BranchChangedWizard" />
+                                    break;
+
+                                case DataObjects.StepNameList.SelectCsprojFile:
+                                    <FreeCICD_App_UI_Wizard_StepCsproj SelectedBranchInfo="@SelectedBranchInfo"
+                                                      SelectedCsprojPath="@SelectedCsprojPath"
+                                                      IsDisabled="@_loading"
+                                                      OnCsprojChanged="@CsProjectFileChangedWizard" />
+                                    break;
+
+                                case DataObjects.StepNameList.EnvironmentSettings:
+                                    <FreeCICD_App_UI_Wizard_StepEnvironments EnvironmentOptions="@GlobalSettings.App.EnvironmentOptions"
+                                                            EnvSettings="@EnvSettings"
+                                                            IsDisabled="@_loading"
+                                                            ImportedFields="@_importedFields"
+                                                            GetWebsiteOptionsFunc="@GetWebsiteOptions"
+                                                            GetVirtualPathOptionsFunc="@GetVirtualPathOptions"
+                                                            GetAppPoolOptionsFunc="@GetAppPoolOptions"
+                                                            OnEnvironmentChanged="@EnvironmentChangedWizard"
+                                                            OnDeploymentTypeChanged="@EnvironmentDeploymentTypeChangedWizard"
+                                                            OnWebsiteChanged="@EnvironmentWebsiteChangedWizard"
+                                                            OnVirtualPathChanged="@EnvironmentVirtualPathChangedWizard"
+                                                            OnAppPoolChanged="@EnvironmentAppPoolChangedWizard" />
+                                    break;
+
+                                case DataObjects.StepNameList.SelectPipelineSelection:
+                                    <FreeCICD_App_UI_Wizard_StepPipeline PipelineDefinitions="@DevopsPipelineDefinitions"
+                                                        SelectedPipelineId="@SelectedPipelineId"
+                                                        NewPipelineName="@NewPipelineName"
+                                                        OnNewPipelineNameChanged="@(val => NewPipelineName = val)"
+                                                        IsDisabled="@_loading"
+                                                        OnPipelineChanged="@PipelineChangedWizard" />
+                                    break;
+
+                                case DataObjects.StepNameList.YAMLPreviewAndSave:
+                                    <FreeCICD_App_UI_Wizard_StepPreview IsPreviewLoading="@_isPreviewLoading"
+                                                       ExistingYamlContent="@ExistingYamlContent"
+                                                       NewYamlContent="@NewYamlContent" />
+                                    break;
+
+                                case DataObjects.StepNameList.Completed:
+                                    <FreeCICD_App_UI_Wizard_StepCompleted IsSaving="@_isSaving"
+                                                         SaveCompleted="@_saveCompleted"
+                                                         SaveErrorMessage="@_saveErrorMessage"
+                                                         LastSavedPipelineDefinition="@LastSavedPipelineDefinition"
+                                                         SelectedProjectInfo="@SelectedProjectInfo"
+                                                         SelectedBranchInfo="@SelectedBranchInfo"
+                                                         EnvironmentSettings="@EnvSettings" />
+                                    break;
+                            }
+                        }
+
+                        @* Loading indicator and messages *@
+                        @if (_loading)
+                        {
+                            <div class="d-flex flex-column justify-content-center align-items-center my-5">
+                                <div class="spinner-border text-primary" role="status" aria-label="Loading DevOps Info">
+                                    <span class="visually-hidden">Loading DevOps Info</span>
+                                </div>
+                                <div class="mt-3">Loading DevOps Info... please wait, this can take up to a minute.</div>
+                            </div>
+                        }
+                        else if (_loadingMessages.Any())
+                        {
+                            <div class="mt-4">
+                                <h6 class="text-muted">Update Information</h6>
+                                <div class="table-responsive">
+                                    <table class="table table-striped table-sm">
+                                        <thead>
+                                            <tr class="table-dark">
+                                                <th scope="col">Message</th>
+                                                <th scope="col">Created</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var message in _loadingMessages)
+                                            {
+                                                <tr>
+                                                    <td>@message.Message</td>
+                                                    <td>@message.Created</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            @* Import from Public Repo Modal *@
+            <FreeCICD_App_UI_Import @ref="_importPublicRepoModal" 
+                                           DevOpsPAT="@DevOpsPAT"
+                                           OrgName="@OrgName"
+                                           OnImportComplete="@OnPublicRepoImportComplete" />
+        }
+    }
+}
+
+@code {
+    protected async Task MyLoadDataAsync()
+    {
+        if (Model.LoggedIn) {
+            _hidePAT = true;
+            currentStep = 1;
+            DevOpsPAT = "user is logged in, doesn't matter what this value is";
+            OrgName = "user is logged in, this value is ignored, put anything here";
+            await PATandOrgNameChangedWizard();
+            await PrefetchIISDataIfNeeded();
+            
+            // Process import if ?import= parameter was provided
+            await ProcessImportIfNeeded();
+            
+            StateHasChanged();
+        } else {
+            OrgName = string.Empty;
+            DevOpsPAT = string.Empty;
+            currentStep = 0;
+            await PrefetchIISDataIfNeeded();
+            StateHasChanged();
+        }
+    }
+
+    private bool _hidePAT = false;
+    private int currentStep = 0;
+    private string? SelectedProjectId = string.Empty;
+    private string? SelectedRepoId = string.Empty;
+    private string? SelectedBranch = string.Empty;
+    private string? SelectedCsprojPath = string.Empty;
+    private string? NewPipelineName = string.Empty;
+    private int? SelectedPipelineId = 0;
+    private string ExistingYamlContent = string.Empty;
+    private string NewYamlContent { get; set; } = string.Empty;
+    private DataObjects.BuildDefinition? LastSavedPipelineDefinition { get; set; } = null;
+    private string DevOpsPAT { get; set; } = string.Empty;
+    private string OrgName { get; set; } = string.Empty;
+    private Dictionary<GlobalSettings.EnvironmentType, DataObjects.EnvSetting> EnvSettings = new();
+
+    private string[] StepNames = [
+        DataObjects.StepNameList.SelectPAT,
+        DataObjects.StepNameList.SelectProject,
+        DataObjects.StepNameList.SelectRepository,
+        DataObjects.StepNameList.SelectBranch,
+        DataObjects.StepNameList.SelectCsprojFile,
+        DataObjects.StepNameList.EnvironmentSettings,
+        DataObjects.StepNameList.SelectPipelineSelection,
+        DataObjects.StepNameList.YAMLPreviewAndSave,
+        DataObjects.StepNameList.Completed,
+    ];
+
+    private List<DataObjects.DevopsProjectInfo> DevopsProjectInfos { get; set; } = new();
+    private List<DataObjects.DevopsVariableGroup> DevopsVariableGroups { get; set; } = new();
+    private List<DataObjects.DevopsPipelineDefinition> DevopsPipelineDefinitions { get; set; } = new();
+    private List<Guid> _loadingMessagesIds = new List<Guid>();
+    private List<LoadingMessage> _loadingMessages = new List<LoadingMessage>();
+    private bool _isPreviewLoading = false;
+    private bool _isSaving = false;
+    private bool _saveCompleted = false;
+    private string _saveErrorMessage = string.Empty;
+
+    protected DataObjects.DevopsProjectInfo? SelectedProjectInfo => DevopsProjectInfos?.FirstOrDefault(p => p.ProjectId == SelectedProjectId);
+    protected DataObjects.DevopsGitRepoInfo? SelectedRepoInfo => SelectedProjectInfo?.GitRepos.FirstOrDefault(r => r.RepoId == SelectedRepoId);
+    protected DataObjects.DevopsGitRepoBranchInfo? SelectedBranchInfo => SelectedRepoInfo?.GitBranches.FirstOrDefault(r => r.BranchName == SelectedBranch);
+    protected DataObjects.DevopsPipelineDefinition? SelectedPipelineInfo => DevopsPipelineDefinitions?.FirstOrDefault(p => p.Id == SelectedPipelineId);
+
+    protected DataObjects.DevOpsPipelineRequest? DevOpsPipelineRequest => new DataObjects.DevOpsPipelineRequest {
+            Pat = DevOpsPAT,
+            OrgName = OrgName,
+            ProjectId = SelectedProjectInfo?.ProjectId ?? "",
+            RepoId = SelectedRepoInfo?.RepoId ?? "",
+            Branch = SelectedBranch ?? "",
+            YAMLFileName = SelectedPipelineInfo?.YamlFileName ?? "",
+            PipelineId = SelectedPipelineId.GetValueOrDefault(0),
+            PipelineName = SelectedPipelineId > 0 ? string.Empty : NewPipelineName ?? "",
+            EnvironmentSettings = EnvSettings.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+            CsProjectFile = (SelectedCsprojPath ?? "").TrimStart('/', '\\'),
+            ConnectionId = Model.SignalrClientRegistration?.ConnectionId
+        };
+
+    protected class LoadingMessage
+    {
+        public DateTime Created { get; set; } = DateTime.Now;
+        public string Message { get; set; } = string.Empty;
+    }
+
+    private void ClearLoadingMessages()
+    {
+        _loadingMessagesIds = new List<Guid>();
+        _loadingMessages = new List<LoadingMessage>();
+        StateHasChanged();
+    }
+
+    private async Task NextStep(string? stepName = "")
+    {
+        ClearLoadingMessages();
+        if (currentStep < StepNames.Length - 1) { currentStep++; }
+
+        switch (stepName) {
+            case DataObjects.StepNameList.SelectProject:
+                StateHasChanged();
+                if (!string.IsNullOrWhiteSpace(SelectedProjectId)) {
+                    try {
+                        List<DataObjects.DevopsPipelineDefinition>? results = await Helpers.GetOrPost<List<DataObjects.DevopsPipelineDefinition>>(DataObjects.Endpoints.DevOps.GetDevOpsPipelines +
+                            "?connectionId=" + Uri.EscapeDataString((string.Empty + Model?.SignalrClientRegistration?.ConnectionId).Trim()) +
+                            "&projectId=" + Uri.EscapeDataString($"{SelectedProjectInfo?.ProjectId}") +
+                            "&orgName=" + Uri.EscapeDataString(OrgName) +
+                            "&pat=" + Uri.EscapeDataString(DevOpsPAT));
+                        DevopsPipelineDefinitions = results?.ToList() ?? new List<DataObjects.DevopsPipelineDefinition>();
+                        if (DevopsPipelineDefinitions != null && DevopsPipelineDefinitions.Count == 1) { SelectedPipelineId = DevopsPipelineDefinitions[0].Id; }
+                    } catch { } finally { StateHasChanged(); }
+                    await Task.Delay(800);
+                }
+                break;
+
+            case DataObjects.StepNameList.SelectPipelineSelection:
+                _isPreviewLoading = true;
+                StateHasChanged();
+                if (!string.IsNullOrWhiteSpace(NewPipelineName) || SelectedPipelineId != null) {
+                    ExistingYamlContent = string.Empty;
+                    var pipeline = DevopsPipelineDefinitions.FirstOrDefault(p => p.Id == SelectedPipelineId);
+                    if (pipeline != null && !string.IsNullOrEmpty(pipeline.YamlFileName)) {
+                        try {
+                            string? results = await Helpers.GetOrPost<string>(DataObjects.Endpoints.DevOps.GetDevOpsYmlFileContent +
+                                "?connectionId=" + Uri.EscapeDataString((string.Empty + Model?.SignalrClientRegistration?.ConnectionId).Trim()) +
+                                "&filePath=" + Uri.EscapeDataString($"{pipeline.YamlFileName}") +
+                                "&projectId=" + Uri.EscapeDataString($"{SelectedProjectInfo?.ProjectId}") +
+                                "&repoId=" + Uri.EscapeDataString($"{SelectedRepoInfo?.RepoId}") +
+                                "&branchName=" + Uri.EscapeDataString($"{SelectedBranchInfo?.BranchName}") +
+                                "&orgName=" + Uri.EscapeDataString(OrgName) +
+                                "&pat=" + Uri.EscapeDataString(DevOpsPAT));
+                            ExistingYamlContent = results ?? "";
+                        } catch { ExistingYamlContent = ""; }
+                    } else { SelectedPipelineId = 0; ExistingYamlContent = ""; }
+                    NewYamlContent = string.Empty;
+                    StateHasChanged();
+                    _loadingMessages.Insert(0, new LoadingMessage { Message = "Generating YAML preview…", Created = DateTime.UtcNow });
+                    StateHasChanged();
+                    try {
+                        var response = await Helpers.GetOrPost<string>($"{DataObjects.Endpoints.DevOps.PreviewDevOpsYmlFileContents}", DevOpsPipelineRequest);
+                        if (!string.IsNullOrWhiteSpace(response)) { NewYamlContent = response; _loadingMessages.Insert(0, new LoadingMessage { Message = "Preview fetched successfully.", Created = DateTime.UtcNow }); }
+                        else { _loadingMessages.Insert(0, new LoadingMessage { Message = $"Error", Created = DateTime.UtcNow }); }
+                    } catch (Exception ex) { _loadingMessages.Insert(0, new LoadingMessage { Message = $"Exception: {ex.Message}", Created = DateTime.UtcNow }); }
+                    finally { _isPreviewLoading = false; StateHasChanged(); }
+                }
+                break;
+
+            case DataObjects.StepNameList.YAMLPreviewAndSave:
+                // Reset save state
+                _isSaving = true;
+                _saveCompleted = false;
+                _saveErrorMessage = string.Empty;
+                LastSavedPipelineDefinition = null;
+                StateHasChanged();
+                
+                try {
+                    _loadingMessages.Insert(0, new LoadingMessage { Message = "Saving pipeline… please don't navigate away.", Created = DateTime.UtcNow });
+                    StateHasChanged();
+                    
+                    var createOrUpdateResult = await Helpers.GetOrPost<DataObjects.BuildDefinition>($"{DataObjects.Endpoints.DevOps.CreateOrUpdateDevOpsPipeline}", DevOpsPipelineRequest);
+                    
+                    if (createOrUpdateResult != null && createOrUpdateResult.Id > 0) {
+                        LastSavedPipelineDefinition = createOrUpdateResult;
+                        _saveCompleted = true;
+                        _loadingMessages.Insert(0, new LoadingMessage { Message = "Pipeline created/updated successfully.", Created = DateTime.UtcNow });
+                    } else {
+                        _saveErrorMessage = "The server returned an empty or invalid response.";
+                        _loadingMessages.Insert(0, new LoadingMessage { Message = $"Error: {_saveErrorMessage}", Created = DateTime.UtcNow });
+                    }
+                } catch (Exception ex) {
+                    _saveErrorMessage = ex.Message;
+                    _loadingMessages.Insert(0, new LoadingMessage { Message = $"Exception: {ex.Message}", Created = DateTime.UtcNow });
+                }
+                finally {
+                    _isSaving = false;
+                    StateHasChanged();
+                }
+                break;
+        }
+    }
+
+    private void PrevStep() { ClearLoadingMessages(); if (currentStep > 0) { currentStep--; StateHasChanged(); } }
+
+    private async Task PATandOrgNameChangedWizard()
+    {
+        ClearLoadingMessages();
+        StateHasChanged();
+        try {
+            List<DataObjects.DevopsProjectInfo>? result = await Helpers.GetOrPost<List<DataObjects.DevopsProjectInfo>>(DataObjects.Endpoints.DevOps.GetDevOpsProjects +
+                "?connectionId=" + Uri.EscapeDataString((string.Empty + Model?.SignalrClientRegistration?.ConnectionId).Trim()) +
+                "&orgName=" + Uri.EscapeDataString(OrgName) +
+                "&pat=" + Uri.EscapeDataString(DevOpsPAT));
+            if (result != null && result.Any()) {
+                DevopsProjectInfos = result.ToList();
+                currentStep = 1;
+                StateHasChanged();
+                if (DevopsProjectInfos.Count == 1) { SelectedProjectId = DevopsProjectInfos[0].ProjectId; await ProjectChangedWizard(new ChangeEventArgs { Value = SelectedProjectId }); }
+            } else { DevopsProjectInfos = new List<DataObjects.DevopsProjectInfo>(); }
+        } catch { } finally { await Task.CompletedTask; StateHasChanged(); }
+    }
+
+    private async Task ProjectChangedWizard(ChangeEventArgs e)
+    {
+        ClearLoadingMessages();
+        StateHasChanged();
+        try {
+            SelectedProjectId = e.Value?.ToString() ?? "";
+            SelectedRepoId = "";
+            SelectedBranch = "";
+            if (SelectedProjectInfo != null) {
+                List<DataObjects.DevopsGitRepoInfo>? result = await Helpers.GetOrPost<List<DataObjects.DevopsGitRepoInfo>>(DataObjects.Endpoints.DevOps.GetDevOpsRepos +
+                    "?connectionId=" + Uri.EscapeDataString((string.Empty + Model?.SignalrClientRegistration?.ConnectionId).Trim()) +
+                    "&projectId=" + Uri.EscapeDataString($"{SelectedProjectInfo.ProjectId}") +
+                    "&orgName=" + Uri.EscapeDataString(OrgName) +
+                    "&pat=" + Uri.EscapeDataString(DevOpsPAT));
+                if (result != null && result.Any()) {
+                    if (DevopsProjectInfos != null) { foreach (var item in DevopsProjectInfos) { if (item.ProjectId == SelectedProjectId) { item.GitRepos = result; } else { item.GitRepos = new List<DataObjects.DevopsGitRepoInfo>(); } } }
+                    if (result.Count == 1) { SelectedRepoId = result[0].RepoId; await RepoChangedWizard(new ChangeEventArgs { Value = SelectedRepoId }); }
+                }
+            }
+        } catch { } finally { await Task.CompletedTask; StateHasChanged(); }
+    }
+
+    private async Task RepoChangedWizard(ChangeEventArgs e)
+    {
+        ClearLoadingMessages();
+        StateHasChanged();
+        try {
+            SelectedRepoId = e.Value?.ToString() ?? "";
+            SelectedBranch = "";
+            if (SelectedRepoInfo != null) {
+                List<DataObjects.DevopsGitRepoBranchInfo>? result = await Helpers.GetOrPost<List<DataObjects.DevopsGitRepoBranchInfo>>(DataObjects.Endpoints.DevOps.GetDevOpsBranches +
+                    "?connectionId=" + Uri.EscapeDataString((string.Empty + Model?.SignalrClientRegistration?.ConnectionId).Trim()) +
+                    "&projectId=" + Uri.EscapeDataString($"{SelectedProjectInfo?.ProjectId}") +
+                    "&repoId=" + Uri.EscapeDataString($"{SelectedRepoInfo?.RepoId}") +
+                    "&orgName=" + Uri.EscapeDataString(OrgName) +
+                    "&pat=" + Uri.EscapeDataString(DevOpsPAT));
+                if (result != null && result.Any()) {
+                    if (DevopsProjectInfos != null) {
+                        foreach (var project in DevopsProjectInfos) {
+                            if (project.ProjectId == SelectedProjectId) {
+                                foreach (var repo in project.GitRepos) {
+                                    if (repo.RepoId == SelectedRepoInfo?.RepoId) {
+                                        repo.GitBranches = result;
+                                    } else {
+                                        repo.GitBranches = new List<DataObjects.DevopsGitRepoBranchInfo>();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (result.Count == 1) { SelectedBranch = result[0].BranchName; await BranchChangedWizard(new ChangeEventArgs { Value = SelectedBranch }); }
+                }
+            }
+        } catch { } finally { await Task.CompletedTask; StateHasChanged(); }
+    }
+
+    private async Task BranchChangedWizard(ChangeEventArgs e)
+    {
+        ClearLoadingMessages();
+        StateHasChanged();
+        try {
+            SelectedBranch = e.Value?.ToString() ?? "";
+            if (SelectedBranchInfo != null) {
+                List<DataObjects.DevopsFileItem>? result = await Helpers.GetOrPost<List<DataObjects.DevopsFileItem>>(DataObjects.Endpoints.DevOps.GetDevOpsFiles +
+                    "?connectionId=" + Uri.EscapeDataString((string.Empty + Model?.SignalrClientRegistration?.ConnectionId).Trim()) +
+                    "&projectId=" + Uri.EscapeDataString($"{SelectedProjectInfo?.ProjectId}") +
+                    "&repoId=" + Uri.EscapeDataString($"{SelectedRepoInfo?.RepoId}") +
+                    "&branchName=" + Uri.EscapeDataString($"{SelectedBranchInfo?.BranchName}") +
+                    "&orgName=" + Uri.EscapeDataString(OrgName) +
+                    "&pat=" + Uri.EscapeDataString(DevOpsPAT));
+                if (result != null && result.Any()) {
+                    if (DevopsProjectInfos != null) { foreach (var project in DevopsProjectInfos) { if (project.ProjectId == SelectedProjectId) { foreach (var repo in project.GitRepos) { if (repo.RepoId == SelectedRepoInfo?.RepoId) { foreach (var branch in repo.GitBranches) { if (branch.BranchName == SelectedBranchInfo?.BranchName) { branch.Files = result.ToList(); } else { branch.Files = new List<DataObjects.DevopsFileItem>(); } } } } } } }
+                    var csprojFiles = result.Where(f => f.FileType.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)).ToList();
+                    if (csprojFiles.Count == 1) { SelectedCsprojPath = csprojFiles[0].Path; }
+                }
+            }
+        } catch { } finally { await Task.CompletedTask; StateHasChanged(); }
+    }
+
+    private async Task CsProjectFileChangedWizard(ChangeEventArgs e) { ClearLoadingMessages(); StateHasChanged(); try { SelectedCsprojPath = e?.Value?.ToString() ?? ""; } catch { } finally { await Task.CompletedTask; StateHasChanged(); } }
+
+    private async Task EnvironmentChangedWizard(GlobalSettings.EnvironmentType envKey, ChangeEventArgs e)
+    {
+        ClearLoadingMessages();
+        StateHasChanged();
+        try {
+            bool isChecked = e.Value != null && bool.TryParse(e.Value.ToString(), out bool result) && result;
+            if (isChecked) {
+                string websiteNameDefault = GlobalSettings.App.EnvironmentOptions[envKey]?.Hostname ?? string.Empty;
+                EnvSettings[envKey] = new DataObjects.EnvSetting {
+                    EnvName = envKey, IISDeploymentType = "IISWebApplication", WebsiteName = "" + websiteNameDefault,
+                    VirtualPath = "/" + SelectedProjectInfo?.ProjectName?.ToLower(),
+                    AppPoolName = "" + websiteNameDefault + "." + SelectedProjectInfo?.ProjectName?.ToLower(),
+                    VariableGroupName = $"{SelectedProjectInfo?.ProjectName}_{GlobalSettings.App.VariableGroupNameDefault}_{envKey}"
+                };
+            } else { if (EnvSettings.ContainsKey(envKey)) { EnvSettings.Remove(envKey); } }
+        } catch { } finally { await Task.CompletedTask; StateHasChanged(); }
+    }
+
+    private async Task EnvironmentDeploymentTypeChangedWizard(GlobalSettings.EnvironmentType envKey, ChangeEventArgs e)
+    {
+        ClearLoadingMessages();
+        StateHasChanged();
+        try {
+            string deploymentType = e.Value?.ToString() ?? "";
+            if (EnvSettings.ContainsKey(envKey)) {
+                EnvSettings[envKey].IISDeploymentType = deploymentType;
+                EnvSettings[envKey].VirtualPath = (deploymentType == "IISWebApplication" || deploymentType == "IISWebApplicationAuth") ? "/" + SelectedProjectInfo?.ProjectName?.ToLower() : "";
+            }
+        } catch { } finally { await Task.CompletedTask; StateHasChanged(); }
+    }
+
+    private async Task PipelineChangedWizard(ChangeEventArgs e) { try { ExistingYamlContent = string.Empty; NewYamlContent = string.Empty; SelectedPipelineId = 0; if (int.TryParse(e.Value?.ToString(), out int pid)) { SelectedPipelineId = pid; } } catch { } finally { await Task.CompletedTask; StateHasChanged(); } }
+
+    private bool _iisPrefetched = false;
+    private Dictionary<GlobalSettings.EnvironmentType, DataObjects.IISInfo> _iisData = new();
+
+    private static bool TryMapEnvKeyToEnum(string key, out GlobalSettings.EnvironmentType env)
+    {
+        env = default;
+        if (string.IsNullOrWhiteSpace(key)) return false;
+        var k = key.Trim();
+        if (Enum.TryParse<GlobalSettings.EnvironmentType>(k, true, out env)) return true;
+        if (k.Contains("dev", StringComparison.OrdinalIgnoreCase)) { env = GlobalSettings.EnvironmentType.DEV; return true; }
+        if (k.Contains("prod", StringComparison.OrdinalIgnoreCase)) { env = GlobalSettings.EnvironmentType.PROD; return true; }
+        if (k.Contains("cms", StringComparison.OrdinalIgnoreCase)) { env = GlobalSettings.EnvironmentType.CMS; return true; }
+        return false;
+    }
+
+    private async Task PrefetchIISDataIfNeeded()
+    {
+        if (_iisPrefetched) { await Task.CompletedTask; return; }
+        try {
+            var apiResult = await Helpers.GetOrPost<Dictionary<string, DataObjects.IISInfo>>(DataObjects.Endpoints.DevOps.GetDevOpsIISInfo);
+            _iisData.Clear();
+            if (apiResult != null) { foreach (var kv in apiResult) { if (TryMapEnvKeyToEnum(kv.Key, out var envKey) && kv.Value != null) { _iisData[envKey] = kv.Value; } } }
+        } catch { _iisData.Clear(); }
+        _iisPrefetched = true;
+        await Task.CompletedTask;
+    }
+
+    private IEnumerable<string> GetWebsiteOptions(GlobalSettings.EnvironmentType envKey) { if (_iisData.TryGetValue(envKey, out var info) && info?.Sites != null) { return info.Sites.Select(s => s?.Name ?? string.Empty).Where(n => !string.IsNullOrWhiteSpace(n)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(n => n, StringComparer.OrdinalIgnoreCase); } return Array.Empty<string>(); }
+
+    private IEnumerable<string> GetVirtualPathOptions(GlobalSettings.EnvironmentType envKey, string websiteName) { if (_iisData.TryGetValue(envKey, out var info) && info?.Sites != null && !string.IsNullOrWhiteSpace(websiteName)) { var site = info.Sites.FirstOrDefault(s => string.Equals(s?.Name ?? string.Empty, websiteName, StringComparison.OrdinalIgnoreCase)); if (site?.Applications != null) { return site.Applications.Select(a => a?.Path ?? string.Empty).Where(p => !string.IsNullOrWhiteSpace(p)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(p => p, StringComparer.OrdinalIgnoreCase); } } return Array.Empty<string>(); }
+
+    private IEnumerable<string> GetAppPoolOptions(GlobalSettings.EnvironmentType envKey) { if (_iisData.TryGetValue(envKey, out var info) && info != null) { var fromPools = (info.ApplicationPools ?? new List<DataObjects.ApplicationPool>()).Select(ap => ap?.Name ?? string.Empty).Where(n => !string.IsNullOrWhiteSpace(n)); var fromApps = (info.Sites ?? new List<DataObjects.Site>()).Where(s => s?.Applications != null).SelectMany(s => s.Applications).Select(a => a?.AppPool ?? string.Empty).Where(n => !string.IsNullOrWhiteSpace(n)); return fromPools.Concat(fromApps).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(n => n, StringComparer.OrdinalIgnoreCase); } return Array.Empty<string>(); }
+
+    private async Task EnvironmentWebsiteChangedWizard(GlobalSettings.EnvironmentType envKey, ChangeEventArgs e) { try { var value = e?.Value?.ToString() ?? ""; if (EnvSettings.ContainsKey(envKey)) { EnvSettings[envKey].WebsiteName = value; EnvSettings[envKey].AllowCustomWebsiteName = string.IsNullOrWhiteSpace(value); } } catch { } finally { await Task.CompletedTask; StateHasChanged(); } }
+
+    private async Task EnvironmentVirtualPathChangedWizard(GlobalSettings.EnvironmentType envKey, ChangeEventArgs e) { try { var value = e?.Value?.ToString() ?? ""; if (EnvSettings.ContainsKey(envKey)) { EnvSettings[envKey].VirtualPath = value; EnvSettings[envKey].AllowCustomVirtualPath = string.IsNullOrWhiteSpace(value); } } catch { } finally { await Task.CompletedTask; StateHasChanged(); } }
+
+    private async Task EnvironmentAppPoolChangedWizard(GlobalSettings.EnvironmentType envKey, ChangeEventArgs e) { try { var value = e?.Value?.ToString() ?? ""; if (EnvSettings.ContainsKey(envKey)) { EnvSettings[envKey].AppPoolName = value; EnvSettings[envKey].AllowCustomAppPoolName = string.IsNullOrWhiteSpace(value); } } catch { } finally { await Task.CompletedTask; StateHasChanged(); } }
+
+    /// <summary>
+    /// Resets the wizard to its initial state, clearing all selections and returning to step 0 (or step 1 if logged in).
+    /// </summary>
+    private void StartOver()
+    {
+        ClearLoadingMessages();
+        
+        // Reset all selections
+        SelectedProjectId = string.Empty;
+        SelectedRepoId = string.Empty;
+        SelectedBranch = string.Empty;
+        SelectedCsprojPath = string.Empty;
+        SelectedPipelineId = 0;
+        NewPipelineName = string.Empty;
+        ExistingYamlContent = string.Empty;
+        NewYamlContent = string.Empty;
+        LastSavedPipelineDefinition = null;
+        EnvSettings.Clear();
+        
+        // Reset save state
+        _isSaving = false;
+        _saveCompleted = false;
+        _saveErrorMessage = string.Empty;
+        
+        // Reset import state
+        _importPipelineId = null;
+        _isImporting = false;
+        _importCompleted = false;
+        _importErrorMessage = string.Empty;
+        _parsedSettings = null;
+        _importConfidenceScore = 0;
+        _importedFields.Clear();
+        
+        // Reset to appropriate starting step
+        if (Model.LoggedIn)
+        {
+            currentStep = 1; // Skip PAT step for logged-in users
+        }
+        else
+        {
+            currentStep = 0;
+            DevOpsPAT = string.Empty;
+            OrgName = string.Empty;
+        }
+        
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Navigate to a specific step (only allows going back to previously completed steps).
+    /// </summary>
+    private async Task GoToStep(int stepIndex)
+    {
+        if (stepIndex < currentStep && stepIndex >= (_hidePAT ? 1 : 0))
+        {
+            ClearLoadingMessages();
+            currentStep = stepIndex;
+            StateHasChanged();
+        }
+        await Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Gets the wizard step information for the WizardStepper component.
+    /// </summary>
+    private List<FreeCICD_App_UI_Wizard_Stepper.WizardStepInfo> GetWizardSteps()
+    {
+        var steps = new List<FreeCICD_App_UI_Wizard_Stepper.WizardStepInfo>();
+        
+        for (int i = _hidePAT ? 1 : 0; i < StepNames.Length; i++)
+        {
+            var stepName = StepNames[i];
+            var shortName = GetShortStepName(stepName);
+            var selectedValue = GetStepSelectedValue(i);
+            
+            steps.Add(new FreeCICD_App_UI_Wizard_Stepper.WizardStepInfo
+            {
+                Name = stepName,
+                ShortName = shortName,
+                SelectedValue = selectedValue
+            });
+        }
+        
+        return steps;
+    }
+
+    private string GetShortStepName(string stepName)
+    {
+        return stepName switch
+        {
+            DataObjects.StepNameList.SelectPAT => "Credentials",
+            DataObjects.StepNameList.SelectProject => "Project",
+            DataObjects.StepNameList.SelectRepository => "Repository",
+            DataObjects.StepNameList.SelectBranch => "Branch",
+            DataObjects.StepNameList.SelectCsprojFile => ".csproj",
+            DataObjects.StepNameList.EnvironmentSettings => "Environments",
+            DataObjects.StepNameList.SelectPipelineSelection => "Pipeline",
+            DataObjects.StepNameList.YAMLPreviewAndSave => "Preview",
+            DataObjects.StepNameList.Completed => "Done",
+            _ => stepName
+        };
+    }
+
+    private string GetStepSelectedValue(int stepIndex)
+    {
+        var stepName = StepNames[stepIndex];
+        return stepName switch
+        {
+            DataObjects.StepNameList.SelectPAT => !string.IsNullOrWhiteSpace(OrgName) ? OrgName : "",
+            DataObjects.StepNameList.SelectProject => SelectedProjectInfo?.ProjectName ?? "",
+            DataObjects.StepNameList.SelectRepository => SelectedRepoInfo?.RepoName ?? "",
+            DataObjects.StepNameList.SelectBranch => SelectedBranchInfo?.BranchName ?? "",
+            DataObjects.StepNameList.SelectCsprojFile => !string.IsNullOrWhiteSpace(SelectedCsprojPath) ? System.IO.Path.GetFileName(SelectedCsprojPath) : "",
+            DataObjects.StepNameList.EnvironmentSettings => EnvSettings.Any() ? string.Join(", ", EnvSettings.Keys.Select(k => k.ToString())) : "",
+            DataObjects.StepNameList.SelectPipelineSelection => SelectedPipelineInfo?.Name ?? NewPipelineName ?? "",
+            DataObjects.StepNameList.YAMLPreviewAndSave => !string.IsNullOrWhiteSpace(NewYamlContent) ? "Ready" : "",
+            DataObjects.StepNameList.Completed => "?",
+            _ => ""
+        };
+    }
+
+    /// <summary>
+    /// Gets the selection summary items for the SelectionSummary component.
+    /// </summary>
+    private List<FreeCICD_App_UI_Wizard_Summary.SelectionItem> GetSelectionSummary()
+    {
+        var selections = new List<FreeCICD_App_UI_Wizard_Summary.SelectionItem>();
+        
+        if (!string.IsNullOrWhiteSpace(SelectedProjectInfo?.ProjectName))
+        {
+            selections.Add(new FreeCICD_App_UI_Wizard_Summary.SelectionItem { Label = "Project", Value = SelectedProjectInfo.ProjectName });
+        }
+        
+        if (!string.IsNullOrWhiteSpace(SelectedRepoInfo?.RepoName))
+        {
+            selections.Add(new FreeCICD_App_UI_Wizard_Summary.SelectionItem { Label = "Repository", Value = SelectedRepoInfo.RepoName });
+        }
+        
+        if (!string.IsNullOrWhiteSpace(SelectedBranchInfo?.BranchName))
+        {
+            selections.Add(new FreeCICD_App_UI_Wizard_Summary.SelectionItem { Label = "Branch", Value = SelectedBranchInfo.BranchName });
+        }
+        
+        if (!string.IsNullOrWhiteSpace(SelectedCsprojPath))
+        {
+            selections.Add(new FreeCICD_App_UI_Wizard_Summary.SelectionItem { Label = ".csproj File", Value = SelectedCsprojPath });
+        }
+        
+        if (EnvSettings.Any())
+        {
+            selections.Add(new FreeCICD_App_UI_Wizard_Summary.SelectionItem { Label = "Environments", Value = string.Join(", ", EnvSettings.Keys.Select(k => k.ToString())) });
+        }
+        
+        if (SelectedPipelineInfo != null)
+        {
+            selections.Add(new FreeCICD_App_UI_Wizard_Summary.SelectionItem { Label = "Pipeline", Value = SelectedPipelineInfo.Name ?? "" });
+        }
+        else if (!string.IsNullOrWhiteSpace(NewPipelineName))
+        {
+            selections.Add(new FreeCICD_App_UI_Wizard_Summary.SelectionItem { Label = "New Pipeline", Value = NewPipelineName });
+        }
+        
+        return selections;
+    }
+
+    /// <summary>
+    /// Gets the current step index adjusted for the WizardStepper (accounts for hidden PAT step).
+    /// </summary>
+    private int GetAdjustedCurrentStep()
+    {
+        return _hidePAT ? currentStep - 1 : currentStep;
+    }
+
+    /// <summary>
+    /// Check for import parameter in query string and initiate import if present.
+    /// </summary>
+    private void CheckForImportParameter()
+    {
+        var importParam = Helpers.GetQuerystringValue("import");
+        if (!string.IsNullOrWhiteSpace(importParam) && int.TryParse(importParam, out int pipelineId) && pipelineId > 0)
+        {
+            _importPipelineId = pipelineId;
+        }
+    }
+
+    /// <summary>
+    /// Process the import once data is loaded and PAT/Org are available.
+    /// </summary>
+    private async Task ProcessImportIfNeeded()
+    {
+        if (_importPipelineId.HasValue && !_importCompleted && !_isImporting)
+        {
+            _isImporting = true;
+            _importErrorMessage = string.Empty;
+            StateHasChanged();
+
+            try
+            {
+                // Build the endpoint URL with the pipeline ID
+                var endpoint = DataObjects.Endpoints.PipelineDashboard.ParsePipelineSettings
+                    .Replace("{id}", _importPipelineId.Value.ToString());
+                
+                // Add connection ID for SignalR updates
+                var url = endpoint + "?connectionId=" + Uri.EscapeDataString((string.Empty + Model?.SignalrClientRegistration?.ConnectionId).Trim());
+
+                // Call the parse endpoint (POST with empty body)
+                var result = await Helpers.GetOrPost<DataObjects.ParsedPipelineSettings>(url, new { });
+
+                if (result != null)
+                {
+                    _parsedSettings = result;
+                    _importConfidenceScore = CalculateConfidenceScore(result);
+                    _importCompleted = true;
+
+                    // Apply the parsed settings to wizard fields
+                    await ApplyParsedSettings(result);
+                }
+                else
+                {
+                    _importErrorMessage = "Failed to parse pipeline settings - no response received.";
+                }
+            }
+            catch (Exception ex)
+            {
+                _importErrorMessage = $"Import error: {ex.Message}";
+            }
+            finally
+            {
+                _isImporting = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Calculate an overall confidence score from parsed pipeline settings.
+    /// </summary>
+    private int CalculateConfidenceScore(DataObjects.ParsedPipelineSettings settings)
+    {
+        if (settings == null) return 0;
+        
+        int score = 0;
+        int factors = 0;
+        
+        // Base score for FreeCICD-generated pipelines
+        if (settings.IsFreeCICDGenerated)
+        {
+            score += 90;
+            factors++;
+        }
+        
+        // Score based on how many fields were parsed
+        if (!string.IsNullOrWhiteSpace(settings.SelectedBranch)) { score += 80; factors++; }
+        if (!string.IsNullOrWhiteSpace(settings.SelectedCsprojPath)) { score += 80; factors++; }
+        if (!string.IsNullOrWhiteSpace(settings.ProjectName)) { score += 70; factors++; }
+        
+        // Score from environment settings
+        if (settings.Environments != null && settings.Environments.Any())
+        {
+            foreach (var env in settings.Environments)
+            {
+                int envScore = env.Confidence switch
+                {
+                    DataObjects.ParseConfidence.High => 90,
+                    DataObjects.ParseConfidence.Medium => 60,
+                    DataObjects.ParseConfidence.Low => 30,
+                    _ => 50
+                };
+                score += envScore;
+                factors++;
+            }
+        }
+        
+        // Reduce score if there are warnings
+        if (settings.ParseWarnings != null && settings.ParseWarnings.Any())
+        {
+            score -= settings.ParseWarnings.Count * 10;
+        }
+        
+        return factors > 0 ? Math.Clamp(score / factors, 0, 100) : 0;
+    }
+
+    /// <summary>
+    /// Apply parsed pipeline settings to wizard fields.
+    /// </summary>
+    private async Task ApplyParsedSettings(DataObjects.ParsedPipelineSettings settings)
+    {
+        // Clear previous import tracking
+        _importedFields.Clear();
+
+        // Apply project selection if we have a project name
+        if (!string.IsNullOrWhiteSpace(settings.ProjectName) && DevopsProjectInfos != null)
+        {
+            var matchingProject = DevopsProjectInfos.FirstOrDefault(p => 
+                p.ProjectName.Equals(settings.ProjectName, StringComparison.OrdinalIgnoreCase));
+            
+            if (matchingProject != null)
+            {
+                SelectedProjectId = matchingProject.ProjectId;
+                _importedFields.Add("SelectedProjectId");
+                StateHasChanged();
+                
+                // Trigger repo loading
+                await ProjectChangedWizard(new ChangeEventArgs { Value = SelectedProjectId });
+                
+                // After repos load, select matching repo if we have a repo name
+                if (!string.IsNullOrWhiteSpace(settings.RepoName) && SelectedProjectInfo?.GitRepos != null)
+                {
+                    var matchingRepo = SelectedProjectInfo.GitRepos.FirstOrDefault(r =>
+                        r.RepoName.Equals(settings.RepoName, StringComparison.OrdinalIgnoreCase));
+                    
+                    if (matchingRepo != null)
+                    {
+                        SelectedRepoId = matchingRepo.RepoId;
+                        _importedFields.Add("SelectedRepoId");
+                        StateHasChanged();
+                        
+                        // Trigger branch loading
+                        await RepoChangedWizard(new ChangeEventArgs { Value = SelectedRepoId });
+                        
+                        // After branches load, select matching branch and trigger file loading
+                        if (!string.IsNullOrWhiteSpace(settings.SelectedBranch) && SelectedRepoInfo?.GitBranches != null)
+                        {
+                            var matchingBranch = SelectedRepoInfo.GitBranches.FirstOrDefault(b =>
+                                b.BranchName.Equals(settings.SelectedBranch, StringComparison.OrdinalIgnoreCase) ||
+                                b.BranchName.Equals($"refs/heads/{settings.SelectedBranch}", StringComparison.OrdinalIgnoreCase) ||
+                                b.BranchName.Replace("refs/heads/", "").Equals(settings.SelectedBranch, StringComparison.OrdinalIgnoreCase));
+                            
+                            if (matchingBranch != null)
+                            {
+                                // Don't set SelectedBranch directly - let BranchChangedWizard handle it
+                                // This ensures the file list gets loaded
+                                _importedFields.Add("SelectedBranch");
+                                await BranchChangedWizard(new ChangeEventArgs { Value = matchingBranch.BranchName });
+                            }
+                            else
+                            {
+                                // Branch not found in loaded branches, just set the value
+                                // Files won't load but at least the selection is preserved
+                                SelectedBranch = settings.SelectedBranch;
+                                _importedFields.Add("SelectedBranch");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Handle case where branch was provided but project/repo chain didn't complete
+        // (fallback - just set the value without loading files)
+        if (!_importedFields.Contains("SelectedBranch") && !string.IsNullOrWhiteSpace(settings.SelectedBranch))
+        {
+            SelectedBranch = settings.SelectedBranch;
+            _importedFields.Add("SelectedBranch");
+        }
+
+        // Apply csproj file if found - try to match against loaded file list
+        if (!string.IsNullOrWhiteSpace(settings.SelectedCsprojPath))
+        {
+            var parsedPath = settings.SelectedCsprojPath.TrimStart('/', '\\');
+            
+            // If files are loaded, find the actual path from the file list
+            if (SelectedBranchInfo?.Files != null)
+            {
+                var matchingFile = SelectedBranchInfo.Files.FirstOrDefault(f =>
+                    f.FileType.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) &&
+                    f.Path.TrimStart('/', '\\').Equals(parsedPath, StringComparison.OrdinalIgnoreCase));
+                
+                if (matchingFile != null)
+                {
+                    SelectedCsprojPath = matchingFile.Path; // Use the actual path from the file list
+                }
+                else
+                {
+                    SelectedCsprojPath = settings.SelectedCsprojPath; // Fallback to parsed path
+                }
+            }
+            else
+            {
+                SelectedCsprojPath = settings.SelectedCsprojPath;
+            }
+            _importedFields.Add("SelectedCsprojPath");
+        }
+
+        // Apply environment settings if found (convert from list to dictionary)
+        if (settings.Environments != null && settings.Environments.Any())
+        {
+            EnvSettings.Clear();
+            foreach (var parsedEnv in settings.Environments)
+            {
+                if (!string.IsNullOrWhiteSpace(parsedEnv.EnvironmentName) && 
+                    TryMapEnvKeyToEnum(parsedEnv.EnvironmentName, out var envKey))
+                {
+                    EnvSettings[envKey] = new DataObjects.EnvSetting
+                    {
+                        EnvName = envKey,
+                        IISDeploymentType = parsedEnv.IISDeploymentType ?? "IISWebApplication",
+                        WebsiteName = parsedEnv.WebsiteName ?? "",
+                        VirtualPath = parsedEnv.VirtualPath ?? "",
+                        AppPoolName = parsedEnv.AppPoolName ?? "",
+                        VariableGroupName = parsedEnv.VariableGroupName ?? "",
+                        BindingInfo = parsedEnv.BindingInfo ?? ""
+                    };
+                    
+                    // Track which environment fields were imported
+                    _importedFields.Add($"Env_{envKey}");
+                    if (!string.IsNullOrWhiteSpace(parsedEnv.WebsiteName))
+                        _importedFields.Add($"Env_{envKey}_WebsiteName");
+                    if (!string.IsNullOrWhiteSpace(parsedEnv.VirtualPath))
+                        _importedFields.Add($"Env_{envKey}_VirtualPath");
+                    if (!string.IsNullOrWhiteSpace(parsedEnv.AppPoolName))
+                        _importedFields.Add($"Env_{envKey}_AppPoolName");
+                    if (!string.IsNullOrWhiteSpace(parsedEnv.VariableGroupName))
+                        _importedFields.Add($"Env_{envKey}_VariableGroupName");
+                    if (!string.IsNullOrWhiteSpace(parsedEnv.IISDeploymentType))
+                        _importedFields.Add($"Env_{envKey}_IISDeploymentType");
+                }
+            }
+        }
+
+        // Load pipeline definitions for the Pipeline Selection step
+        // This is normally done in NextStep(SelectProject) but we need it during import
+        if (!string.IsNullOrWhiteSpace(SelectedProjectId) && SelectedProjectInfo != null)
+        {
+            try
+            {
+                List<DataObjects.DevopsPipelineDefinition>? pipelineResults = await Helpers.GetOrPost<List<DataObjects.DevopsPipelineDefinition>>(
+                    DataObjects.Endpoints.DevOps.GetDevOpsPipelines +
+                    "?connectionId=" + Uri.EscapeDataString((string.Empty + Model?.SignalrClientRegistration?.ConnectionId).Trim()) +
+                    "&projectId=" + Uri.EscapeDataString($"{SelectedProjectInfo.ProjectId}") +
+                    "&orgName=" + Uri.EscapeDataString(OrgName) +
+                    "&pat=" + Uri.EscapeDataString(DevOpsPAT));
+                DevopsPipelineDefinitions = pipelineResults?.ToList() ?? new List<DataObjects.DevopsPipelineDefinition>();
+            }
+            catch
+            {
+                DevopsPipelineDefinitions = new List<DataObjects.DevopsPipelineDefinition>();
+            }
+        }
+
+        // Apply pipeline selection if we have the ID
+        if (settings.PipelineId.HasValue && settings.PipelineId > 0)
+        {
+            SelectedPipelineId = settings.PipelineId;
+            _importedFields.Add("SelectedPipelineId");
+        }
+        else if (!string.IsNullOrWhiteSpace(settings.PipelineName))
+        {
+            NewPipelineName = settings.PipelineName;
+            _importedFields.Add("NewPipelineName");
+        }
+
+        StateHasChanged();
+        await Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Check if a field was populated by import.
+    /// </summary>
+    protected bool IsFieldImported(string fieldName) => _importedFields.Contains(fieldName);
+
+    /// <summary>
+    /// Get Bootstrap CSS classes for a field based on whether it was imported.
+    /// Uses Bootstrap's border-info and bg-info-subtle for highlighting.
+    /// </summary>
+    protected string GetImportedFieldClass(string fieldName)
+    {
+        if (!_importCompleted || !_importedFields.Contains(fieldName))
+            return string.Empty;
+        
+        // Use Bootstrap 5 classes for subtle highlighting
+        return "border-info border-2";
+    }
+
+    /// <summary>
+    /// Get Bootstrap CSS classes for an environment card based on whether it was imported.
+    /// </summary>
+    protected string GetImportedEnvCardClass(GlobalSettings.EnvironmentType envKey)
+    {
+        if (!_importCompleted || !_importedFields.Contains($"Env_{envKey}"))
+            return string.Empty;
+        
+        return "border-info border-2 bg-info bg-opacity-10";
+    }
+
+    /// <summary>
+    /// Gets whether an import is in progress or completed.
+    /// </summary>
+    protected bool ShowImportBanner => _importPipelineId.HasValue && (_isImporting || _importCompleted || !string.IsNullOrWhiteSpace(_importErrorMessage));
+
+    /// <summary>
+    /// Gets whether there are any selections with values to display in the summary.
+    /// This allows the selection summary to show immediately when imported, even on step 1.
+    /// </summary>
+    protected bool HasAnySelections => GetSelectionSummary().Any(s => !string.IsNullOrWhiteSpace(s.Value));
+
+    /// <summary>
+    /// Gets the import status message.
+    /// </summary>
+    protected string ImportStatusMessage
+    {
+        get
+        {
+            if (_isImporting) return "Importing pipeline settings...";
+            if (!string.IsNullOrWhiteSpace(_importErrorMessage)) return _importErrorMessage;
+            if (_importCompleted && _parsedSettings != null)
+            {
+                var confidence = _importConfidenceScore switch
+                {
+                    >= 80 => "High confidence",
+                    >= 50 => "Medium confidence", 
+                    _ => "Low confidence"
+                };
+                return $"Pipeline settings imported ({confidence}). Review and adjust as needed.";
+            }
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Gets the import banner CSS class.
+    /// </summary>
+    protected string ImportBannerClass
+    {
+        get
+        {
+            if (_isImporting) return "alert alert-info";
+            if (!string.IsNullOrWhiteSpace(_importErrorMessage)) return "alert alert-danger";
+            if (_importCompleted)
+            {
+                return _importConfidenceScore switch
+                {
+                    >= 80 => "alert alert-success",
+                    >= 50 => "alert alert-warning",
+                    _ => "alert alert-warning"
+                };
+            }
+            return "alert alert-secondary";
+        }
+    }
+
+    /// <summary>
+    /// Shows the Import from Public Repo modal.
+    /// </summary>
+    protected void ShowImportPublicRepoModal()
+    {
+        _importPublicRepoModal?.Show();
+    }
+
+    /// <summary>
+    /// Handles completion of public repo import - refreshes the project list.
+    /// </summary>
+    protected async Task OnPublicRepoImportComplete()
+    {
+        // Refresh the project list to include the newly imported repo
+        if (!string.IsNullOrWhiteSpace(DevOpsPAT) && !string.IsNullOrWhiteSpace(OrgName))
+        {
+            await PATandOrgNameChangedWizard();
+        }
+        StateHasChanged();
+    }
+}

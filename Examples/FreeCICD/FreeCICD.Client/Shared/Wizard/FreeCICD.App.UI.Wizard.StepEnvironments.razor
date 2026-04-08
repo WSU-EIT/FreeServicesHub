@@ -1,0 +1,184 @@
+﻿@* WizardStepEnvironments.razor - Environment settings configuration step *@
+
+<p>Select environments to configure (optional):</p>
+
+@foreach (var envKey in EnvironmentOptions.Keys)
+{
+    <div class="form-check mb-2">
+        <input type="checkbox" 
+               class="form-check-input" 
+               checked="@(EnvSettings.ContainsKey(envKey))" 
+               id="envCheck_@envKey" 
+               @onchange="@(e => OnEnvironmentToggleInternal(envKey, e))" 
+               disabled="@IsDisabled" />
+        <label class="form-check-label" for="envCheck_@envKey">@envKey Environment</label>
+    </div>
+    
+    @if (EnvSettings.ContainsKey(envKey))
+    {
+        var envSetting = EnvSettings[envKey];
+        var siteOptsList = GetWebsiteOptionsFunc?.Invoke(envKey)?.ToList() ?? new List<string>();
+        var vpathOptsList = GetVirtualPathOptionsFunc?.Invoke(envKey, envSetting.WebsiteName)?.ToList() ?? new List<string>();
+        var poolOptsList = GetAppPoolOptionsFunc?.Invoke(envKey)?.ToList() ?? new List<string>();
+
+        bool siteLocked = !envSetting.AllowCustomWebsiteName && siteOptsList.Any() && siteOptsList.Any(o => string.Equals(envSetting.WebsiteName, o, StringComparison.OrdinalIgnoreCase));
+        bool vpathLocked = !envSetting.AllowCustomVirtualPath && vpathOptsList.Any() && vpathOptsList.Any(v => string.Equals(envSetting.VirtualPath, v, StringComparison.OrdinalIgnoreCase));
+        bool poolLocked = !envSetting.AllowCustomAppPoolName && poolOptsList.Any() && poolOptsList.Any(p => string.Equals(envSetting.AppPoolName, p, StringComparison.OrdinalIgnoreCase));
+        
+        // Check if this environment was imported
+        bool envImported = ImportedFields?.Contains($"Env_{envKey}") ?? false;
+        string cardClass = envImported ? "card mb-3 ms-4 border-info border-2 bg-info bg-opacity-10" : "card bg-light mb-3 ms-4";
+
+        <div class="@cardClass">
+            <div class="card-body">
+                <h6 class="card-title d-flex align-items-center">
+                    @envKey Environment Settings
+                    @if (envImported)
+                    {
+                        <span class="badge bg-info text-dark ms-2 fw-normal">
+                            <i class="fa fa-download me-1"></i>Imported
+                        </span>
+                    }
+                </h6>
+                
+                <label class="form-label">IIS Deployment Type:</label>
+                <select class="form-select @(IsFieldImported($"Env_{envKey}_IISDeploymentType") ? "border-info border-2" : "")" 
+                        @onchange="@(e => OnDeploymentTypeChangedInternal(envKey, e))" disabled="@IsDisabled">
+                    <option value="IISWebsite" selected="@(envSetting.IISDeploymentType == "IISWebsite" ? "selected" : null)">IISWebsite</option>
+                    <option value="IISWebsiteAuth" selected="@(envSetting.IISDeploymentType == "IISWebsiteAuth" ? "selected" : null)">IISWebsiteAuth</option>
+                    <option value="IISWebApplication" selected="@(envSetting.IISDeploymentType == "IISWebApplication" ? "selected" : null)">IISWebApplication</option>
+                    <option value="IISWebApplicationAuth" selected="@(envSetting.IISDeploymentType == "IISWebApplicationAuth" ? "selected" : null)">IISWebApplicationAuth</option>
+                </select>
+
+                @if (siteOptsList.Any())
+                {
+                    <label class="form-label mt-2">Website Name (choose from IIS):</label>
+                    <select class="form-select" @onchange="@(e => OnWebsiteChangedInternal(envKey, e))" disabled="@IsDisabled">
+                        <option value="">-- Select Website --</option>
+                        @foreach (var opt in siteOptsList)
+                        {
+                            <option value="@opt" selected="@(string.Equals(envSetting.WebsiteName, opt, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">@opt</option>
+                        }
+                    </select>
+                }
+
+                <label class="form-label mt-2">Website Name:</label>
+                <input type="text" 
+                       class="form-control @(siteLocked ? "bg-light" : "") @(IsFieldImported($"Env_{envKey}_WebsiteName") ? "border-info border-2" : "")" 
+                       @bind="envSetting.WebsiteName" 
+                       @bind:event="oninput" 
+                       disabled="@(IsDisabled || siteLocked)" />
+
+                @if (envSetting.IISDeploymentType == "IISWebApplication" || envSetting.IISDeploymentType == "IISWebApplicationAuth")
+                {
+                    @if (vpathOptsList.Any())
+                    {
+                        <label class="form-label mt-2">Virtual Path (choose from IIS):</label>
+                        <select class="form-select" @onchange="@(e => OnVirtualPathChangedInternal(envKey, e))" disabled="@IsDisabled">
+                            <option value="">-- Select Virtual Path --</option>
+                            @foreach (var v in vpathOptsList)
+                            {
+                                <option value="@v" selected="@(string.Equals(envSetting.VirtualPath, v, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">@v</option>
+                            }
+                        </select>
+                    }
+
+                    <label class="form-label mt-2">Virtual Path:</label>
+                    <input type="text" 
+                           class="form-control @(vpathLocked ? "bg-light" : "") @(IsFieldImported($"Env_{envKey}_VirtualPath") ? "border-info border-2" : "")" 
+                           @bind="envSetting.VirtualPath" 
+                           @bind:event="oninput" 
+                           placeholder="Enter virtual path" 
+                           disabled="@(IsDisabled || vpathLocked)" />
+                }
+
+                @if (envSetting.IISDeploymentType.Contains("Auth"))
+                {
+                    <label class="form-label mt-2">Auth User:</label>
+                    <input type="text" 
+                           class="form-control" 
+                           @bind="envSetting.AuthUser" 
+                           @bind:event="oninput" 
+                           placeholder="Enter the Auth User" 
+                           disabled="@IsDisabled" />
+                }
+
+                @if (poolOptsList.Any())
+                {
+                    <label class="form-label mt-2">App Pool Name (choose from IIS):</label>
+                    <select class="form-select" @onchange="@(e => OnAppPoolChangedInternal(envKey, e))" disabled="@IsDisabled">
+                        <option value="">-- Select App Pool --</option>
+                        @foreach (var ap in poolOptsList)
+                        {
+                            <option value="@ap" selected="@(string.Equals(envSetting.AppPoolName, ap, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">@ap</option>
+                        }
+                    </select>
+                }
+
+                <label class="form-label mt-2">App Pool Name:</label>
+                <input type="text" 
+                       class="form-control @(poolLocked ? "bg-light" : "") @(IsFieldImported($"Env_{envKey}_AppPoolName") ? "border-info border-2" : "")" 
+                       @bind="envSetting.AppPoolName" 
+                       @bind:event="oninput" 
+                       disabled="@(IsDisabled || poolLocked)" />
+
+                <label class="form-label mt-2">Variable Group Name:</label>
+                <input type="text" 
+                       class="form-control @(IsFieldImported($"Env_{envKey}_VariableGroupName") ? "border-info border-2" : "")" 
+                       @bind="envSetting.VariableGroupName" 
+                       @bind:event="oninput" 
+                       placeholder="Enter variable group name" 
+                       disabled="@IsDisabled" />
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public Dictionary<GlobalSettings.EnvironmentType, GlobalSettings.EnvironmentOptions> EnvironmentOptions { get; set; } = new();
+    [Parameter] public Dictionary<GlobalSettings.EnvironmentType, DataObjects.EnvSetting> EnvSettings { get; set; } = new();
+    [Parameter] public bool IsDisabled { get; set; }
+    [Parameter] public HashSet<string>? ImportedFields { get; set; }
+    
+    [Parameter] public Func<GlobalSettings.EnvironmentType, IEnumerable<string>>? GetWebsiteOptionsFunc { get; set; }
+    [Parameter] public Func<GlobalSettings.EnvironmentType, string, IEnumerable<string>>? GetVirtualPathOptionsFunc { get; set; }
+    [Parameter] public Func<GlobalSettings.EnvironmentType, IEnumerable<string>>? GetAppPoolOptionsFunc { get; set; }
+    
+    [Parameter] public Func<GlobalSettings.EnvironmentType, ChangeEventArgs, Task>? OnEnvironmentChanged { get; set; }
+    [Parameter] public Func<GlobalSettings.EnvironmentType, ChangeEventArgs, Task>? OnDeploymentTypeChanged { get; set; }
+    [Parameter] public Func<GlobalSettings.EnvironmentType, ChangeEventArgs, Task>? OnWebsiteChanged { get; set; }
+    [Parameter] public Func<GlobalSettings.EnvironmentType, ChangeEventArgs, Task>? OnVirtualPathChanged { get; set; }
+    [Parameter] public Func<GlobalSettings.EnvironmentType, ChangeEventArgs, Task>? OnAppPoolChanged { get; set; }
+
+    private bool IsFieldImported(string fieldName) => ImportedFields?.Contains(fieldName) ?? false;
+
+    private async Task OnEnvironmentToggleInternal(GlobalSettings.EnvironmentType envKey, ChangeEventArgs e)
+    {
+        if (OnEnvironmentChanged != null)
+            await OnEnvironmentChanged(envKey, e);
+    }
+
+    private async Task OnDeploymentTypeChangedInternal(GlobalSettings.EnvironmentType envKey, ChangeEventArgs e)
+    {
+        if (OnDeploymentTypeChanged != null)
+            await OnDeploymentTypeChanged(envKey, e);
+    }
+
+    private async Task OnWebsiteChangedInternal(GlobalSettings.EnvironmentType envKey, ChangeEventArgs e)
+    {
+        if (OnWebsiteChanged != null)
+            await OnWebsiteChanged(envKey, e);
+    }
+
+    private async Task OnVirtualPathChangedInternal(GlobalSettings.EnvironmentType envKey, ChangeEventArgs e)
+    {
+        if (OnVirtualPathChanged != null)
+            await OnVirtualPathChanged(envKey, e);
+    }
+
+    private async Task OnAppPoolChangedInternal(GlobalSettings.EnvironmentType envKey, ChangeEventArgs e)
+    {
+        if (OnAppPoolChanged != null)
+            await OnAppPoolChanged(envKey, e);
+    }
+}

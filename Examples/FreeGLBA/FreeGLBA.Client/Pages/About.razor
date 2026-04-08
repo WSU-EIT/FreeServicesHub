@@ -1,0 +1,51 @@
+﻿@page "/About"
+@page "/{TenantCode}/About"
+@implements IDisposable
+@using Blazored.LocalStorage
+@inject IJSRuntime jsRuntime
+@inject HttpClient Http
+@inject ILocalStorageService LocalStorage
+@inject BlazorDataModel Model
+@if (Model.View == _pageName) {
+    <About_App />
+}
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+
+    protected string _pageName = "about";
+
+    public void Dispose()
+    {
+        Model.OnChange -= OnDataModelUpdated;
+
+        Model.Subscribers_OnChange.Remove(_pageName);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) {
+            Model.TenantCodeFromUrl = TenantCode;
+        }
+
+        if (Model.Loaded) {
+            await Helpers.ValidateUrl(TenantCode);
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        if (!Model.Subscribers_OnChange.Contains(_pageName)){
+            Model.Subscribers_OnChange.Add(_pageName);
+            Model.OnChange += OnDataModelUpdated;
+        }
+
+        Model.View = _pageName;
+    }
+
+    protected void OnDataModelUpdated()
+    {
+        if (Model.View == _pageName) {
+            StateHasChanged();
+        }
+    }
+}

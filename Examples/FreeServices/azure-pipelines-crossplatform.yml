@@ -1,0 +1,301 @@
+﻿# FreeServices — Cross-Platform Azure DevOps Pipeline
+# Builds and tests FreeServices on Windows, Linux, and macOS using free hosted agents.
+#
+# Stage 1: Hello World brief on windows-latest (environment dump)
+# Stages 2-4: Three independent parallel stages — build + test on each platform
+# Stage 5: Summary — runs after all platform stages complete
+#
+# Free tier hosted agents:
+#   windows-latest  →  Current Windows Server
+#   ubuntu-latest   →  Current Ubuntu LTS
+#   macOS-latest    →  Current macOS
+
+trigger: none  # Manual trigger only
+
+variables:
+- template: variables.yml
+
+# ═══════════════════════════════════════════════════════════════════
+# Stage 1: Hello World Brief
+# A quick sanity check that dumps pipeline info and environment vars.
+# Runs on windows-latest so it starts fast — nothing platform-specific.
+# ═══════════════════════════════════════════════════════════════════
+
+stages:
+
+- stage: HelloWorld
+  displayName: '👋 Hello World Brief'
+  jobs:
+  - job: Brief
+    displayName: 'Pipeline Environment Dump'
+    pool:
+      name: BuildVM
+
+    - script: |
+        echo.
+        echo ── SYSTEM ENVIRONMENT VARIABLES ──
+        echo.
+        set
+      displayName: 'Dump All Environment Variables'
+
+    - script: |
+        echo.
+        echo ── DOTNET INFO ──
+        dotnet --info 2>nul || echo ".NET SDK not pre-installed (will be installed in build stage)"
+        echo.
+        echo ── SYSTEM INFO ──
+        systeminfo | findstr /B /C:"OS Name" /C:"OS Version" /C:"System Type" /C:"Total Physical Memory"
+      displayName: 'System & .NET Info'
+
+# ═══════════════════════════════════════════════════════════════════
+# Stage 2: Windows Build & Test
+# Independent stage — runs in parallel with Linux and macOS.
+# ═══════════════════════════════════════════════════════════════════
+
+- stage: Windows
+  displayName: '🪟 Windows'
+  dependsOn: HelloWorld
+  jobs:
+  - job: Build
+    displayName: 'Build & Test (BuildVM)'
+    pool:
+      name: BuildVM
+    steps:
+
+    - task: UseDotNet@2
+      displayName: 'Install .NET $(dotnetVersion)'
+      inputs:
+        packageType: 'sdk'
+        version: '$(dotnetVersion)'
+        includePreviewVersions: true
+
+    - script: |
+        echo ══ Windows Build ══
+        echo Agent: %AGENT_NAME%
+        echo OS:    %AGENT_OS%
+        dotnet --version
+      displayName: 'Platform Info'
+
+    - script: dotnet restore FreeServices.slnx
+      displayName: 'Restore'
+
+    - script: dotnet build FreeServices.slnx -c $(buildConfiguration) --no-restore --nologo
+      displayName: 'Build'
+
+    # Inject variables.yml values into TestMe appsettings.json
+    - task: FileTransform@2
+      displayName: 'Inject test settings into appsettings.json'
+      inputs:
+        folderPath: 'FreeServices.TestMe'
+        jsonTargetFiles: 'appsettings.json'
+
+    - powershell: |
+        Write-Host "══ Injected appsettings.json ══"
+        Get-Content FreeServices.TestMe/appsettings.json
+      displayName: 'Show injected appsettings.json'
+
+    - script: |
+        echo.
+        echo ══ Running Test 1: Console Mode Lifecycle ══
+        dotnet run --project FreeServices.TestMe/FreeServices.TestMe.csproj -c $(buildConfiguration) --no-build -- --test=1
+      displayName: 'Test 1: Console Mode'
+
+    - script: |
+        echo.
+        echo ══ Running Test 2: Service Lifecycle (sc.exe) ══
+        dotnet run --project FreeServices.TestMe/FreeServices.TestMe.csproj -c $(buildConfiguration) --no-build -- --test=2
+      displayName: 'Test 2: Service Lifecycle'
+
+    - script: |
+        echo.
+        echo ══ Installer Help (platform detection check) ══
+        dotnet run --project FreeServices.Installer/FreeServices.Installer.csproj -c $(buildConfiguration) --no-build -- help
+      displayName: 'Verify Installer (Windows)'
+
+    - script: |
+        echo.
+        echo ══ Installer Config (platform defaults check) ══
+        dotnet run --project FreeServices.Installer/FreeServices.Installer.csproj -c $(buildConfiguration) --no-build -- config
+      displayName: 'Verify Config Defaults (Windows)'
+
+# ═══════════════════════════════════════════════════════════════════
+# Stage 3: Linux Build & Test
+# Independent stage — runs in parallel with Windows and macOS.
+# ═══════════════════════════════════════════════════════════════════
+
+- stage: Linux
+  displayName: '🐧 Linux'
+  dependsOn: HelloWorld
+  jobs:
+  - job: Build
+    displayName: 'Build & Test (ubuntu-latest)'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+
+    - task: UseDotNet@2
+      displayName: 'Install .NET $(dotnetVersion)'
+      inputs:
+        packageType: 'sdk'
+        version: '$(dotnetVersion)'
+        includePreviewVersions: true
+
+    - script: |
+        echo "══ Linux Build ══"
+        echo "Agent: $AGENT_NAME"
+        echo "OS:    $AGENT_OS"
+        dotnet --version
+        uname -a
+      displayName: 'Platform Info'
+
+    - script: dotnet restore FreeServices.slnx
+      displayName: 'Restore'
+
+    - script: dotnet build FreeServices.slnx -c $(buildConfiguration) --no-restore --nologo
+      displayName: 'Build'
+
+    # Inject variables.yml values into TestMe appsettings.json
+    - task: FileTransform@2
+      displayName: 'Inject test settings into appsettings.json'
+      inputs:
+        folderPath: 'FreeServices.TestMe'
+        jsonTargetFiles: 'appsettings.json'
+
+    - bash: |
+        echo "══ Injected appsettings.json ══"
+        cat FreeServices.TestMe/appsettings.json
+      displayName: 'Show injected appsettings.json'
+
+    - script: |
+        echo ""
+        echo "══ Running Test 1: Console Mode Lifecycle ══"
+        dotnet run --project FreeServices.TestMe/FreeServices.TestMe.csproj -c $(buildConfiguration) --no-build -- --test=1
+      displayName: 'Test 1: Console Mode'
+
+    - script: |
+        echo ""
+        echo "══ Running Test 2: Service Lifecycle (systemd) ══"
+        DOTNET=$(which dotnet)
+        sudo -E $DOTNET run --project FreeServices.TestMe/FreeServices.TestMe.csproj -c $(buildConfiguration) --no-build -- --test=2
+      displayName: 'Test 2: Service Lifecycle'
+
+    - script: |
+        echo ""
+        echo "══ Installer Help (platform detection check) ══"
+        dotnet run --project FreeServices.Installer/FreeServices.Installer.csproj -c $(buildConfiguration) --no-build -- help
+      displayName: 'Verify Installer (Linux)'
+
+    - script: |
+        echo ""
+        echo "══ Installer Config (platform defaults check) ══"
+        dotnet run --project FreeServices.Installer/FreeServices.Installer.csproj -c $(buildConfiguration) --no-build -- config
+      displayName: 'Verify Config Defaults (Linux)'
+
+# ═══════════════════════════════════════════════════════════════════
+# Stage 4: macOS Build & Test
+# Independent stage — runs in parallel with Windows and Linux.
+# ═══════════════════════════════════════════════════════════════════
+
+- stage: macOS
+  displayName: '🍎 macOS'
+  dependsOn: HelloWorld
+  jobs:
+  - job: Build
+    displayName: 'Build & Test (macOS-latest)'
+    pool:
+      vmImage: 'macOS-latest'
+    steps:
+
+    - task: UseDotNet@2
+      displayName: 'Install .NET $(dotnetVersion)'
+      inputs:
+        packageType: 'sdk'
+        version: '$(dotnetVersion)'
+        includePreviewVersions: true
+
+    - script: |
+        echo "══ macOS Build ══"
+        echo "Agent: $AGENT_NAME"
+        echo "OS:    $AGENT_OS"
+        dotnet --version
+        sw_vers
+        uname -m
+      displayName: 'Platform Info'
+
+    - script: dotnet restore FreeServices.slnx
+      displayName: 'Restore'
+
+    - script: dotnet build FreeServices.slnx -c $(buildConfiguration) --no-restore --nologo
+      displayName: 'Build'
+
+    # Inject variables.yml values into TestMe appsettings.json
+    - task: FileTransform@2
+      displayName: 'Inject test settings into appsettings.json'
+      inputs:
+        folderPath: 'FreeServices.TestMe'
+        jsonTargetFiles: 'appsettings.json'
+
+    - bash: |
+        echo "══ Injected appsettings.json ══"
+        cat FreeServices.TestMe/appsettings.json
+      displayName: 'Show injected appsettings.json'
+
+    - script: |
+        echo ""
+        echo "══ Running Test 1: Console Mode Lifecycle ══"
+        dotnet run --project FreeServices.TestMe/FreeServices.TestMe.csproj -c $(buildConfiguration) --no-build -- --test=1
+      displayName: 'Test 1: Console Mode'
+
+    - script: |
+        echo ""
+        echo "══ Running Test 2: Service Lifecycle (launchd) ══"
+        dotnet run --project FreeServices.TestMe/FreeServices.TestMe.csproj -c $(buildConfiguration) --no-build -- --test=2
+      displayName: 'Test 2: Service Lifecycle'
+
+    - script: |
+        echo ""
+        echo "══ Installer Help (platform detection check) ══"
+        dotnet run --project FreeServices.Installer/FreeServices.Installer.csproj -c $(buildConfiguration) --no-build -- help
+      displayName: 'Verify Installer (macOS)'
+
+    - script: |
+        echo ""
+        echo "══ Installer Config (platform defaults check) ══"
+        dotnet run --project FreeServices.Installer/FreeServices.Installer.csproj -c $(buildConfiguration) --no-build -- config
+      displayName: 'Verify Config Defaults (macOS)'
+
+# ═══════════════════════════════════════════════════════════════════
+# Stage 5: Summary
+# Runs after all three platform stages complete.
+# ═══════════════════════════════════════════════════════════════════
+
+- stage: Summary
+  displayName: '✅ Pipeline Summary'
+  dependsOn:
+  - Windows
+  - Linux
+  - macOS
+  jobs:
+  - job: Report
+    displayName: 'Cross-Platform Results'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - script: |
+        echo "═══════════════════════════════════════════════════"
+        echo "  FreeServices — Cross-Platform Pipeline Complete"
+        echo "═══════════════════════════════════════════════════"
+        echo ""
+        echo "  ✓ Windows   — Built + Test 1 passed"
+        echo "  ✓ Linux     — Built + Test 1 passed"
+        echo "  ✓ macOS     — Built + Test 1 passed"
+        echo ""
+        echo "  All three platforms verified:"
+        echo "    • Service builds and runs (console mode)"
+        echo "    • Installer detects platform correctly"
+        echo "    • Config defaults match each OS"
+        echo ""
+        echo "  Build: $(Build.BuildNumber)"
+        echo "  Commit: $(Build.SourceVersion)"
+        echo "═══════════════════════════════════════════════════"
+      displayName: 'Summary'

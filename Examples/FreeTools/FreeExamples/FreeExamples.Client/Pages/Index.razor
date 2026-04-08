@@ -1,0 +1,136 @@
+﻿@page "/"
+@page "/{TenantCode}"
+@inject BlazorDataModel Model
+@implements IDisposable
+
+@if (Model.Loaded && Model.View == _pageName && (Model.LoggedIn || !AppModule.RequireLogin)) {
+    if (Helpers.HaveBlazorToolbarButtons(_pageName)) {
+        <div class="btn-group mb-2" role="group">
+            <BlazorPlugins Module="@_pageName" Button="true" TValue="System.String" />
+        </div>
+    }
+
+    if (Helpers.HaveBlazorPlugins(_pageName, "Top")) {
+        <div class="mb-2">
+            <BlazorPlugins Module="@_pageName" Position="Top" TValue="System.String" />
+        </div>
+    }
+
+    <Index_App  />
+
+    @if (AppModule.ShowTestPageLinks) {
+        <div class="d-flex flex-wrap gap-2 mb-3">
+            <a href="@Helpers.BuildUrl("Examples/Dashboard")" class="btn btn-primary btn-lg">
+                <i class="fa-solid fa-grid-2 me-2"></i>Examples Dashboard
+            </a>
+        </div>
+
+        <div class="row row-cols-1 row-cols-md-3 row-cols-lg-5 g-3 mb-4">
+            <div class="col">
+                <a href="@Helpers.BuildUrl("Examples/Dashboard")" class="text-decoration-none">
+                    <div class="card h-100 shadow-sm border-0 text-center py-3">
+                        <div class="card-body">
+                            <i class="fa-solid fa-table-columns fa-2x text-dark mb-2"></i>
+                            <h6 class="mb-0">Dashboard & Data</h6>
+                            <span class="small text-muted">Tables, search, cards</span>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            <div class="col">
+                <a href="@Helpers.BuildUrl("Examples/FileDemo")" class="text-decoration-none">
+                    <div class="card h-100 shadow-sm border-0 text-center py-3">
+                        <div class="card-body">
+                            <i class="fa-solid fa-file-arrow-up fa-2x text-success mb-2"></i>
+                            <h6 class="mb-0">Files & Media</h6>
+                            <span class="small text-muted">Upload, gallery, signatures</span>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            <div class="col">
+                <a href="@Helpers.BuildUrl("Examples/BootstrapShowcase")" class="text-decoration-none">
+                    <div class="card h-100 shadow-sm border-0 text-center py-3">
+                        <div class="card-body">
+                            <i class="fa-solid fa-palette fa-2x text-primary mb-2"></i>
+                            <h6 class="mb-0">UI Components</h6>
+                            <span class="small text-muted">Bootstrap, kanban, chat</span>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            <div class="col">
+                <a href="@Helpers.BuildUrl("Examples/ChartsDashboard")" class="text-decoration-none">
+                    <div class="card h-100 shadow-sm border-0 text-center py-3">
+                        <div class="card-body">
+                            <i class="fa-solid fa-chart-pie fa-2x text-warning mb-2"></i>
+                            <h6 class="mb-0">Charts & Viz</h6>
+                            <span class="small text-muted">Highcharts, network graphs</span>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            <div class="col">
+                <a href="@Helpers.BuildUrl("Examples/CodeEditor")" class="text-decoration-none">
+                    <div class="card h-100 shadow-sm border-0 text-center py-3">
+                        <div class="card-body">
+                            <i class="fa-solid fa-code fa-2x text-danger mb-2"></i>
+                            <h6 class="mb-0">Code & Real-Time</h6>
+                            <span class="small text-muted">Monaco, SignalR, timers</span>
+                        </div>
+                    </div>
+                </a>
+            </div>
+        </div>
+    }
+
+    if (Helpers.HaveBlazorPlugins(_pageName, "Bottom")) {
+        <div class="mb-2">
+            <BlazorPlugins Module="@_pageName" Position="Bottom" TValue="System.String" />
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+
+    protected bool _loadedData = false;
+    protected string _pageName = "home";
+
+    protected Index_App AppModule = new Index_App();
+
+    public void Dispose()
+    {
+        Model.OnChange -= OnDataModelUpdated;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) {
+            Model.TenantCodeFromUrl = TenantCode;
+        }
+
+        if (Model.Loaded) {
+            if (Model.LoggedIn || !AppModule.RequireLogin) {
+                if (!_loadedData) {
+                    _loadedData = true;
+                    await Helpers.ValidateUrl(TenantCode, true);
+                }
+            } else {
+                Helpers.NavigateToLogin();
+            }
+        }
+    }
+
+    protected void OnDataModelUpdated() {
+        if (Model.View == _pageName) {
+            StateHasChanged();
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.View = _pageName;
+        Model.OnChange += StateHasChanged;
+    }
+}

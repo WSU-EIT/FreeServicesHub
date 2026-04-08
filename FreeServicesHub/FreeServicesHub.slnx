@@ -1,0 +1,19 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitignore" />
+    <File Path="LICENSE" />
+    <File Path="README.md" />
+    <File Path="Remove Modules from FreeFreeServicesHub.exe" />
+    <File Path="Rename FreeFreeServicesHub.exe" />
+  </Folder>
+  <Project Path="../FreeServicesHub.Agent.Installer/FreeServicesHub.Agent.Installer.csproj" />
+  <Project Path="../FreeServicesHub.Agent/FreeServicesHub.Agent.csproj" />
+  <Project Path="Docs/Docs.csproj" />
+  <Project Path="FreeServicesHub.Client/FreeServicesHub.Client.csproj" />
+  <Project Path="FreeServicesHub.DataAccess/FreeServicesHub.DataAccess.csproj" Id="76DD1F03-96BA-42BD-8501-7F4BAFF891C5" />
+  <Project Path="FreeServicesHub.DataObjects/FreeServicesHub.DataObjects.csproj" Id="76DB61BB-3EB3-4ACF-B3E7-20E9ED3F1213" />
+  <Project Path="FreeServicesHub.EFModels/FreeServicesHub.EFModels.csproj" Id="FF7F7AA1-2FAB-4EA8-8A24-2EB453F9EF23" />
+  <Project Path="FreeServicesHub.Plugins/FreeServicesHub.Plugins.csproj" Id="01B565DB-FCA3-4E14-B11A-125858B574BD" />
+  <Project Path="FreeServicesHub/FreeServicesHub.csproj" />
+</Solution>

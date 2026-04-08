@@ -1,0 +1,165 @@
+/*
+    Add any app-specific CSS here.
+*/
+
+/* ══════════════════════════════════════════════════════
+   Navbar Dropdown — scrollable for long menus
+   ══════════════════════════════════════════════════════ */
+
+.navbar .dropdown-menu {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+/* ══════════════════════════════════════════════════════
+   Kanban Board — FreeExamples.App.Pages.KanbanBoard
+   ══════════════════════════════════════════════════════ */
+
+.kanban-board {
+    display: flex;
+    gap: 1rem;
+    overflow-x: auto;
+    padding-bottom: 1rem;
+    min-height: 400px;
+    align-items: flex-start;
+}
+
+.kanban-column {
+    flex: 1 1 0;
+    min-width: 240px;
+    max-width: 360px;
+    background: #f8f9fa;
+    border-radius: 0.5rem;
+    border: 2px solid transparent;
+    transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
+}
+
+.kanban-column-drop-target {
+    border-color: #0d6efd;
+    background-color: #e8f0fe;
+    box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+}
+
+/* Column Headers */
+.kanban-column-header {
+    padding: 0.6rem 0.75rem;
+    border-radius: 0.5rem 0.5rem 0 0;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #fff;
+}
+
+.kanban-header-draft {
+    background: #6c757d;
+}
+
+.kanban-header-active {
+    background: #198754;
+}
+
+.kanban-header-completed {
+    background: #0d6efd;
+}
+
+.kanban-header-archived {
+    background: #212529;
+}
+
+/* Column Body */
+.kanban-column-body {
+    padding: 0.5rem;
+    min-height: 120px;
+}
+
+.kanban-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+    color: #adb5bd;
+}
+
+/* Cards */
+.kanban-card {
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    padding: 0.6rem 0.75rem;
+    margin-bottom: 0.5rem;
+    cursor: grab;
+    transition: box-shadow 0.15s, opacity 0.15s, transform 0.15s, background-color 0.5s;
+    user-select: none;
+}
+
+.kanban-card:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    transform: translateY(-1px);
+}
+
+.kanban-card:active {
+    cursor: grabbing;
+}
+
+.kanban-card-dragging {
+    opacity: 0.4;
+    transform: rotate(2deg);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.kanban-card-just-moved {
+    background-color: #cfe2ff !important;
+    border-color: #9ec5fe !important;
+    animation: kanban-flash 2s ease-out;
+}
+
+/* Expanded card */
+.kanban-card-expanded {
+    border-color: #0d6efd;
+    box-shadow: 0 4px 12px rgba(13, 110, 253, 0.2);
+    cursor: default;
+    transform: none;
+    z-index: 10;
+    position: relative;
+}
+
+.kanban-card-expanded:hover {
+    transform: none;
+}
+
+/* Drop slots — thin gaps between cards that expand when dragging over them */
+.kanban-drop-slot {
+    height: 4px;
+    transition: height 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+    border-radius: 0.25rem;
+    margin: 0 0.25rem;
+}
+
+.kanban-drop-slot-active {
+    height: 36px;
+    background-color: #e8f0fe;
+    border: 2px dashed #0d6efd;
+    margin: 0.25rem;
+}
+
+@keyframes kanban-flash {
+    0% {
+        background-color: #9ec5fe;
+        border-color: #6ea8fe;
+    }
+    100% {
+        background-color: #fff;
+        border-color: #dee2e6;
+    }
+}
+
+/* Responsive: stack columns vertically on small screens */
+@media (max-width: 768px) {
+    .kanban-board {
+        flex-direction: column;
+    }
+
+    .kanban-column {
+        max-width: 100%;
+    }
+}

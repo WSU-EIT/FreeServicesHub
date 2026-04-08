@@ -1,0 +1,195 @@
+﻿@page "/Examples/SprintPlanningV4"
+@page "/{TenantCode}/Examples/SprintPlanningV4"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V4: Velocity Report — Cross-sprint analytics with grouped bar chart *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-chart-column me-1"></i> Velocity Report</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title"><i class="fa-solid fa-chart-column me-1"></i> V4: Velocity Report <StickyMenuIcon /></h1>
+        </div>
+
+        <ExampleNav />
+        <AboutSection Title="Velocity Report" Subtitle="Cross-sprint analytics — velocity trend, averages, committed vs. delivered" IconClass="fa-solid fa-chart-column">
+            <p class="small text-muted mb-0">Analyze team velocity across sprints. Grouped bar chart shows committed vs. delivered per sprint. Summary stats include average, median, best, and worst sprints.</p>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Computed Summary Properties"
+                     Description="VelocityAvg, VelocityBest, VelocityWorst are computed properties (not fields). They recalculate from _velocityData on every render. This avoids stale state — the stat cards are always in sync with the data. A clean pattern for derived display values."
+                     Code="@_codeComputedStats" />
+            <InfoTip Title="CSS Grouped Bar Chart"
+                     Description="Each sprint gets two side-by-side divs: committed (bg-primary bg-opacity-25) and delivered (bg-success). Heights are calculated as a ratio of VelocityMaxBar. Values are printed above each bar. A legend row sits below. Zero JS, zero chart libraries."
+                     Code="@_codeGroupedBars" />
+            <InfoTip Title="Inline Progress Completion %"
+                     Description="Each sprint row shows a mini progress bar with conditional coloring: ≥ 80% = green, ≥ 50% = yellow, below = red. The percentage text sits below the bar. Bootstrap progress + ternary class expression is all it takes."
+                     Code="@_codeProgressBar" />
+        </div>
+
+        @* Summary stats *@
+        <div class="row g-3 mb-3">
+            <div class="col-6 col-md-3">
+                <div class="card border-0 shadow-sm text-center"><div class="card-body py-2"><div class="fs-4 fw-bold text-primary">@VelocityAvg</div><div class="text-muted small">Avg Velocity</div></div></div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card border-0 shadow-sm text-center"><div class="card-body py-2"><div class="fs-4 fw-bold text-success">@VelocityBest</div><div class="text-muted small">Best Sprint</div></div></div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card border-0 shadow-sm text-center"><div class="card-body py-2"><div class="fs-4 fw-bold text-danger">@VelocityWorst</div><div class="text-muted small">Worst Sprint</div></div></div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card border-0 shadow-sm text-center"><div class="card-body py-2"><div class="fs-4 fw-bold">@_velocityData.Count</div><div class="text-muted small">Sprints</div></div></div>
+            </div>
+        </div>
+
+        @* Grouped bar chart *@
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-light py-1 small fw-semibold">Committed vs. Delivered per Sprint</div>
+            <div class="card-body">
+                <div class="d-flex align-items-end gap-3 justify-content-center" style="height:180px;">
+                    @foreach (var d in _velocityData) {
+                        var hP = VelocityMaxBar > 0 ? (int)(d.Planned * 150.0 / VelocityMaxBar) : 0;
+                        var hD = VelocityMaxBar > 0 ? (int)(d.Delivered * 150.0 / VelocityMaxBar) : 0;
+                        <div class="d-flex flex-column align-items-center">
+                            <div class="d-flex gap-1 align-items-end" style="height:160px;">
+                                <div class="d-flex flex-column align-items-center">
+                                    <span class="small" style="font-size:0.55rem;">@d.Planned</span>
+                                    <div class="bg-primary bg-opacity-25 rounded-top" style="width:22px; height:@(hP)px;"></div>
+                                </div>
+                                <div class="d-flex flex-column align-items-center">
+                                    <span class="small" style="font-size:0.55rem;">@d.Delivered</span>
+                                    <div class="bg-success rounded-top" style="width:22px; height:@(hD)px;"></div>
+                                </div>
+                            </div>
+                            <div class="text-muted mt-1" style="font-size:0.6rem; white-space:nowrap;">@d.Name</div>
+                        </div>
+                    }
+                </div>
+                <div class="d-flex gap-3 small mt-2 justify-content-center">
+                    <span><span class="d-inline-block bg-primary bg-opacity-25 rounded" style="width:12px; height:12px;"></span> Committed</span>
+                    <span><span class="d-inline-block bg-success rounded" style="width:12px; height:12px;"></span> Delivered</span>
+                </div>
+                @* Average line indicator *@
+                <div class="text-center text-muted small mt-1"><i class="fa-solid fa-minus me-1 text-warning"></i>Average velocity: <strong>@VelocityAvg pts</strong></div>
+            </div>
+        </div>
+
+        @* Sprint detail table *@
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-light py-1 small fw-semibold">Sprint Details</div>
+            <div class="card-body p-0">
+                <table class="table table-sm table-hover mb-0 small">
+                    <thead class="table-light"><tr><th>Sprint</th><th>Status</th><th>Dates</th><th class="text-center">Committed</th><th class="text-center">Delivered</th><th class="text-center">Tickets</th><th class="text-center">Completion</th></tr></thead>
+                    <tbody>
+                        @foreach (var d in _velocityData) {
+                            var pct = d.Planned > 0 ? (int)(d.Delivered * 100.0 / d.Planned) : 0;
+                            <tr>
+                                <td class="fw-semibold">@d.Name</td>
+                                <td><span class="badge @GetSprintBadge(d.Status)">@d.Status</span></td>
+                                <td class="text-muted">@(d.Start?.ToString("MMM d") ?? "—") – @(d.End?.ToString("MMM d") ?? "—")</td>
+                                <td class="text-center">@d.Planned</td>
+                                <td class="text-center fw-bold text-success">@d.Delivered</td>
+                                <td class="text-center">@d.TicketCount</td>
+                                <td class="text-center">
+                                    <div class="progress" style="height:6px; min-width:60px;"><div class="progress-bar @(pct >= 80 ? "bg-success" : pct >= 50 ? "bg-warning" : "bg-danger")" style="width:@pct%"></div></div>
+                                    <span style="font-size:0.6rem;">@pct%</span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "sprintplanningv4";
+    private List<VelocityRow> _velocityData = new();
+
+    private record VelocityRow(string Name, DataObjects.SprintStatus Status, DateTime? Start, DateTime? End, int Planned, int Delivered, int TicketCount);
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            var sprints = await Helpers.GetOrPost<List<DataObjects.Sprint>>("api/Data/GetSprints", new List<Guid>()) ?? new();
+            var tickets = await Helpers.GetOrPost<List<DataObjects.Ticket>>("api/Data/GetTickets", new List<Guid>()) ?? new();
+            _velocityData = sprints.OrderBy(s => s.StartDate).Select(s => {
+                var st = tickets.Where(t => t.SprintId == s.RecordId).ToList();
+                var p = st.Where(t => t.StoryPoints.HasValue).Sum(t => t.StoryPoints!.Value);
+                var d = st.Where(t => (t.Status == DataObjects.TicketStatus.Done || t.Status == DataObjects.TicketStatus.Closed) && t.StoryPoints.HasValue).Sum(t => t.StoryPoints!.Value);
+                return new VelocityRow(s.Name, s.Status, s.StartDate, s.EndDate, p, d, st.Count);
+            }).ToList();
+            _loading = false; StateHasChanged();
+        }
+    }
+
+    private int VelocityAvg => _velocityData.Any() ? (int)_velocityData.Average(d => d.Delivered) : 0;
+    private int VelocityBest => _velocityData.Any() ? _velocityData.Max(d => d.Delivered) : 0;
+    private int VelocityWorst => _velocityData.Any() ? _velocityData.Min(d => d.Delivered) : 0;
+    private int VelocityMaxBar => _velocityData.Any() ? _velocityData.Max(d => Math.Max(d.Planned, d.Delivered)) : 1;
+
+    private static string GetSprintBadge(DataObjects.SprintStatus s) => s switch { DataObjects.SprintStatus.Active => "bg-success", DataObjects.SprintStatus.Completed => "bg-primary", DataObjects.SprintStatus.Cancelled => "bg-dark", _ => "bg-secondary" };
+
+    private string _codeComputedStats = @"@* Computed properties — always in sync *@
+int VelocityAvg => _velocityData.Any()
+  ? (int)_velocityData.Average(d => d.Delivered) : 0;
+int VelocityBest => _velocityData.Any()
+  ? _velocityData.Max(d => d.Delivered) : 0;
+int VelocityWorst => _velocityData.Any()
+  ? _velocityData.Min(d => d.Delivered) : 0;
+int VelocityMaxBar => _velocityData.Any()
+  ? _velocityData.Max(d =>
+      Math.Max(d.Planned, d.Delivered)) : 1;
+
+<div class=""fs-4 fw-bold text-primary"">
+  @VelocityAvg
+</div>";
+
+    private string _codeGroupedBars = @"@foreach (var d in _velocityData) {
+  var hP = VelocityMaxBar > 0
+    ? (int)(d.Planned * 150.0 / VelocityMaxBar) : 0;
+  var hD = VelocityMaxBar > 0
+    ? (int)(d.Delivered * 150.0 / VelocityMaxBar) : 0;
+  <div class=""d-flex flex-column align-items-center"">
+    <div class=""d-flex gap-1 align-items-end"">
+      <div>  @* Committed bar *@
+        <span>@d.Planned</span>
+        <div class=""bg-primary bg-opacity-25""
+             style=""width:22px; height:@(hP)px;""/>
+      </div>
+      <div>  @* Delivered bar *@
+        <span>@d.Delivered</span>
+        <div class=""bg-success""
+             style=""width:22px; height:@(hD)px;""/>
+      </div>
+    </div>
+    <div>@d.Name</div>
+  </div>
+}";
+
+    private string _codeProgressBar = @"@foreach (var d in _velocityData) {
+  var pct = d.Planned > 0
+    ? (int)(d.Delivered * 100.0 / d.Planned) : 0;
+  <td>
+    <div class=""progress"" style=""height:6px;"">
+      <div class=""progress-bar
+           @(pct >= 80 ? ""bg-success""
+           : pct >= 50 ? ""bg-warning""
+           : ""bg-danger"")""
+           style=""width:@pct%""></div>
+    </div>
+    <span>@pct%</span>
+  </td>
+}";
+}

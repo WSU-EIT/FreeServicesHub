@@ -1,0 +1,76 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <!-- NuGet Package Properties -->
+    <PackageId>FreeGLBA.Client</PackageId>
+    <Version>1.1.0</Version>
+    <Authors>WSU-EIT</Authors>
+    <Company>Washington State University</Company>
+    <Description>Client library for FreeGLBA - GLBA Compliance Data Access Tracking System. Provides a simple, strongly-typed client for logging GLBA access events from your applications to track who accessed protected financial information, when, and why.</Description>
+    <PackageTags>glba;compliance;audit;logging;ferpa;data-access;tracking;financial;privacy</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/WSU-EIT/FreeGLBA</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/WSU-EIT/FreeGLBA</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Copyright>Copyright © Washington State University</Copyright>
+    
+    <!-- Package release notes -->
+    <PackageReleaseNotes>
+v1.1.0 - Internal Endpoints &amp; Enhanced Testing
+- NEW: GetStatsAsync - Dashboard statistics
+- NEW: GetRecentEventsAsync - Recent access events
+- NEW: GetSubjectEventsAsync - Subject access history
+- NEW: GetEventAsync - Single event lookup
+- NEW: GetSourceStatusAsync - Source system status
+- NEW: GetTopAccessorsAsync - Top data accessors
+- NEW: SetBearerToken/ClearBearerToken - User JWT auth for internal endpoints
+- NEW: Convenience methods LogViewAsync, LogExportAsync, LogBulkViewAsync, LogBulkExportAsync
+- Added InternalApiModels: GlbaStats, AccessEvent, SourceSystemStatus, AccessorSummary
+
+v1.0.0 - Initial Release
+- Single event logging with LogAccessAsync
+- Batch logging with LogAccessBatchAsync (up to 1000 events)
+- Fire-and-forget logging with TryLogAccessAsync
+- Bulk subject tracking for exports (SubjectIds)
+- Dependency injection support via AddGlbaClient extension
+- Automatic retry with exponential backoff
+- Full async/await support
+    </PackageReleaseNotes>
+
+    <!-- Enable package generation on build -->
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!-- SourceLink - enables debugging into source code from NuGet packages -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+    <!-- Deterministic builds for reproducibility -->
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true' Or '$(TF_BUILD)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- SourceLink package for GitHub -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+  </ItemGroup>
+
+  <!-- Runtime dependencies -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="9.0.0" />
+  </ItemGroup>
+
+</Project>

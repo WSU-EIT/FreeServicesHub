@@ -1,0 +1,190 @@
+@page "/Examples/ChartsDashboard"
+@page "/{TenantCode}/Examples/ChartsDashboard"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title">Charts Dashboard</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title">
+                <i class="fa-solid fa-chart-pie me-1"></i> Charts Dashboard
+                <StickyMenuIcon />
+            </h1>
+        </div>
+
+        <ExampleNav />
+
+        <AboutSection Title="About Charts Dashboard" Subtitle="Learn how web apps turn numbers into visual charts you can interact with" IconClass="fa-solid fa-chart-pie">
+            <div class="row">
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-question-circle me-1"></i>What Is This Page?</h6>
+                    <p class="small text-muted mb-0">
+                        This page turns raw data into visual <strong>charts</strong> — pictures that make numbers
+                        easier to understand. A <strong>pie chart</strong> shows how a total is divided into parts
+                        (like slices of a pizza). A <strong>column chart</strong> (bar chart) compares amounts
+                        side by side. You can click on a pie slice to "drill down" and see the items in that slice.
+                    </p>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-lightbulb me-1"></i>What You'll Learn</h6>
+                    <ul class="small text-muted mb-0 ps-3">
+                        <li><strong>Data visualization</strong> — turning numbers into pictures</li>
+                        <li><strong>Pie charts</strong> — showing proportions (e.g., 40% Active, 30% Completed)</li>
+                        <li><strong>Column charts</strong> — comparing values across categories</li>
+                        <li><strong>Click drill-down</strong> — clicking a chart element to see its details</li>
+                    </ul>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-road me-1"></i>How Does It Work?</h6>
+                    <p class="small text-muted mb-0">
+                        The page loads data from the server (the same dashboard numbers). That data is passed
+                        to a <strong>Highcharts</strong> component — a JavaScript library that draws interactive
+                        charts in the browser. We give it the numbers and labels, and it handles all the drawing,
+                        animation, and click interaction. The chart redraws automatically when data changes.
+                    </p>
+                </div>
+            </div>
+        </AboutSection>
+
+        @* Status Pie Chart *@
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card shadow-sm border-0" role="region" aria-label="Items by Status chart">
+                    <div class="card-header bg-white"><h6 class="mb-0">Items by Status
+                        <InfoTip Title="Pie Chart"
+                                 Description="This component renders a Highcharts pie chart. You pass it an array of name/value pairs, and it draws proportional slices. The chart is interactive — hover shows tooltips, clicking a slice fires the OnItemClicked callback so C# can respond to the click."
+                                 Code="@_codePieChart" />
+                    </h6></div>
+                    <div class="card-body">
+                        <div id="chart-status-pie" style="min-height:300px;" role="img" aria-label="Pie chart showing item counts by status">
+                            <Highcharts @ref="_pieChart"
+                                ElementId="chart-status-pie"
+                                ChartTitle="Items by Status"
+                                ChartType="Highcharts.ChartTypes.Pie"
+                                SeriesDataItems="@_pieData"
+                                OnItemClicked="@((int i) => OnPieClicked(i))" />
+                        </div>
+                        <InfoTip Title="Drill-Down"
+                                 Description="When you click a pie slice, the chart fires a callback with the index of the clicked slice. The C# code looks up that index to find which status was clicked and shows a message. In a real app, this would navigate to a filtered list showing only items with that status."
+                                 Code="@_codeDrillDown" />
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card shadow-sm border-0" role="region" aria-label="Amount by Category chart">
+                    <div class="card-header bg-white"><h6 class="mb-0">Amount by Category
+                        <InfoTip Title="Column Chart"
+                                 Description="A column (bar) chart compares values side by side. Each bar's height represents a number. This chart shows two data series (Amount and Count) grouped by category. The yAxisText label describes what the vertical axis measures."
+                                 Code="@_codeColumnChart" />
+                    </h6></div>
+                    <div class="card-body">
+                        <div id="chart-category-column" style="min-height:300px;" role="img" aria-label="Column chart showing amounts by category">
+                            <Highcharts @ref="_columnChart"
+                                ElementId="chart-category-column"
+                                ChartTitle="Amount by Category"
+                                ChartType="Highcharts.ChartTypes.Column"
+                                yAxisText="Total Amount ($)"
+                                SeriesCategories="@_columnCategories"
+                                SeriesDataArrayItems="@_columnData" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+
+    private bool _loading = true;
+    private bool _loadedData = false;
+    private string _pageName = "chartsdashboard";
+    private string _codePieChart = "<Highcharts ChartType=\"Pie\"\n    SeriesDataItems=\"@_pieData\"\n    OnItemClicked=\"OnPieClicked\" />";
+    private string _codeColumnChart = "<Highcharts ChartType=\"Column\"\n    SeriesDataArrayItems=\"@_columnData\"\n    yAxisText=\"Total Amount ($)\" />";
+    private string _codeDrillDown = "void OnPieClicked(int index) {\n    Model.AddMessage($\"Clicked: {_pieData[index].name}\");\n}";
+    private DataObjects.SampleDashboard _dashboard = new();
+
+    private Highcharts? _pieChart;
+    private Highcharts? _columnChart;
+    private Highcharts.SeriesData[]? _pieData;
+    private string[]? _columnCategories;
+    private Highcharts.SeriesDataArray[]? _columnData;
+
+    public void Dispose()
+    {
+        Model.OnChange -= OnDataModelUpdated;
+        Model.Subscribers_OnChange.Remove(_pageName);
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.View = _pageName;
+        Model.OnChange += OnDataModelUpdated;
+        if (!Model.Subscribers_OnChange.Contains(_pageName)) { Model.Subscribers_OnChange.Add(_pageName); }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            await LoadData();
+        }
+    }
+
+    private void OnDataModelUpdated()
+    {
+        if (Model.View == _pageName) StateHasChanged();
+    }
+
+    private async Task LoadData()
+    {
+        var result = await Helpers.GetOrPost<DataObjects.SampleDashboard>("api/Data/GetSampleDashboard");
+        if (result != null) {
+            _dashboard = result;
+            BuildChartData();
+            Model.AddMessage($"Dashboard loaded: {_dashboard.TotalItems} total items.", MessageType.Success);
+        } else {
+            Model.AddMessage("Failed to load dashboard data.", MessageType.Danger);
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private void BuildChartData()
+    {
+        // Pie: status breakdown
+        _pieData = new[] {
+            new Highcharts.SeriesData { name = "Active", data = _dashboard.ActiveItems },
+            new Highcharts.SeriesData { name = "Completed", data = _dashboard.CompletedItems },
+            new Highcharts.SeriesData { name = "Draft", data = _dashboard.DraftItems },
+            new Highcharts.SeriesData { name = "Archived", data = _dashboard.ArchivedItems },
+        };
+
+        // Column: category amounts
+        _columnCategories = _dashboard.ByCategory.Select(x => x.Category).ToArray();
+        _columnData = new[] {
+            new Highcharts.SeriesDataArray {
+                name = "Total Amount",
+                data = _dashboard.ByCategory.Select(x => x.TotalAmount).ToArray(),
+            },
+            new Highcharts.SeriesDataArray {
+                name = "Count",
+                data = _dashboard.ByCategory.Select(x => (decimal)x.Count).ToArray(),
+            },
+        };
+    }
+
+    private void OnPieClicked(int index)
+    {
+        if (_pieData != null && index >= 0 && index < _pieData.Length) {
+            Model.AddMessage($"Chart clicked: {_pieData[index].name} ({_pieData[index].data} items)", MessageType.Info);
+        }
+    }
+}

@@ -1,0 +1,198 @@
+﻿@implements IDisposable
+@inject BlazorDataModel Model
+
+@if (navigationMenuApp.Enabled) {
+    <NavigationMenu_App Loading="Loading" />
+} else {
+    <header>
+        <nav class="navbar fixed-top navbar-expand-lg navbar-expand-md border-bottom box-shadow mb-3">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="@(Helpers.BuildUrl())">
+                    @if (!String.IsNullOrWhiteSpace(Helpers.LogoUrl) && Model.Tenant.TenantSettings.LogoIncludedOnNavbar) {
+                        <img src="@Helpers.LogoUrl" class="logo-navbar" title="@Helpers.Text("AppTitle")" />
+                    } else {
+                        @if (!String.IsNullOrWhiteSpace(Model.Tenant.TenantSettings.AppIcon)) {
+                            <i>@((MarkupString)Model.Tenant.TenantSettings.AppIcon)</i>
+                        }
+                        <span>@Helpers.Text("AppTitle")</span>
+                    }
+                </a>
+                <button id="menu-bar-toggler" class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navBarToggler" aria-controls="navbarSupportedContent"
+                aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="navbar-collapse collapse" id="navBarToggler">
+                    <ul class="navbar-nav me-auto">
+                        @if (Model.LoggedIn) {
+                            foreach(var item in Helpers.MenuItems) {
+                                var itemClass = "nav-link";
+
+                                if (item.PageNames.Contains(Model.View, StringComparer.CurrentCultureIgnoreCase)) {
+                                    itemClass += " active";
+                                }
+
+                                if (item.AppAdminOnly) {
+                                    itemClass += " app-admin-only";
+                                }
+
+                                <li class="nav-item">
+                                    @if (item.OnClick != null) {
+                                        <a class="@itemClass" href="javascript:void('0');" @onclick="@(() => item.OnClick.DynamicInvoke())">
+                                            @if (!String.IsNullOrWhiteSpace(item.Icon)) {
+                                                <Icon Name="@item.Icon" />
+                                            }
+                                            <span class="icon-text">
+                                                @((MarkupString)item.Title)
+                                            </span>
+                                        </a>
+                                    } else {
+                                        <a class="@itemClass" href="@item.url">
+                                            @if (!String.IsNullOrWhiteSpace(item.Icon)) {
+                                                <Icon Name="@item.Icon" />
+                                            }
+                                            <span class="icon-text">
+                                                @((MarkupString)item.Title)
+                                            </span>
+                                        </a>
+                                    }
+                                </li>
+                            }
+
+                            @if (Helpers.MenuItemsAdmin.Any()) {
+                                <li class="nav-item dropdown">
+                                    <a class="@(Helpers.AdminView ? "nav-link dropdown-toggle active" : "nav-link dropdown-toggle")" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                        <Language Tag="Admin" IncludeIcon="true" />
+                                    </a>
+                                    <ul class="dropdown-menu" aria-labelledby="navbarDropdown">
+                                        @foreach (var item in Helpers.MenuItemsAdmin) {
+                                            var itemClass = "dropdown-item";
+
+                                            if (item.PageNames.Contains(Model.View, StringComparer.CurrentCultureIgnoreCase)) {
+                                                itemClass += " active";
+                                            }
+
+                                            if (item.AppAdminOnly) {
+                                                itemClass += " app-admin-only";
+                                            }
+
+                                            <li>
+                                                @if (item.OnClick != null) {
+                                                    <a class="@itemClass" href="javascript:void('0');" @onclick="@(() => item.OnClick.DynamicInvoke())">
+                                                        @if (!String.IsNullOrWhiteSpace(item.Icon)) {
+                                                            <Icon Name="@item.Icon" />
+                                                        }
+                                                        <span class="icon-text">
+                                                            @((MarkupString)item.Title)
+                                                        </span>
+                                                    </a>
+                                                } else {
+                                                    <a class="@itemClass" href="@item.url">
+                                                        @if (!String.IsNullOrWhiteSpace(item.Icon)) {
+                                                            <Icon Name="@item.Icon" />
+                                                        }
+                                                        <span class="icon-text">
+                                                            @((MarkupString)item.Title)
+                                                        </span>
+                                                    </a>
+                                                }
+                                            </li>
+                                        }
+                                    </ul>
+                                </li>
+                            }
+                        } else if (Model.Loaded) {
+                            <li class="nav-item">
+                                <a class="nav-link @(Model.View == "login" ? "active" : "")" href="@Helpers.BuildUrl("Login")">
+                                    <Language Tag="Login" IncludeIcon="true" />
+                                </a>
+                            </li>
+                        }
+                    </ul>
+                    <form class="d-flex">
+                        <ul class="navbar-nav me-auto">
+                            @if (Model.HaveDeletedRecords) {
+                                <li class="nav-item">
+                                    <a class="nav-link deleted-records" role="button" href="@(Helpers.BuildUrl("Settings/DeletedRecords"))" title="@Helpers.Text("PendingDeletedRecords")">
+                                        <Icon Name="DeletedRecords" />
+                                    </a>
+                                </li>
+                            }
+
+                            @if (String.IsNullOrWhiteSpace(Model.Tenant.TenantSettings.Theme)) {
+                                <li class="nav-item dropdown" title="@Helpers.Text("Theme")">
+                                    <a class="nav-link dropdown-toggle" href="#" id="themeDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                        @switch (Model.Theme) {
+                                            case "dark":
+                                                <Icon Name="ThemeDark" />
+                                                break;
+
+                                            case "light":
+                                                <Icon Name="ThemeLight" />
+                                                break;
+
+                                            case "auto":
+                                                <Icon Name="ThemeAuto" />
+                                                break;
+                                        }
+                                    </a>
+                                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="themeDropdown">
+                                        <li>
+                                            <a class="dropdown-item disabled" href="javascript:void('0');">
+                                                <Language Tag="Theme" IncludeIcon="true" />
+                                            </a>
+                                        </li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li>
+                                            <a class="dropdown-item" href="javascript:void('0');" @onclick="@(() => Helpers.SetTheme("auto"))">
+                                                <Language Tag="ThemeAuto" IncludeIcon="true" />
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <a class="dropdown-item" href="javascript:void('0');" @onclick="@(() => Helpers.SetTheme("light"))">
+                                                <Language Tag="ThemeLight" IncludeIcon="true" />
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <a class="dropdown-item" href="javascript:void('0');" @onclick="@(() => Helpers.SetTheme("dark"))">
+                                                <Language Tag="ThemeDark" IncludeIcon="true" />
+                                            </a>
+                                        </li>
+                                    </ul>
+                                </li>
+                            }
+                            <li class="nav-item">
+                                <a class="nav-link" data-bs-toggle="offcanvas" href="#offcanvasUserMenu" role="button" aria-controls="offcanvasUserMenu">
+                                    @if (Model.LoggedIn) {
+                                        @if (!String.IsNullOrWhiteSpace(Helpers.UserAvatarUrl)) {
+                                            <img class="user-menu-icon" src="@Helpers.UserAvatarUrl" />
+                                        } else {
+                                            <Icon Name="User" />
+                                        }
+                                    } else {
+                                        <Icon Name="Info" />
+                                    }
+                                </a>
+                            </li>
+                        </ul>
+                    </form>
+                </div>
+            </div>
+        </nav>
+    </header>
+}
+
+@code {
+    [Parameter]
+    public bool Loading { get; set; }
+
+    protected NavigationMenu_App navigationMenuApp = new NavigationMenu_App();
+
+    public void Dispose() {
+        Model.OnChange -= StateHasChanged;
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.OnChange += StateHasChanged;
+    }
+}

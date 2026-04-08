@@ -1,0 +1,52 @@
+@page "/Examples/TimerV1"
+@page "/{TenantCode}/Examples/TimerV1"
+@implements IDisposable
+@inject BlazorDataModel Model
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) { <h1 class="page-title"><i class="fa-solid fa-stopwatch me-1"></i> Pomodoro</h1><LoadingMessage /> } else {
+        <div class="@Model.StickyMenuClass"><h1 class="page-title"><i class="fa-solid fa-stopwatch me-1"></i> V1: Pomodoro Timer <StickyMenuIcon /></h1></div>
+
+        <ExampleNav />
+        <AboutSection Title="Timer in Context: Pomodoro Timer" Subtitle="25-minute focus sessions with 5-minute breaks — the Pomodoro technique" IconClass="fa-solid fa-stopwatch">
+            <p class="small text-muted mb-0">Same System.Timers.Timer concept from Timer Demo, but in a Pomodoro productivity context. Work sessions, break sessions, and a session counter.</p>
+        </AboutSection>
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Circular Timer Display"
+                     Description="The timer uses a rounded-circle border to create a clock-like display. display-3 shows the time large. The border color changes: border-primary during focus, border-success during break. This visual state change is instant feedback."
+                     Code="@_codeCircularTimer" />
+            <InfoTip Title="System.Timers.Timer in Blazor"
+                     Description="The timer uses System.Timers.Timer with 1000ms interval. The Elapsed event calls InvokeAsync + StateHasChanged to safely update the UI from a background thread. The timer is disposed in IDisposable.Dispose() to prevent memory leaks."
+                     Code="@_codeTimerSetup" />
+            <InfoTip Title="Session State Machine"
+                     Description="The Pomodoro cycles between Focus (25 min) and Break (5 min). When the timer hits 0:00, it increments the session counter and switches state. The _isBreak flag controls which mode is active. This state-machine pattern is common in workflow UIs."
+                     Code="@_codeStateMachine" />
+        </div>
+        <div class="text-center py-4">
+            <div class="d-inline-flex align-items-center justify-content-center rounded-circle border border-3 @(_isBreak ? "border-success" : "border-primary")" style="width:200px;height:200px;">
+                <div><div class="display-3 fw-bold @(_isBreak ? "text-success" : "text-primary")">@(_minutes.ToString("D2")):@(_seconds.ToString("D2"))</div><div class="small text-muted">@(_isBreak ? "Break" : "Focus")</div></div>
+            </div>
+            <div class="mt-3 d-flex justify-content-center gap-2">
+                <button class="btn btn-primary" @onclick="StartStop">@(_running ? "Pause" : "Start")</button>
+                <button class="btn btn-outline-secondary" @onclick="Reset">Reset</button>
+                <button class="btn btn-outline-info" @onclick="SkipToBreak">@(_isBreak ? "Skip Break" : "Take Break")</button>
+            </div>
+            <div class="mt-3"><span class="badge bg-secondary rounded-pill">Sessions completed: @_sessionsCompleted</span></div>
+        </div>
+    }
+}
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false, _running = false, _isBreak = false;
+    private string _pageName = "timerv1";
+    private string _codeCircularTimer = "<div class=\"rounded-circle border border-3\n  @(_isBreak ? \"border-success\" : \"border-primary\")\"\n  style=\"width:200px;height:200px\">\n  <div class=\"display-3\">@min:@sec</div>\n</div>";
+    private string _codeTimerSetup = "_timer = new System.Timers.Timer(1000);\n_timer.Elapsed += (s, e) => InvokeAsync(() => {\n  _seconds--;\n  StateHasChanged();\n});";
+    private string _codeStateMachine = "if (_seconds == 0 && _minutes == 0) {\n  if (!_isBreak) _sessionsCompleted++;\n  _isBreak = !_isBreak;\n  _minutes = _isBreak ? 5 : 25;\n}";
+    private int _minutes = 25, _seconds = 0, _sessionsCompleted = 0;
+    private System.Timers.Timer? _timer;
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); _timer?.Dispose(); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); _timer = new System.Timers.Timer(1000); _timer.Elapsed += (s, e) => InvokeAsync(() => { if (_seconds == 0 && _minutes == 0) { _running = false; _timer.Stop(); if (!_isBreak) _sessionsCompleted++; _isBreak = !_isBreak; _minutes = _isBreak ? 5 : 25; } else if (_seconds == 0) { _minutes--; _seconds = 59; } else { _seconds--; } StateHasChanged(); }); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) Model.TenantCodeFromUrl = TenantCode; if (Model.Loaded && Model.LoggedIn && !_loadedData) { _loadedData = true; _loading = false; StateHasChanged(); } }
+    private void StartStop() { _running = !_running; if (_running) _timer?.Start(); else _timer?.Stop(); }
+    private void Reset() { _running = false; _timer?.Stop(); _isBreak = false; _minutes = 25; _seconds = 0; }
+    private void SkipToBreak() { _isBreak = !_isBreak; _minutes = _isBreak ? 5 : 25; _seconds = 0; }
+}

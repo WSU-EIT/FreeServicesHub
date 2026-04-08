@@ -1,0 +1,18 @@
+<Solution>
+  <Folder Name="/FreeTools/">
+    <Project Path="Docs/Docs.csproj" />
+    <Project Path="FreeTools.AccessibilityScanner/FreeTools.AccessibilityScanner.csproj" />
+    <Project Path="FreeTools.AppHost/FreeTools.AppHost.csproj" />
+    <Project Path="FreeTools.BrowserSnapshot/FreeTools.BrowserSnapshot.csproj" />
+    <Project Path="FreeTools.Core/FreeTools.Core.csproj" />
+    <Project Path="FreeTools.EndpointMapper/FreeTools.EndpointMapper.csproj" />
+    <Project Path="FreeTools.EndpointPoker/FreeTools.EndpointPoker.csproj" />
+    <Project Path="FreeTools.ForkCRM/FreeTools.ForkCRM.csproj" />
+    <Project Path="FreeTools.WorkspaceInventory/FreeTools.WorkspaceInventory.csproj" />
+    <Project Path="FreeTools.WorkspaceReporter/FreeTools.WorkspaceReporter.csproj" />
+  </Folder>
+  <Folder Name="/Solution Items/">
+    <File Path=".gitignore" />
+  </Folder>
+  <Project Path="../BlazorApp1/BlazorApp1.csproj" />
+</Solution>

@@ -1,0 +1,356 @@
+﻿@* FreeGLBA.App.BodyLoggingSettings.razor - Body Logging Configuration Page *@
+@page "/ApiLogs/Settings"
+@page "/{TenantCode}/ApiLogs/Settings"
+@implements IDisposable
+@inject BlazorDataModel Model
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+@if (Model.Loaded && Model.LoggedIn && Model.View == _pageName) {
+    <div class="container-fluid">
+        <div class="@Model.StickyMenuClass">
+            <div class="d-flex justify-content-between align-items-center">
+                <h1 class="page-title mb-0">
+                    <i class="fa-solid fa-gear me-2"></i>Body Logging Settings
+                </h1>
+                <button class="btn btn-outline-secondary" @onclick="GoBack">
+                    <i class="fa-solid fa-arrow-left me-1"></i>Back to Logs
+                </button>
+            </div>
+        </div>
+
+        @* PII Warning Banner *@
+        <div class="alert alert-warning mb-4">
+            <h5 class="alert-heading">
+                <i class="fa-solid fa-triangle-exclamation me-2"></i>Important: Request/Response Body Logging
+            </h5>
+            <p class="mb-2">
+                By default, API request and response bodies are <strong>NOT logged</strong> to protect 
+                potentially sensitive information (PII, financial data, etc.).
+            </p>
+            <p class="mb-0">
+                Body logging can be <strong>temporarily enabled</strong> per source system for debugging purposes. 
+                When enabled, all request/response bodies will be captured and stored. Enable only when necessary 
+                and disable promptly after troubleshooting.
+            </p>
+        </div>
+
+        @if (_loading) {
+            <div class="text-center py-5">
+                <i class="fa-solid fa-spinner fa-spin fa-2x"></i>
+                <p class="mt-2">Loading configurations...</p>
+            </div>
+        } else {
+            @* Enable Body Logging Form *@
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="fa-solid fa-plus me-2"></i>Enable Body Logging
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label">Source System</label>
+                            <select class="form-select" @bind="_newConfig.SourceSystemId">
+                                <option value="">Select a source system...</option>
+                                @foreach (var source in _sourceSystems) {
+                                    <option value="@source.SourceSystemId">@source.DisplayName</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Duration</label>
+                            <select class="form-select" @bind="_newConfig.DurationHours">
+                                <option value="1">1 hour</option>
+                                <option value="4">4 hours</option>
+                                <option value="8">8 hours</option>
+                                <option value="24">24 hours</option>
+                                <option value="48">48 hours</option>
+                                <option value="72">72 hours</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Reason (required)</label>
+                            <input type="text" class="form-control" @bind="_newConfig.Reason" placeholder="e.g., Debugging issue #1234" />
+                        </div>
+                        <div class="col-md-3">
+                            <button class="btn btn-warning w-100" @onclick="ShowConfirmation" 
+                                    disabled="@(string.IsNullOrEmpty(_newConfig.SourceSystemId) || string.IsNullOrEmpty(_newConfig.Reason))">
+                                <i class="fa-solid fa-shield-halved me-1"></i>Enable Body Logging
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @* Confirmation Modal *@
+            @if (_showConfirmation) {
+                <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+                    <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content">
+                            <div class="modal-header bg-warning">
+                                <h5 class="modal-title">
+                                    <i class="fa-solid fa-triangle-exclamation me-2"></i>Confirm Body Logging
+                                </h5>
+                                <button type="button" class="btn-close" @onclick="() => _showConfirmation = false"></button>
+                            </div>
+                            <div class="modal-body">
+                                <p><strong>You are about to enable body logging for:</strong></p>
+                                <ul>
+                                    <li><strong>Source System:</strong> @GetSourceName(_newConfig.SourceSystemId)</li>
+                                    <li><strong>Duration:</strong> @_newConfig.DurationHours hours</li>
+                                    <li><strong>Reason:</strong> @_newConfig.Reason</li>
+                                </ul>
+                                <div class="alert alert-danger mb-0">
+                                    <i class="fa-solid fa-exclamation-circle me-2"></i>
+                                    <strong>Warning:</strong> All request and response bodies will be logged. 
+                                    This may include sensitive data. Ensure this is necessary for debugging purposes.
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" @onclick="() => _showConfirmation = false">Cancel</button>
+                                <button type="button" class="btn btn-warning" @onclick="EnableBodyLogging" disabled="@_saving">
+                                    @if (_saving) {
+                                        <i class="fa-solid fa-spinner fa-spin me-1"></i>
+                                    }
+                                    Yes, Enable Body Logging
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @* Active Configurations *@
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="fa-solid fa-bolt me-2 text-success"></i>Active Configurations</span>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="LoadData">
+                        <i class="fa-solid fa-sync"></i>
+                    </button>
+                </div>
+                <div class="card-body p-0">
+                    @{
+                        var activeConfigs = _configs.Where(c => c.IsActive).ToList();
+                    }
+                    @if (activeConfigs.Count == 0) {
+                        <p class="text-muted text-center py-3 mb-0">
+                            <i class="fa-solid fa-check-circle text-success me-2"></i>
+                            No active body logging configurations. Body logging is disabled for all source systems.
+                        </p>
+                    } else {
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Source System</th>
+                                        <th>Enabled By</th>
+                                        <th>Enabled At</th>
+                                        <th>Expires At</th>
+                                        <th>Time Remaining</th>
+                                        <th>Reason</th>
+                                        <th class="text-center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var config in activeConfigs) {
+                                        var remaining = config.ExpiresAt - DateTime.UtcNow;
+                                        var isExpiringSoon = remaining.TotalHours < 1;
+                                        <tr>
+                                            <td>@GetSourceName(config.SourceSystemId.ToString())</td>
+                                            <td>@config.EnabledByUserName</td>
+                                            <td>@config.EnabledAt.ToLocalTime().ToString("g")</td>
+                                            <td>@config.ExpiresAt.ToLocalTime().ToString("g")</td>
+                                            <td class="@(isExpiringSoon ? "text-danger fw-bold" : "")">
+                                                @FormatTimeRemaining(remaining)
+                                            </td>
+                                            <td class="text-truncate" style="max-width: 200px;" title="@config.Reason">@config.Reason</td>
+                                            <td class="text-center">
+                                                <button class="btn btn-sm btn-danger" @onclick="() => DisableConfig(config.BodyLoggingConfigId)" title="Disable now">
+                                                    <i class="fa-solid fa-stop"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @* History *@
+            <div class="card">
+                <div class="card-header">
+                    <i class="fa-solid fa-history me-2"></i>Recent History
+                </div>
+                <div class="card-body p-0">
+                    @{
+                        var historyConfigs = _configs.Where(c => !c.IsActive).OrderByDescending(c => c.EnabledAt).Take(20).ToList();
+                    }
+                    @if (historyConfigs.Count == 0) {
+                        <p class="text-muted text-center py-3 mb-0">No history available</p>
+                    } else {
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Source System</th>
+                                        <th>Enabled By</th>
+                                        <th>Enabled At</th>
+                                        <th>Disabled At</th>
+                                        <th>Duration</th>
+                                        <th>Reason</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var config in historyConfigs) {
+                                        var duration = (config.DisabledAt ?? config.ExpiresAt) - config.EnabledAt;
+                                        <tr>
+                                            <td>@GetSourceName(config.SourceSystemId.ToString())</td>
+                                            <td>@config.EnabledByUserName</td>
+                                            <td>@config.EnabledAt.ToLocalTime().ToString("g")</td>
+                                            <td>@(config.DisabledAt?.ToLocalTime().ToString("g") ?? "Expired")</td>
+                                            <td>@FormatDuration(duration)</td>
+                                            <td class="text-truncate" style="max-width: 200px;" title="@config.Reason">@config.Reason</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    
+    private string _pageName = "bodyloggingsettings";
+    private bool _loading = true;
+    private bool _loadedData = false;
+    private bool _saving = false;
+    private bool _showConfirmation = false;
+    private List<DataObjects.BodyLoggingConfig> _configs = new();
+    private List<DataObjects.SourceSystemLookup> _sourceSystems = new();
+    private NewConfigState _newConfig = new();
+
+    public void Dispose() { Model.OnChange -= OnDataModelUpdated; }
+
+    protected override void OnInitialized() {
+        Model.View = _pageName;
+        Model.OnChange += OnDataModelUpdated;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) {
+            Model.TenantCodeFromUrl = TenantCode;
+        }
+
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            await LoadData();
+        }
+    }
+
+    private void OnDataModelUpdated() {
+        if (Model.View == _pageName) {
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadData() {
+        _loading = true;
+        StateHasChanged();
+
+        try {
+            var sourcesTask = Helpers.GetOrPost<List<DataObjects.SourceSystemLookup>>("api/Data/GetSourceSystemLookups");
+            var configsTask = Helpers.GetOrPost<List<DataObjects.BodyLoggingConfig>>("api/Data/GetBodyLoggingConfigs");
+            
+            await Task.WhenAll(sourcesTask, configsTask);
+            
+            _sourceSystems = await sourcesTask ?? new();
+            _configs = await configsTask ?? new();
+        } catch (Exception ex) {
+            Model.ErrorMessage($"Error loading data: {ex.Message}");
+        } finally {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ShowConfirmation() {
+        _showConfirmation = true;
+    }
+
+    private async Task EnableBodyLogging() {
+        if (string.IsNullOrEmpty(_newConfig.SourceSystemId) || string.IsNullOrEmpty(_newConfig.Reason)) return;
+
+        _saving = true;
+        StateHasChanged();
+
+        try {
+            var request = new DataObjects.EnableBodyLoggingRequest
+            {
+                SourceSystemId = Guid.Parse(_newConfig.SourceSystemId),
+                EnabledByUserId = Model.User.UserId,
+                EnabledByUserName = Model.User.DisplayName ?? Model.User.Email ?? "Unknown",
+                DurationHours = _newConfig.DurationHours,
+                Reason = _newConfig.Reason
+            };
+
+            await Helpers.GetOrPost<DataObjects.BodyLoggingConfig>("api/Data/EnableBodyLogging", request);
+            
+            Model.AddMessage("Body logging enabled successfully", MessageType.Success, true);
+            _showConfirmation = false;
+            _newConfig = new NewConfigState();
+            await LoadData();
+        } catch (Exception ex) {
+            Model.ErrorMessage($"Error enabling body logging: {ex.Message}");
+        } finally {
+            _saving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DisableConfig(Guid configId) {
+        try {
+            await Helpers.GetOrPost<bool>("api/Data/DisableBodyLogging", configId);
+            Model.AddMessage("Body logging disabled successfully", MessageType.Success, true);
+            await LoadData();
+        } catch (Exception ex) {
+            Model.ErrorMessage($"Error disabling body logging: {ex.Message}");
+        }
+    }
+
+    private string GetSourceName(string? sourceSystemId) {
+        if (string.IsNullOrEmpty(sourceSystemId)) return "(Unknown)";
+        if (!Guid.TryParse(sourceSystemId, out var guid)) return "(Unknown)";
+        return _sourceSystems.FirstOrDefault(s => s.SourceSystemId == guid)?.DisplayName ?? "(Unknown)";
+    }
+
+    private string FormatTimeRemaining(TimeSpan remaining) {
+        if (remaining.TotalSeconds <= 0) return "Expired";
+        if (remaining.TotalMinutes < 60) return $"{(int)remaining.TotalMinutes}m remaining";
+        if (remaining.TotalHours < 24) return $"{(int)remaining.TotalHours}h {remaining.Minutes}m remaining";
+        return $"{(int)remaining.TotalDays}d {remaining.Hours}h remaining";
+    }
+
+    private string FormatDuration(TimeSpan duration) {
+        if (duration.TotalMinutes < 60) return $"{(int)duration.TotalMinutes}m";
+        if (duration.TotalHours < 24) return $"{(int)duration.TotalHours}h {duration.Minutes}m";
+        return $"{(int)duration.TotalDays}d {duration.Hours}h";
+    }
+
+    private void GoBack() {
+        var path = string.IsNullOrEmpty(TenantCode) ? "/ApiLogs" : $"/{TenantCode}/ApiLogs";
+        Nav.NavigateTo(path);
+    }
+
+    private class NewConfigState {
+        public string SourceSystemId { get; set; } = "";
+        public int DurationHours { get; set; } = 24;
+        public string Reason { get; set; } = "";
+    }
+}

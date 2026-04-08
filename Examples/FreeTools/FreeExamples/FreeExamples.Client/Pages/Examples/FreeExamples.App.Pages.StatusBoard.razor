@@ -1,0 +1,347 @@
+@page "/Examples/StatusBoard"
+@page "/{TenantCode}/Examples/StatusBoard"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-table-cells me-1"></i> Status Board</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title">
+                <i class="fa-solid fa-table-cells me-1"></i> Status Board Demo
+                <StickyMenuIcon />
+            </h1>
+        </div>
+
+        <ExampleNav />
+
+        <AboutSection Title="About Status Board" Subtitle="The same pipeline data as a Kanban-style swimlane board" IconClass="fa-solid fa-table-cells">
+            <div class="row">
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-question-circle me-1"></i>What Is This Page?</h6>
+                    <p class="small text-muted mb-0">
+                        This is a <strong>variant</strong> of the Pipeline Tracker demo. Instead of a horizontal
+                        sequence of stages, it shows <strong>swimlane columns</strong> — one column per stage,
+                        with cards showing which items are in each stage. This is the Azure DevOps board view or
+                        Jira board view of a pipeline. Multiple items can be in different stages simultaneously.
+                    </p>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-lightbulb me-1"></i>What's Different?</h6>
+                    <ul class="small text-muted mb-0 ps-3">
+                        <li><strong>Multiple items</strong> — several items tracked across stages at once</li>
+                        <li><strong>Column layout</strong> — one column per stage, cards within each</li>
+                        <li><strong>Column counters</strong> — badges showing how many items per stage</li>
+                        <li><strong>Status colors</strong> — cards colored by their current state</li>
+                        <li><strong>Same stages</strong> — identical pipeline definitions, multi-item view</li>
+                    </ul>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-road me-1"></i>When to Use Which?</h6>
+                    <p class="small text-muted mb-0">
+                        Use the <strong>Pipeline Tracker</strong> to show one item's journey through stages
+                        (like a FedEx tracking page). Use the <strong>Status Board</strong> to show many items
+                        across stages at the same time (like a Jira sprint board). Same concept, different scope.
+                    </p>
+                </div>
+            </div>
+        </AboutSection>
+
+        @* ── Board Type Selector ── *@
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+            <label class="form-label mb-0 small text-muted">Board:</label>
+            <select class="form-select form-select-sm" style="width:auto;" @bind="_selectedBoard" @bind:after="LoadBoard">
+                <option value="ticket">🎫 Support Tickets</option>
+                <option value="deploy">🚀 Deployments</option>
+                <option value="approval">📋 Approvals</option>
+            </select>
+            <button class="btn btn-sm btn-outline-primary" @onclick="AddRandomItem">
+                <i class="fa-solid fa-plus me-1"></i> Add Item
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="LoadBoard">
+                <i class="fa-solid fa-arrows-rotate me-1"></i> Reset
+            </button>
+            <InfoTip Title="Multi-Item Board"
+                     Description="The Pipeline Tracker shows ONE item moving through stages. This board shows MANY items across stages simultaneously. Each column is a stage, each card is an item. Click 'Advance' on a card to move it to the next column."
+                     Code="@_codeBoard" />
+        </div>
+
+        @* ── Swimlane Board ── *@
+        <div class="d-flex gap-2 overflow-auto pb-2">
+            @for (int c = 0; c < _columns.Count; c++) {
+                int colIdx = c;
+                var column = _columns[c];
+                var cardsInCol = _boardItems.Where(i => i.CurrentStage == colIdx).ToList();
+
+                <div class="flex-shrink-0" style="width:220px; min-width:220px;">
+                    @* Column Header *@
+                    <div class="rounded-top p-2 d-flex justify-content-between align-items-center @GetColumnHeaderClasses(colIdx)">
+                        <span class="small fw-semibold">
+                            <i class="@column.Icon me-1"></i> @column.Title
+                        </span>
+                        <span class="badge bg-white text-dark rounded-pill" style="font-size:0.6rem;">@cardsInCol.Count</span>
+                    </div>
+
+                    @* Column Body *@
+                    <div class="bg-light border border-top-0 rounded-bottom p-2" style="min-height:250px;">
+                        @if (!cardsInCol.Any()) {
+                            <div class="text-center py-4">
+                                <i class="fa-solid fa-inbox text-muted opacity-25"></i>
+                                <div class="small text-muted mt-1">Empty</div>
+                            </div>
+                        }
+                        @foreach (var card in cardsInCol) {
+                            <div class="card border-0 shadow-sm mb-2">
+                                <div class="card-body p-2">
+                                    <div class="d-flex justify-content-between align-items-start mb-1">
+                                        <span class="small fw-semibold">@card.Title</span>
+                                        <span class="badge @GetPriorityBadge(card.Priority)" style="font-size:0.5rem;">@card.Priority</span>
+                                    </div>
+                                    <div class="small text-muted mb-2">@card.Description</div>
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        @* Assignee avatar *@
+                                        <div class="d-flex align-items-center gap-1">
+                                            <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center"
+                                                 style="width:20px; height:20px; font-size:0.5rem; font-weight:600;">
+                                                @card.AssigneeInitials
+                                            </div>
+                                            <span class="text-muted" style="font-size:0.6rem;">@card.Assignee</span>
+                                        </div>
+                                        @* Advance button *@
+                                        @if (colIdx < _columns.Count - 1) {
+                                            <button class="btn btn-sm btn-outline-primary py-0 px-1" style="font-size:0.6rem;"
+                                                    @onclick="@(() => AdvanceCard(card))" title="Move to @_columns[colIdx + 1].Title">
+                                                <i class="fa-solid fa-arrow-right"></i>
+                                            </button>
+                                        } else {
+                                            <span class="badge bg-success" style="font-size:0.5rem;"><i class="fa-solid fa-check"></i></span>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        @* ── Summary Row ── *@
+        <div class="row row-cols-2 row-cols-md-4 g-2 mt-3 mb-3">
+            <div class="col">
+                <div class="card border-0 shadow-sm text-center py-2">
+                    <div class="h4 mb-0 text-primary">@_boardItems.Count</div>
+                    <div class="small text-muted">Total Items</div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card border-0 shadow-sm text-center py-2">
+                    <div class="h4 mb-0 text-success">@_boardItems.Count(i => i.CurrentStage == _columns.Count - 1)</div>
+                    <div class="small text-muted">Completed</div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card border-0 shadow-sm text-center py-2">
+                    <div class="h4 mb-0 text-warning">@_boardItems.Count(i => i.CurrentStage > 0 && i.CurrentStage < _columns.Count - 1)</div>
+                    <div class="small text-muted">In Progress</div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card border-0 shadow-sm text-center py-2">
+                    <div class="h4 mb-0 text-secondary">@_boardItems.Count(i => i.CurrentStage == 0)</div>
+                    <div class="small text-muted">Backlog</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex flex-wrap gap-1">
+            <InfoTip Title="Column Layout"
+                     Description="Each column is a flex-shrink-0 div with a fixed width of 220px. The parent is d-flex with overflow-auto, creating a horizontal scrollable board. Cards within each column are filtered by their CurrentStage index matching the column index."
+                     Code="@_codeColumns" />
+            <InfoTip Title="Card Advance"
+                     Description="Each card has a small arrow button that increments its CurrentStage by 1, moving it to the next column. The last column shows a green check instead of an arrow. This is the minimal version of Kanban drag-and-drop."
+                     Code="@_codeAdvance" />
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+
+    private bool _loading = true;
+    private bool _loadedData = false;
+    private string _pageName = "statusboard";
+
+    // InfoTip snippets
+    private string _codeBoard = "var cardsInCol = _boardItems.Where(i => i.CurrentStage == colIdx);";
+    private string _codeColumns = "<div class=\"d-flex gap-2 overflow-auto\">\n    @foreach column ... width:220px;\n        @foreach card in column ...\n</div>";
+    private string _codeAdvance = "card.CurrentStage++;\n// Card moves to next column on re-render";
+
+    // State
+    private string _selectedBoard = "ticket";
+    private List<StageColumn> _columns = new();
+    private List<BoardItem> _boardItems = new();
+    private int _nextItemNumber = 1;
+    private Random _rng = new();
+
+    // ── Lifecycle ──
+
+    public void Dispose()
+    {
+        Model.OnChange -= OnDataModelUpdated;
+        Model.Subscribers_OnChange.Remove(_pageName);
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.View = _pageName;
+        Model.OnChange += OnDataModelUpdated;
+        if (!Model.Subscribers_OnChange.Contains(_pageName)) { Model.Subscribers_OnChange.Add(_pageName); }
+        LoadBoard();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnDataModelUpdated()
+    {
+        if (Model.View == _pageName) StateHasChanged();
+    }
+
+    // ── Board Data ──
+
+    private void LoadBoard()
+    {
+        _nextItemNumber = 1;
+
+        (_columns, _boardItems) = _selectedBoard switch {
+            "ticket" => (
+                new List<StageColumn> {
+                    new("New", "fa-solid fa-plus"),
+                    new("Assigned", "fa-solid fa-user-check"),
+                    new("In Progress", "fa-solid fa-spinner"),
+                    new("Resolved", "fa-solid fa-check-double"),
+                    new("Closed", "fa-solid fa-lock"),
+                },
+                new List<BoardItem> {
+                    MakeCard("Login page error", "Users cannot log in via SSO", "Sarah K", 0, "P1"),
+                    MakeCard("Slow report query", "Monthly report takes 30s", "Mike D", 0, "P2"),
+                    MakeCard("Missing icon on nav", "FontAwesome icon not loading", "Alex R", 1, "P3"),
+                    MakeCard("Email not sending", "Notifications queue is stuck", "Sarah K", 1, "P1"),
+                    MakeCard("CSV export blank", "Export downloads empty file", "Chen W", 2, "P2"),
+                    MakeCard("Dark mode toggle", "Setting doesn't persist", "Alex R", 2, "P3"),
+                    MakeCard("Password reset flow", "Token expires too fast", "Mike D", 3, "P2"),
+                }
+            ),
+            "deploy" => (
+                new List<StageColumn> {
+                    new("Queued", "fa-solid fa-clock"),
+                    new("Building", "fa-solid fa-hammer"),
+                    new("Testing", "fa-solid fa-vial"),
+                    new("Staging", "fa-solid fa-server"),
+                    new("Production", "fa-solid fa-rocket"),
+                },
+                new List<BoardItem> {
+                    MakeCard("API v2.3.1", "Bug fix release", "CI Bot", 0, "P2"),
+                    MakeCard("Web v4.1.0", "Feature release", "CI Bot", 1, "P1"),
+                    MakeCard("Worker v1.8.2", "Performance patch", "CI Bot", 2, "P2"),
+                    MakeCard("Mobile v3.0.0", "Major upgrade", "CI Bot", 3, "P1"),
+                    MakeCard("API v2.3.0", "Previous release", "CI Bot", 4, "P3"),
+                }
+            ),
+            "approval" => (
+                new List<StageColumn> {
+                    new("Submitted", "fa-solid fa-paper-plane"),
+                    new("Manager", "fa-solid fa-user-tie"),
+                    new("Finance", "fa-solid fa-building-columns"),
+                    new("Approved", "fa-solid fa-circle-check"),
+                },
+                new List<BoardItem> {
+                    MakeCard("New laptop", "$2,400 MacBook Pro", "John S", 0, "P2"),
+                    MakeCard("Conf travel", "React Summit Berlin", "Amy L", 0, "P3"),
+                    MakeCard("AWS budget", "+$500/mo for staging", "Dev Team", 1, "P1"),
+                    MakeCard("Office chairs", "6x ergonomic chairs", "Ops Team", 2, "P2"),
+                    MakeCard("Training sub", "Pluralsight annual", "Mike D", 3, "P3"),
+                }
+            ),
+            _ => (new(), new()),
+        };
+    }
+
+    private BoardItem MakeCard(string title, string desc, string assignee, int stage, string priority)
+    {
+        string initials = string.Concat(assignee.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(p => p[0])).ToUpper();
+        return new BoardItem {
+            Id = _nextItemNumber++,
+            Title = title,
+            Description = desc,
+            Assignee = assignee,
+            AssigneeInitials = initials,
+            CurrentStage = stage,
+            Priority = priority,
+        };
+    }
+
+    private void AdvanceCard(BoardItem card)
+    {
+        if (card.CurrentStage < _columns.Count - 1) {
+            card.CurrentStage++;
+        }
+    }
+
+    private void AddRandomItem()
+    {
+        string[] titles = { "Bug fix", "Feature request", "Documentation update", "Security patch", "UI improvement", "API change", "Database migration" };
+        string[] people = { "Sarah K", "Mike D", "Alex R", "Chen W", "Amy L", "Dev Team" };
+        string[] priorities = { "P1", "P2", "P3" };
+
+        var card = MakeCard(
+            titles[_rng.Next(titles.Length)] + " #" + _nextItemNumber,
+            "Auto-generated work item",
+            people[_rng.Next(people.Length)],
+            0,
+            priorities[_rng.Next(priorities.Length)]
+        );
+        _boardItems.Add(card);
+    }
+
+    // ── Helpers ──
+
+    private string GetColumnHeaderClasses(int idx)
+    {
+        if (idx == _columns.Count - 1) return "bg-success text-white";
+        if (idx == 0) return "bg-secondary text-white";
+        return "bg-primary text-white";
+    }
+
+    private string GetPriorityBadge(string priority) => priority switch {
+        "P1" => "bg-danger",
+        "P2" => "bg-warning text-dark",
+        "P3" => "bg-info",
+        _ => "bg-secondary",
+    };
+
+    // ── Inner Types ──
+
+    private record StageColumn(string Title, string Icon);
+
+    private class BoardItem
+    {
+        public int Id { get; set; }
+        public string Title { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Assignee { get; set; } = "";
+        public string AssigneeInitials { get; set; } = "";
+        public int CurrentStage { get; set; }
+        public string Priority { get; set; } = "P3";
+    }
+}

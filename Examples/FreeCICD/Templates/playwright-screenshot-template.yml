@@ -1,0 +1,1364 @@
+# Templates/playwright-visual-tests.yml
+parameters:
+  - name: testUrl
+    type: string
+    default: 'https://prod.em.wsu.edu/FreeCICD'
+  - name: baseImageName
+    type: string
+    default: 'playwright-dotnet-pwsh'
+  - name: projectImageName
+    type: string
+    default: 'playwright-test-project'
+  - name: crawlerImageName
+    type: string
+    default: 'playwright-link-crawler'
+  - name: poolName
+    type: string
+    default: 'BuildVM'
+
+stages:
+- stage: VisualTests
+  displayName: 'Playwright Visual Tests (Single Stage)'
+  pool:
+    name: ${{ parameters.poolName }}
+  jobs:
+  # ============================================================================
+  # STAGE 0 (JOB GROUP): Build Base Image with Tools
+  # ============================================================================
+  - job: BuildBaseImage
+    displayName: 'Build Base Image (Playwright + .NET + PowerShell)'
+    steps:
+    - checkout: none
+
+    - task: PowerShell@2
+      displayName: 'Generate Base Dockerfile'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $dockerfileContent = @'
+          FROM mcr.microsoft.com/playwright:v1.56.1-noble
+          
+          RUN apt-get update && \
+              apt-get install -y wget apt-transport-https software-properties-common git && \
+              apt-get clean && \
+              rm -rf /var/lib/apt/lists/*
+          
+          RUN wget https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh && \
+              chmod +x /tmp/dotnet-install.sh && \
+              /tmp/dotnet-install.sh --channel 8.0 --install-dir /usr/share/dotnet && \
+              /tmp/dotnet-install.sh --channel 9.0 --install-dir /usr/share/dotnet && \
+              /tmp/dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet && \
+              ln -sf /usr/share/dotnet/dotnet /usr/local/bin/dotnet && \
+              rm /tmp/dotnet-install.sh
+          
+          RUN wget -q https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb && \
+              dpkg -i packages-microsoft-prod.deb && \
+              rm packages-microsoft-prod.deb && \
+              apt-get update && \
+              apt-get install -y powershell && \
+              apt-get clean && \
+              rm -rf /var/lib/apt/lists/*
+          
+          ENV PATH="/usr/share/dotnet:${PATH}"
+          ENV DOTNET_ROOT="/usr/share/dotnet"
+          
+          RUN dotnet --version && pwsh --version
+          
+          WORKDIR /app
+          
+          LABEL maintainer="WSU EM Team"
+          LABEL description="Base image with Playwright, .NET, and PowerShell"
+          '@
+          
+          $dockerfilePath = "$(Agent.TempDirectory)/Dockerfile.base"
+          Set-Content -Path $dockerfilePath -Value $dockerfileContent
+          Write-Host "✓ Base Dockerfile generated at $dockerfilePath"
+
+    - task: Docker@2
+      displayName: 'Build Base Image'
+      inputs:
+        command: 'build'
+        repository: '${{ parameters.baseImageName }}'
+        Dockerfile: '$(Agent.TempDirectory)/Dockerfile.base'
+        tags: 'latest'
+
+    - task: PowerShell@2
+      displayName: 'Verify Base Image Exists Locally'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "=========================================="
+          Write-Host "Verifying base image is in local Docker"
+          Write-Host "=========================================="
+          
+          docker images "${{ parameters.baseImageName }}"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "##[error]Base image not found!"
+            exit 1
+          }
+          
+          $inspectResult = docker inspect "${{ parameters.baseImageName }}:latest"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "##[error]Failed to inspect base image!"
+            exit 1
+          }
+          
+          Write-Host ""
+          Write-Host "✓ Base image ready: ${{ parameters.baseImageName }}:latest"
+
+  # ============================================================================
+  # STAGE 1 (JOB GROUP): Build Project Images (Docker Caching)
+  # ============================================================================
+
+  # Screenshot tool project
+  - job: GenerateProjectDockerfile
+    displayName: 'Generate Multi-Stage Project Dockerfile + Program.cs'
+    dependsOn: BuildBaseImage
+    steps:
+    - checkout: none
+
+    - task: PowerShell@2
+      displayName: 'Generate Multi-Stage Project Dockerfile'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $dockerfileContent = @'
+          # ============================================================================
+          # Stage 1: Base with tools (use local image, don't pull from registry)
+          # ============================================================================
+          FROM playwright-dotnet-pwsh:latest AS base
+          WORKDIR /app
+          
+          # ============================================================================
+          # Stage 2: Generate project files (cached unless Program.cs changes)
+          # ============================================================================
+          FROM base AS generate
+          
+          RUN dotnet new console -n PlaywrightTest -o /app -f net8.0 --force
+          
+          RUN dotnet add package Microsoft.Playwright
+          
+          COPY Program.cs /app/Program.cs
+          
+          # ============================================================================
+          # Stage 3: Restore dependencies (cached unless .csproj changes)
+          # ============================================================================
+          FROM generate AS restore
+          
+          RUN dotnet restore PlaywrightTest.csproj --runtime linux-x64
+          
+          # ============================================================================
+          # Stage 4: Build Debug (with symbols)
+          # ============================================================================
+          FROM restore AS build-debug
+          
+          RUN dotnet build PlaywrightTest.csproj \
+              --configuration Debug \
+              --no-restore \
+              /p:DebugSymbols=true \
+              /p:DebugType=full
+          
+          # ============================================================================
+          # Stage 5: Build Release Self-Contained for Linux
+          # ============================================================================
+          FROM restore AS build-release
+          
+          RUN dotnet publish PlaywrightTest.csproj \
+              --configuration Release \
+              --no-restore \
+              --self-contained true \
+              --runtime linux-x64 \
+              -o /app/publish \
+              /p:PublishSingleFile=false \
+              /p:PublishTrimmed=false
+          
+          WORKDIR /app/publish
+          RUN if [ -f "playwright.ps1" ]; then pwsh playwright.ps1 install --with-deps; \
+              elif [ -f "playwright.sh" ]; then bash playwright.sh install --with-deps; fi
+          
+          WORKDIR /app
+          
+          # ============================================================================
+          # Final stage for Release (default runtime image)
+          # ============================================================================
+          FROM base AS final-release
+          WORKDIR /app
+          COPY --from=build-release /app/publish ./          
+          ENV PATH="/app:${PATH}"
+          LABEL build.type="release"
+          LABEL build.config="self-contained"
+          ENTRYPOINT ["/app/PlaywrightTest"]
+          
+          # ============================================================================
+          # Final stage for Debug (not used in tests, but available)
+          # ============================================================================
+          FROM base AS final-debug
+          WORKDIR /app
+          COPY --from=build-debug /app/bin/Debug/net8.0 ./          
+          ENV PATH="/app:${PATH}"
+          LABEL build.type="debug"
+          LABEL build.config="debug-symbols"
+          ENTRYPOINT ["dotnet", "/app/PlaywrightTest.dll"]
+          '@
+          
+          $dockerfilePath = "$(Build.ArtifactStagingDirectory)/Dockerfile.project"
+          Set-Content -Path $dockerfilePath -Value $dockerfileContent
+          Write-Host "✓ Multi-stage Project Dockerfile generated at $dockerfilePath"
+
+    - task: PowerShell@2
+      displayName: 'Generate Program.cs (Playwright + multi/parallel mode)'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $programCs = @'
+          using Microsoft.Playwright;
+          using System;
+          using System.Collections.Generic;
+          using System.IO;
+          using System.Linq;
+          using System.Threading;
+          using System.Threading.Tasks;
+
+          class Program
+          {
+              private static readonly AsyncLocal<TextWriter?> LogWriter = new() { Value = Console.Out };
+              private static readonly object ConsoleLock = new();
+
+              private static void Log(string message)
+                  => (LogWriter.Value ?? Console.Out).WriteLine(message);
+
+              static async Task<int> Main(string[] args)
+              {
+                  // MODE 1: Multi-scenario mode with optional parallelism
+                  // Usage:
+                  //   PlaywrightTest --multi <url> <outputDir> <namePrefix> <scenarioList> [--parallel[=<maxDegree>]]
+                  if (args.Length > 0 &&
+                     (string.Equals(args[0], "--multi", StringComparison.OrdinalIgnoreCase) ||
+                      string.Equals(args[0], "--matrix", StringComparison.OrdinalIgnoreCase)))
+                  {
+                      return await RunMultiAsync(args);
+                  }
+
+                  // MODE 2: Normal single scenario Playwright run
+                  // Args:
+                  //   [0] = URL (default https://em.wsu.edu)
+                  //   [1] = screenshot path (default screenshot.png)
+                  //
+                  // Env:
+                  //   PLAYWRIGHT_BROWSER  = chromium | firefox | webkit
+                  //   PLAYWRIGHT_DEVICE   = optional device name
+                  //   PLAYWRIGHT_VIEWPORT = "WIDTHxHEIGHT"
+                  return await RunPlaywrightAsync(args);
+              }
+
+              // ----------------------------------------------------------------------
+              // Single-scenario wrapper
+              // ----------------------------------------------------------------------
+              private static async Task<int> RunPlaywrightAsync(string[] args)
+              {
+                  string url        = args.Length > 0 ? args[0] : "https://em.wsu.edu";
+                  string outputPath = args.Length > 1 ? args[1] : "screenshot.png";
+
+                  string? browserEnv  = Environment.GetEnvironmentVariable("PLAYWRIGHT_BROWSER");
+                  string? deviceName  = Environment.GetEnvironmentVariable("PLAYWRIGHT_DEVICE");
+                  string? viewportEnv = Environment.GetEnvironmentVariable("PLAYWRIGHT_VIEWPORT");
+
+                  string browserName = string.IsNullOrWhiteSpace(browserEnv)
+                      ? "chromium"
+                      : browserEnv.ToLowerInvariant();
+
+                  var config = new ScenarioConfig(
+                      Url: url,
+                      OutputPath: outputPath,
+                      BrowserName: browserName,
+                      DeviceName: deviceName,
+                      ViewportSpec: viewportEnv
+                  );
+
+                  return await RunScenarioAsync(config);
+              }
+
+              // Core scenario execution (used by both single and multi modes)
+              private static async Task<int> RunScenarioAsync(ScenarioConfig config)
+              {
+                  (int? viewportWidth, int? viewportHeight) = ParseViewport(config.ViewportSpec);
+
+                  Log("============================================================");
+                  Log(" Playwright Browser Automation Test");
+                  Log("============================================================");
+                  Log($"URL:           {config.Url}");
+                  Log($"Output Path:   {config.OutputPath}");
+                  Log($"Browser Name:  {config.BrowserName}");
+                  Log($"Device Name:   {config.DeviceName ?? "(none)"}");
+                  Log($"Viewport:      {(viewportWidth.HasValue ? $"{viewportWidth}x{viewportHeight}" : (string.IsNullOrWhiteSpace(config.ViewportSpec) ? "(default)" : config.ViewportSpec))}");
+                  Log("============================================================");
+
+                  try
+                  {
+                      Log("[1/5] Initializing Playwright...");
+                      using var playwright = await Playwright.CreateAsync();
+
+                      IBrowserType browserType = config.BrowserName switch
+                      {
+                          "firefox" => playwright.Firefox,
+                          "webkit"  => playwright.Webkit,
+                          _         => playwright.Chromium
+                      };
+
+                      Log($"[2/5] Launching {config.BrowserName} (headless)...");
+                      await using var browser = await browserType.LaunchAsync(new() { Headless = true });
+
+                      BrowserNewContextOptions contextOptions;
+                      if (!string.IsNullOrWhiteSpace(config.DeviceName) &&
+                          playwright.Devices.TryGetValue(config.DeviceName, out var deviceOptions))
+                      {
+                          contextOptions = deviceOptions;
+                      }
+                      else
+                      {
+                          contextOptions = new BrowserNewContextOptions();
+                      }
+
+                      if (viewportWidth.HasValue && viewportHeight.HasValue)
+                      {
+                          contextOptions.ViewportSize = new ViewportSize
+                          {
+                              Width  = viewportWidth.Value,
+                              Height = viewportHeight.Value
+                          };
+                      }
+
+                      var context = await browser.NewContextAsync(contextOptions);
+                      var page    = await context.NewPageAsync();
+
+                      Log($"[3/5] Navigating to {config.Url}...");
+                      IResponse? response = null;
+                      try
+                      {
+                          response = await page.GotoAsync(config.Url, new()
+                          {
+                              WaitUntil = WaitUntilState.Load,
+                              Timeout   = 60000
+                          });
+                          Log($"✓ Navigation complete (Status: {response?.Status})");
+                      }
+                      catch (TimeoutException)
+                      {
+                          Log("⚠ Navigation timed out, continuing anyway");
+                      }
+
+                      await page.WaitForTimeoutAsync(5000);
+
+                      Log("[4/5] Capturing screenshot...");
+                      var outputDir = Path.GetDirectoryName(config.OutputPath);
+                      if (!string.IsNullOrEmpty(outputDir))
+                      {
+                          Directory.CreateDirectory(outputDir);
+                      }
+
+                      await page.ScreenshotAsync(new() { Path = config.OutputPath, FullPage = true });
+                      var fileInfo = new FileInfo(config.OutputPath);
+                      Log($"✓ Screenshot saved: {config.OutputPath} ({fileInfo.Length / 1024:F2} KB)");
+
+                      var title      = await page.TitleAsync();
+                      var currentUrl = page.Url;
+
+                      var resultsFile = config.OutputPath.Replace(".png", "_results.txt");
+                      await File.WriteAllTextAsync(resultsFile, $@"
+          Playwright Test Results
+          ========================
+          URL: {config.Url}
+          Final URL: {currentUrl}
+          Title: {title}
+          Screenshot: {config.OutputPath}
+          Size: {fileInfo.Length / 1024:F2} KB
+          Status: PASSED
+          ");
+
+                      await context.CloseAsync();
+                      return 0;
+                  }
+                  catch (Exception ex)
+                  {
+                      Log("============================================================");
+                      Log(" TEST FAILED");
+                      Log("============================================================");
+                      Log(ex.ToString());
+                      
+                      try
+                      {
+                          var errorLog = config.OutputPath.Replace(".png", "_error.txt");
+                          await File.WriteAllTextAsync(errorLog, ex.ToString());
+                      }
+                      catch { }
+
+                      return 1;
+                  }
+              }
+
+              // ----------------------------------------------------------------------
+              // Multi-scenario / parallel runner
+              // ----------------------------------------------------------------------
+              private static async Task<int> RunMultiAsync(string[] args)
+              {
+                  if (args.Length < 5)
+                  {
+                      Console.Error.WriteLine("Usage: PlaywrightTest --multi <url> <outputDir> <namePrefix> <scenarioList> [--parallel[=<maxDegree>]]");
+                      return 2;
+                  }
+
+                  string url        = args[1];
+                  string outputDir  = args[2];
+                  string namePrefix = args[3];
+                  string scenariosRaw = args[4];
+
+                  Directory.CreateDirectory(outputDir);
+
+                  var scenarios = ParseScenarioList(scenariosRaw).ToList();
+                  if (scenarios.Count == 0)
+                  {
+                      Console.Error.WriteLine("No valid scenarios parsed from scenarioList.");
+                      return 2;
+                  }
+
+                  // Determine parallelism
+                  int maxDegree = 1; // default = sequential
+                  bool parallelFlagSeen = false;
+
+                  for (int i = 5; i < args.Length; i++)
+                  {
+                      var arg = args[i];
+                      if (arg.StartsWith("--parallel", StringComparison.OrdinalIgnoreCase))
+                      {
+                          parallelFlagSeen = true;
+                          string? value = null;
+
+                          var eqIndex = arg.IndexOf('=');
+                          if (eqIndex >= 0 && eqIndex < arg.Length - 1)
+                          {
+                              value = arg.Substring(eqIndex + 1);
+                          }
+                          else if (i + 1 < args.Length && int.TryParse(args[i + 1], out _))
+                          {
+                              value = args[i + 1];
+                              i++;
+                          }
+
+                          if (string.IsNullOrWhiteSpace(value))
+                          {
+                              // --parallel with no number => "all at once"
+                              maxDegree = 0;
+                          }
+                          else if (!int.TryParse(value, out maxDegree) || maxDegree < 0)
+                          {
+                              Console.Error.WriteLine("Invalid value for --parallel, expected non-negative integer.");
+                              return 2;
+                          }
+                      }
+                  }
+
+                  if (!parallelFlagSeen)
+                  {
+                      maxDegree = 1; // sequential if flag not set
+                  }
+                  else
+                  {
+                      if (maxDegree == 0 || maxDegree > scenarios.Count)
+                      {
+                          maxDegree = scenarios.Count; // "all at once"
+                      }
+                  }
+
+                  Log("============================================================");
+                  Log(" MULTI-SCENARIO MODE");
+                  Log("============================================================");
+                  Log($"URL:              {url}");
+                  Log($"Output directory: {outputDir}");
+                  Log($"Name prefix:      {namePrefix}");
+                  Log($"Scenarios:        {scenarios.Count}");
+                  Log($"Max parallelism:  {maxDegree}");
+                  Log("============================================================");
+
+                  var defaultBrowserEnv = Environment.GetEnvironmentVariable("PLAYWRIGHT_BROWSER");
+                  string defaultBrowser = string.IsNullOrWhiteSpace(defaultBrowserEnv)
+                      ? "chromium"
+                      : defaultBrowserEnv.ToLowerInvariant();
+
+                  var tasks = new List<Task<ScenarioResult>>();
+                  var semaphore = new SemaphoreSlim(maxDegree);
+
+                  int index = 0;
+                  foreach (var s in scenarios)
+                  {
+                      int scenarioIndex = ++index;
+                      tasks.Add(RunOneScenarioAsync(
+                          url,
+                          outputDir,
+                          namePrefix,
+                          s,
+                          scenarioIndex,
+                          scenarios.Count,
+                          defaultBrowser,
+                          semaphore));
+                  }
+
+                  var results = await Task.WhenAll(tasks);
+
+                  // Print logs in stable, scenario-index order
+                  foreach (var r in results.OrderBy(r => r.Index))
+                  {
+                      lock (ConsoleLock)
+                      {
+                          Console.WriteLine();
+                          Console.WriteLine("============================================================");
+                          Console.WriteLine($" SCENARIO {r.Index}/{results.Length} - {r.Browser} {r.Viewport}");
+                          Console.WriteLine("============================================================");
+                          Console.Write(r.LogText);
+                      }
+                  }
+
+                  return results.Any(r => r.ExitCode != 0) ? 1 : 0;
+              }
+
+              private static async Task<ScenarioResult> RunOneScenarioAsync(
+                  string url,
+                  string outputDir,
+                  string namePrefix,
+                  MultiScenario scenario,
+                  int scenarioIndex,
+                  int totalScenarios,
+                  string defaultBrowser,
+                  SemaphoreSlim semaphore)
+              {
+                  await semaphore.WaitAsync();
+                  try
+                  {
+                      string browser = string.IsNullOrWhiteSpace(scenario.Browser)
+                          ? defaultBrowser
+                          : scenario.Browser!.ToLowerInvariant();
+
+                      string viewport = scenario.Viewport;
+                      string safeViewport = viewport.Replace('x', '_').Replace('×', '_');
+
+                      string fileName = $"{namePrefix}-{scenarioIndex:000}-{browser}-{safeViewport}.png";
+                      string outputPath = Path.Combine(outputDir, fileName);
+
+                      var config = new ScenarioConfig(
+                          Url: url,
+                          OutputPath: outputPath,
+                          BrowserName: browser,
+                          DeviceName: null,
+                          ViewportSpec: viewport
+                      );
+
+                      using var writer = new StringWriter();
+                      var previousWriter = LogWriter.Value;
+                      LogWriter.Value = writer;
+
+                      int exitCode;
+                      try
+                      {
+                          exitCode = await RunScenarioAsync(config);
+                      }
+                      finally
+                      {
+                          LogWriter.Value = previousWriter;
+                      }
+
+                      return new ScenarioResult(
+                          Index: scenarioIndex,
+                          ExitCode: exitCode,
+                          LogText: writer.ToString(),
+                          Browser: browser,
+                          Viewport: viewport
+                      );
+                  }
+                  finally
+                  {
+                      semaphore.Release();
+                  }
+              }
+
+              private static IEnumerable<MultiScenario> ParseScenarioList(string raw)
+              {
+                  var list = new List<MultiScenario>();
+                  if (string.IsNullOrWhiteSpace(raw))
+                      return list;
+
+                  var tokens = raw.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+                  foreach (var token in tokens)
+                  {
+                      var trimmed = token.Trim();
+                      if (string.IsNullOrWhiteSpace(trimmed))
+                          continue;
+
+                      string? browser = null;
+                      string viewport;
+
+                      var parts = trimmed.Split('@');
+                      if (parts.Length == 2)
+                      {
+                          browser = parts[0].Trim();
+                          viewport = parts[1].Trim();
+                      }
+                      else
+                      {
+                          viewport = trimmed;
+                      }
+
+                      if (string.IsNullOrWhiteSpace(viewport))
+                          continue;
+
+                      list.Add(new MultiScenario(browser, viewport));
+                  }
+
+                  return list;
+              }
+
+              private sealed record ScenarioConfig(
+                  string Url,
+                  string OutputPath,
+                  string BrowserName,
+                  string? DeviceName,
+                  string? ViewportSpec
+              );
+
+              private sealed record MultiScenario(
+                  string? Browser,
+                  string Viewport
+              );
+
+              private sealed record ScenarioResult(
+                  int Index,
+                  int ExitCode,
+                  string LogText,
+                  string Browser,
+                  string Viewport
+              );
+
+              private static (int? width, int? height) ParseViewport(string? viewportEnv)
+              {
+                  if (string.IsNullOrWhiteSpace(viewportEnv))
+                      return (null, null);
+                  
+                  var parts = viewportEnv.ToLowerInvariant().Split('x', '×');
+                  if (parts.Length != 2)
+                      return (null, null);
+                  
+                  if (int.TryParse(parts[0].Trim(), out var w) &&
+                      int.TryParse(parts[1].Trim(), out var h))
+                  {
+                      return (w, h);
+                  }
+                  
+                  return (null, null);
+              }
+          }
+          '@
+          
+          $programCsPath = "$(Build.ArtifactStagingDirectory)/Program.cs"
+          Set-Content -Path $programCsPath -Value $programCs
+          Write-Host "✓ Program.cs generated at $programCsPath"
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Dockerfile and Program.cs'
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)'
+        artifact: 'docker-build-context'
+
+  # Link crawler project (new)
+  - job: GenerateCrawlerDockerfile
+    displayName: 'Generate Link Crawler Dockerfile + Program.cs'
+    dependsOn: BuildBaseImage
+    steps:
+    - checkout: none
+
+    - task: PowerShell@2
+      displayName: 'Generate Link Crawler Dockerfile'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $dockerfileContent = @'
+          FROM playwright-dotnet-pwsh:latest AS base
+          WORKDIR /app
+          
+          FROM base AS generate
+          RUN dotnet new console -n LinkCrawler -o /app -f net8.0 --force
+          RUN dotnet add package Microsoft.Playwright
+          COPY Program.cs /app/Program.cs
+          
+          FROM generate AS restore
+          RUN dotnet restore LinkCrawler.csproj --runtime linux-x64
+          
+          FROM restore AS build-release
+          RUN dotnet publish LinkCrawler.csproj \
+              --configuration Release \
+              --no-restore \
+              --self-contained true \
+              --runtime linux-x64 \
+              -o /app/publish \
+              /p:PublishSingleFile=false \
+              /p:PublishTrimmed=false
+          
+          FROM base AS final-release
+          WORKDIR /app
+          COPY --from=build-release /app/publish ./
+          ENV PATH="/app:${PATH}"
+          LABEL build.type="release"
+          LABEL build.config="crawler"
+          ENTRYPOINT ["/app/LinkCrawler"]
+          '@
+          
+          $dockerfilePath = "$(Build.ArtifactStagingDirectory)/Dockerfile.crawler"
+          Set-Content -Path $dockerfilePath -Value $dockerfileContent
+          Write-Host "✓ Crawler Dockerfile generated at $dockerfilePath"
+
+    - task: PowerShell@2
+      displayName: 'Generate Link Crawler Program.cs'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $programCs = @'
+          using Microsoft.Playwright;
+          using System;
+          using System.Collections.Generic;
+          using System.IO;
+          using System.Linq;
+          using System.Threading.Tasks;
+
+          class Program
+          {
+              static async Task<int> Main(string[] args)
+              {
+                  if (args.Length < 2)
+                  {
+                      Console.Error.WriteLine("Usage: LinkCrawler <startUrl> <outputFile>");
+                      return 2;
+                  }
+
+                  string startUrl   = args[0];
+                  string outputFile = args[1];
+
+                  if (!Uri.TryCreate(startUrl, UriKind.Absolute, out var baseUri))
+                  {
+                      Console.Error.WriteLine($"Invalid URL: {startUrl}");
+                      return 2;
+                  }
+
+                  try
+                  {
+                      var urls = await CrawlPageAsync(baseUri);
+                      Directory.CreateDirectory(Path.GetDirectoryName(outputFile) ?? ".");
+                      var ordered = urls.OrderBy(u => u, StringComparer.OrdinalIgnoreCase).ToArray();
+                      await File.WriteAllLinesAsync(outputFile, ordered);
+
+                      Console.WriteLine("=====================================");
+                      Console.WriteLine(" Link Crawler Summary");
+                      Console.WriteLine("=====================================");
+                      Console.WriteLine($"Start URL: {startUrl}");
+                      Console.WriteLine($"Discovered URLs: {ordered.Length}");
+                      Console.WriteLine($"Output file: {outputFile}");
+                      Console.WriteLine("=====================================");
+
+                      return 0;
+                  }
+                  catch (Exception ex)
+                  {
+                      Console.Error.WriteLine("Crawler failed:");
+                      Console.Error.WriteLine(ex.ToString());
+                      return 1;
+                  }
+              }
+
+              private static async Task<HashSet<string>> CrawlPageAsync(Uri baseUri)
+              {
+                  var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                  using var playwright = await Playwright.CreateAsync();
+                  await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true });
+
+                  var context = await browser.NewContextAsync();
+                  var page    = await context.NewPageAsync();
+
+                  Console.WriteLine($"Navigating to {baseUri}...");
+                  try
+                  {
+                      var response = await page.GotoAsync(baseUri.ToString(), new()
+                      {
+                          WaitUntil = WaitUntilState.Load,
+                          Timeout   = 120000
+                      });
+                      Console.WriteLine($"Navigation complete (status {response?.Status})");
+                  }
+                  catch (TimeoutException)
+                  {
+                      Console.WriteLine("⚠ Navigation timed out, continuing with whatever is loaded.");
+                  }
+
+                  // Let any late JS finish building nav / menus
+                  await page.WaitForTimeoutAsync(3000);
+
+                  string[] rawLinks;
+                  try
+                  {
+                      rawLinks = await page.EvaluateAsync<string[]>(@"() => {
+                          const els = Array.from(document.querySelectorAll('[href],[src]'));
+                          const urls = new Set();
+                          for (const el of els) {
+                              const v = el.getAttribute('href') ?? el.getAttribute('src');
+                              if (!v) continue;
+                              const val = v.trim();
+                              if (val.startsWith('javascript:')) continue;
+                              if (val.startsWith('mailto:')) continue;
+                              if (val.startsWith('#')) continue;
+                              const a = document.createElement('a');
+                              a.href = val;
+                              urls.add(a.href);
+                          }
+                          return Array.from(urls);
+                      }");
+                  }
+                  catch (Exception ex)
+                  {
+                      Console.WriteLine($"⚠ Failed to evaluate links: {ex.Message}");
+                      rawLinks = Array.Empty<string>();
+                  }
+
+                  Console.WriteLine($"Raw link candidates: {rawLinks.Length}");
+
+                  foreach (var s in rawLinks)
+                  {
+                      if (!Uri.TryCreate(s, UriKind.Absolute, out var uri))
+                          continue;
+
+                      // Same host only
+                      if (!uri.Host.Equals(baseUri.Host, StringComparison.OrdinalIgnoreCase))
+                          continue;
+
+                      if (!LooksLikeHtmlPage(uri))
+                          continue;
+
+                      results.Add(uri.ToString());
+                  }
+
+                  await context.CloseAsync();
+                  return results;
+              }
+
+              private static bool LooksLikeHtmlPage(Uri uri)
+              {
+                  var path = uri.AbsolutePath;
+
+                  // Root or directory-like: treat as page
+                  if (string.IsNullOrEmpty(path) || path.EndsWith("/"))
+                      return true;
+
+                  var lastSegment = path.Split('/').Last();
+                  var dotIndex = lastSegment.LastIndexOf('.');
+                  if (dotIndex < 0)
+                      return true; // no extension → usually a page route
+
+                  var ext = lastSegment.Substring(dotIndex).ToLowerInvariant();
+
+                  // Clearly non-page “asset” extensions
+                  string[] assetExts =
+                  {
+                      ".css", ".js", ".mjs", ".ts",
+                      ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp",
+                      ".woff", ".woff2", ".ttf", ".eot",
+                      ".pdf", ".zip", ".gz", ".rar", ".7z",
+                      ".txt", ".xml", ".json", ".map"
+                  };
+
+                  if (assetExts.Contains(ext))
+                      return false;
+
+                  // Extensions we *do* consider “HTML pages”
+                  string[] htmlExts = { ".html", ".htm", ".php", ".asp", ".aspx", ".jsp" };
+
+                  if (htmlExts.Contains(ext))
+                      return true;
+
+                  // Anything else with an extension is probably not a navigable content page
+                  return false;
+              }
+          }
+          '@
+          
+          $programCsPath = "$(Build.ArtifactStagingDirectory)/Program.cs"
+          Set-Content -Path $programCsPath -Value $programCs
+          Write-Host "✓ Crawler Program.cs generated at $programCsPath"
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Crawler Dockerfile and Program.cs'
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)'
+        artifact: 'crawler-build-context'
+
+  # Build screenshot images - Debug
+  - job: BuildDebugImage
+    displayName: 'Build Debug Image (with symbols)'
+    dependsOn: GenerateProjectDockerfile
+    steps:
+    - checkout: none
+
+    - task: PowerShell@2
+      displayName: 'Verify Base Image Available'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "Checking if base image exists..."
+          docker images "${{ parameters.baseImageName }}"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "##[error]Base image not found in local Docker!"
+            exit 1
+          }
+          Write-Host "✓ Base image found"
+
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download Build Context'
+      inputs:
+        artifactName: 'docker-build-context'
+        targetPath: '$(Pipeline.Workspace)/build-context'
+
+    - task: Docker@2
+      displayName: 'Build Debug Image'
+      inputs:
+        command: 'build'
+        repository: '${{ parameters.projectImageName }}'
+        Dockerfile: '$(Pipeline.Workspace)/build-context/Dockerfile.project'
+        buildContext: '$(Pipeline.Workspace)/build-context'
+        tags: |
+          debug
+          debug-latest
+        arguments: '--target final-debug'
+
+    - task: PowerShell@2
+      displayName: 'Verify Debug Image'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "Verifying Debug Image..."
+          docker images "${{ parameters.projectImageName }}"
+          Write-Host ""
+          Write-Host "Inspecting debug image labels..."
+          docker inspect "${{ parameters.projectImageName }}:debug" --format='{{json .Config.Labels}}'
+
+  # Build screenshot images - Release
+  - job: BuildReleaseImage
+    displayName: 'Build Release Image (self-contained Linux)'
+    dependsOn: GenerateProjectDockerfile
+    steps:
+    - checkout: none
+
+    - task: PowerShell@2
+      displayName: 'Verify Base Image Available'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "Checking if base image exists..."
+          docker images "${{ parameters.baseImageName }}"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "##[error]Base image not found in local Docker!"
+            exit 1
+          }
+          Write-Host "✓ Base image found"
+
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download Build Context'
+      inputs:
+        artifactName: 'docker-build-context'
+        targetPath: '$(Pipeline.Workspace)/build-context'
+
+    - task: Docker@2
+      displayName: 'Build Release Image (Self-Contained)'
+      inputs:
+        command: 'build'
+        repository: '${{ parameters.projectImageName }}'
+        Dockerfile: '$(Pipeline.Workspace)/build-context/Dockerfile.project'
+        buildContext: '$(Pipeline.Workspace)/build-context'
+        tags: |
+          release
+          latest
+        arguments: '--target final-release'
+
+    - task: PowerShell@2
+      displayName: 'Verify Release Image'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "Verifying Release Image..."
+          docker images "${{ parameters.projectImageName }}"
+          Write-Host ""
+          Write-Host "Inspecting release image labels..."
+          docker inspect "${{ parameters.projectImageName }}:release" --format='{{json .Config.Labels}}'
+          Write-Host ""
+          Write-Host "Checking contents (/app)..."
+          docker run --rm --entrypoint /bin/ls "${{ parameters.projectImageName }}:release" -lh /app
+
+  # Build crawler image
+  - job: BuildCrawlerImage
+    displayName: 'Build Link Crawler Image'
+    dependsOn: GenerateCrawlerDockerfile
+    steps:
+    - checkout: none
+
+    - task: PowerShell@2
+      displayName: 'Verify Base Image Available'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "Checking if base image exists..."
+          docker images "${{ parameters.baseImageName }}"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "##[error]Base image not found in local Docker!"
+            exit 1
+          }
+          Write-Host "✓ Base image found"
+
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download Crawler Build Context'
+      inputs:
+        artifactName: 'crawler-build-context'
+        targetPath: '$(Pipeline.Workspace)/crawler-build-context'
+
+    - task: Docker@2
+      displayName: 'Build Crawler Release Image'
+      inputs:
+        command: 'build'
+        repository: '${{ parameters.crawlerImageName }}'
+        Dockerfile: '$(Pipeline.Workspace)/crawler-build-context/Dockerfile.crawler'
+        buildContext: '$(Pipeline.Workspace)/crawler-build-context'
+        tags: |
+          release
+          latest
+
+    - task: PowerShell@2
+      displayName: 'Verify Crawler Image'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "Verifying Crawler Image..."
+          docker images "${{ parameters.crawlerImageName }}"
+          Write-Host ""
+          Write-Host "Inspecting crawler image labels..."
+          docker inspect "${{ parameters.crawlerImageName }}:release" --format='{{json .Config.Labels}}'
+
+  # ============================================================================
+  # STAGE 2 (JOB GROUP): Execute Tests (Release image via docker run)
+  # ============================================================================
+  - job: TestAllViewports
+    displayName: 'Test - Multi-Viewport via docker run (--multi)'
+    dependsOn: BuildReleaseImage
+    steps:
+    - checkout: none
+
+    - task: PowerShell@2
+      displayName: 'Verify Pre-built Application Image'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "=========================================="
+          Write-Host "Checking release image exists..."
+          Write-Host "=========================================="
+          docker images "${{ parameters.projectImageName }}"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "##[error]Project image not found!"
+            exit 1
+          }
+          Write-Host "✓ Image ${{ parameters.projectImageName }}:release is present"
+
+    - task: PowerShell@2
+      displayName: 'Run Tests (multi-viewport via --multi)'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $ErrorActionPreference = "Stop"
+
+          $testUrl     = "${{ parameters.testUrl }}"
+          $imageName   = "${{ parameters.projectImageName }}:release"
+          $platformDir = Join-Path "$(Agent.TempDirectory)" "playwright-results"
+
+          Write-Host "=========================================="
+          Write-Host "Running Tests (multi-viewport via docker run / --multi)"
+          Write-Host "=========================================="
+          Write-Host "Test URL: $testUrl"
+          Write-Host "Image:    $imageName"
+          Write-Host "Results:  $platformDir"
+
+          if (-not (Test-Path $platformDir)) {
+            New-Item -ItemType Directory -Path $platformDir -Force | Out-Null
+          }
+
+          $scenarios = @(
+            "chromium@1366x768",
+            "chromium@1536x864",
+            "chromium@1920x1080",
+            "chromium@1920x1200",
+            "chromium@2560x1440",
+            "chromium@3440x1440",
+
+            "webkit@390x844",
+            "webkit@844x390",
+            "webkit@430x932",
+            "webkit@932x430",
+            "webkit@375x812",
+            "webkit@812x375",
+
+            "chromium@360x800",
+            "chromium@800x360",
+            "chromium@393x873",
+            "chromium@873x393",
+            "chromium@412x915",
+            "chromium@915x412",
+
+            "webkit@768x1024",
+            "webkit@1024x768",
+            "webkit@820x1180",
+            "webkit@1180x820",
+            "webkit@1024x1366",
+            "webkit@1366x1024",
+
+            "chromium@800x1280",
+            "chromium@1280x800",
+            "chromium@1024x1400",
+            "chromium@1400x1024"
+          )
+
+          $scenarioList = $scenarios -join ';'
+
+          $dockerArgs = @(
+            "run","--rm",
+            "-v", "${platformDir}:/results",
+            $imageName,
+            "--multi", $testUrl, "/results", "main", $scenarioList,
+            "--parallel"
+          )
+
+          Write-Host "Executing: docker $($dockerArgs -join ' ')"
+          docker @dockerArgs
+          $exitCode = $LASTEXITCODE
+
+          if ($exitCode -ne 0) {
+            Write-Error "One or more scenarios failed (exit code $exitCode)."
+          } else {
+            Write-Host "All scenarios passed."
+          }
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Main Test Results (screenshots)'
+      condition: always()
+      inputs:
+        targetPath: '$(Agent.TempDirectory)/playwright-results'
+        artifact: 'playwright-results'
+
+  # ============================================================================
+  # STAGE 3 (JOB GROUP): Deep Link Visual Tests (crawler + screenshots)
+  # ============================================================================
+  - job: DeepLinkTests
+    displayName: 'Crawl links and capture desktop/phone screenshots'
+    dependsOn:
+      - BuildReleaseImage
+      - BuildCrawlerImage
+    steps:
+    - checkout: none
+
+    - task: PowerShell@2
+      displayName: 'Verify Images Available'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "Checking screenshot & crawler images..."
+          docker images "${{ parameters.projectImageName }}"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "##[error]Screenshot image not found!"
+            exit 1
+          }
+          docker images "${{ parameters.crawlerImageName }}"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "##[error]Crawler image not found!"
+            exit 1
+          }
+          Write-Host "✓ Both images present"
+
+    - task: PowerShell@2
+      displayName: 'Gather link-list.txt with crawler tool'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $ErrorActionPreference = "Stop"
+
+          $imageName  = "${{ parameters.crawlerImageName }}:release"
+          $resultsDir = Join-Path "$(Agent.TempDirectory)" "playwright-links"
+          $baseUrl    = "${{ parameters.testUrl }}"
+          $linkList   = Join-Path $resultsDir "link-list.txt"
+
+          if (-not (Test-Path $resultsDir)) {
+            New-Item -ItemType Directory -Path $resultsDir -Force | Out-Null
+          }
+
+          Write-Host "=========================================="
+          Write-Host "DEEP LINK: Gathering URLs with crawler"
+          Write-Host "=========================================="
+          Write-Host "Results dir: $resultsDir"
+          Write-Host "Base URL:    $baseUrl"
+          Write-Host "Output:      $linkList"
+
+          $dockerArgs = @(
+            "run","--rm",
+            "-v", "${resultsDir}:/results",
+            $imageName,
+            $baseUrl, "/results/link-list.txt"
+          )
+
+          Write-Host "Running: docker $($dockerArgs -join ' ')"
+          docker @dockerArgs
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Link crawler failed with exit code $LASTEXITCODE"
+          }
+
+          if (Test-Path $linkList) {
+            Write-Host "✓ link-list.txt generated at: $linkList"
+            $preview = Get-Content $linkList | Select-Object -First 20
+            Write-Host "First URLs:"
+            $preview | ForEach-Object { Write-Host "  $_" }
+          } else {
+            Write-Host "⚠ link-list.txt not found; no URLs discovered."
+          }
+
+    - task: PowerShell@2
+      displayName: 'Deep-link screenshots (desktop + phone via --multi)'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $ErrorActionPreference = "Stop"
+
+          $imageName = "${{ parameters.projectImageName }}:release"
+          $deepDir   = Join-Path "$(Agent.TempDirectory)" "playwright-links"
+          $linkList  = Join-Path $deepDir "link-list.txt"
+
+          if (-not (Test-Path $linkList)) {
+            Write-Host "No link-list.txt found at $linkList; skipping deep link screenshots."
+            exit 0
+          }
+
+          $urls = Get-Content $linkList | Where-Object { $_.Trim() -ne "" }
+
+          if ($urls.Count -eq 0) {
+            Write-Host "No URLs in link-list.txt; skipping deep link screenshots."
+            exit 0
+          }
+
+          $urls = $urls | Sort-Object -Unique
+
+          $maxLinks = 50
+          if ($urls.Count -gt $maxLinks) {
+            $urls = $urls | Select-Object -First $maxLinks
+          }
+
+          Write-Host "=========================================="
+          Write-Host "DEEP LINK: Capturing screenshots via --multi"
+          Write-Host "=========================================="
+          Write-Host "URLs to capture (capped): $($urls.Count)"
+          Write-Host "Output dir:               $deepDir"
+          Write-Host ""
+          Write-Host "Filtered URLs:"
+          $urls | ForEach-Object { Write-Host "  $_" }
+
+          $scenarios = @(
+            "chromium@1920x1080",
+            "webkit@390x844",
+            "webkit@844x390"
+          )
+          $scenarioList = $scenarios -join ';'
+
+          $index = 0
+          foreach ($url in $urls) {
+            $index++
+            $idx = "{0:000}" -f $index
+            $prefix = "link-$idx"
+
+            Write-Host ""
+            Write-Host "------------------------------------------"
+            Write-Host ("URL #{0}: {1}" -f $idx, $url)
+            Write-Host "Prefix:    $prefix"
+            Write-Host "------------------------------------------"
+
+            $dockerArgs = @(
+              "run","--rm",
+              "-v", "${deepDir}:/results",
+              $imageName,
+              "--multi", $url, "/results", $prefix, $scenarioList,
+              "--parallel"
+            )
+
+            Write-Host "Executing: docker $($dockerArgs -join ' ')"
+            docker @dockerArgs
+            $exitCode = $LASTEXITCODE
+
+            if ($exitCode -ne 0) {
+              Write-Warning "Deep-link multi run for '$url' failed with exit code $exitCode"
+            } else {
+              Write-Host "✓ Deep-link multi run for '$url' completed successfully"
+            }
+          }
+
+          Write-Host ""
+          Write-Host "Deep-link screenshots written under: $deepDir"
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Deep Link Results'
+      condition: always()
+      inputs:
+        targetPath: '$(Agent.TempDirectory)/playwright-links'
+        artifact: 'playwright-links'
+
+  # ============================================================================
+  # STAGE 4 (JOB GROUP): Wrap-Up and Report
+  # ============================================================================
+  - job: GenerateReport
+    displayName: 'Generate Final Report'
+    dependsOn:
+      - BuildDebugImage
+      - BuildReleaseImage
+      - BuildCrawlerImage
+      - TestAllViewports
+      - DeepLinkTests
+    condition: always()
+    steps:
+    - checkout: none
+    
+    - task: PowerShell@2
+      displayName: 'Display Pipeline Summary'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host ""
+          Write-Host "=========================================="
+          Write-Host "PIPELINE EXECUTION COMPLETE"
+          Write-Host "=========================================="
+          Write-Host ""
+          Write-Host "Docker Images Created:"
+          docker images | Select-String -Pattern "${{ parameters.baseImageName }}|${{ parameters.projectImageName }}|${{ parameters.crawlerImageName }}"
+          Write-Host ""
+          Write-Host "Images:"
+          Write-Host "  • Base Image:    ${{ parameters.baseImageName }}:latest"
+          Write-Host "  • Debug Image:   ${{ parameters.projectImageName }}:debug"
+          Write-Host "  • Release Image: ${{ parameters.projectImageName }}:release"
+          Write-Host "  • Crawler Image: ${{ parameters.crawlerImageName }}:release"
+          Write-Host ""
+          Write-Host "Artifacts:"
+          Write-Host "  • playwright-results  - Main screenshots + *_results.txt per scenario"
+          Write-Host "  • playwright-links    - Deep-link screenshots (desktop + phone + phone-landscape) + link-list.txt"
+          Write-Host ""
+          Write-Host "Docker Layer Caching:"
+          Write-Host "  ✓ Base tools layer (rarely changes)"
+          Write-Host "  ✓ Project generation layer (Program.cs / csproj)"
+          Write-Host "  ✓ NuGet restore layer"
+          Write-Host "  ✓ Build/publish layers"
+          Write-Host ""
+          Write-Host "Next run performance:"
+          Write-Host "  • No code/package changes  => almost everything from cache"
+          Write-Host "  • Code-only changes        => rebuild from build/publish layers"
+          Write-Host "  • Package changes          => rebuild from restore layer"
+          Write-Host ""

@@ -1,0 +1,20 @@
+﻿@* WizardStepProject.razor - Project selection dropdown step *@
+
+<label class="form-label">Project:</label>
+<select class="form-select" @onchange="OnProjectChanged" disabled="@IsDisabled">
+    <option value="">-- Select Project --</option>
+    @if (Projects != null)
+    {
+        @foreach (var proj in Projects.OrderBy(o => (string.Empty + o.ProjectName).ToLower()))
+        {
+            <option value="@proj.ProjectId" selected="@(proj.ProjectId == SelectedProjectId ? "selected" : null)">@proj.ProjectName</option>
+        }
+    }
+</select>
+
+@code {
+    [Parameter] public List<DataObjects.DevopsProjectInfo>? Projects { get; set; }
+    [Parameter] public string? SelectedProjectId { get; set; }
+    [Parameter] public bool IsDisabled { get; set; }
+    [Parameter] public EventCallback<ChangeEventArgs> OnProjectChanged { get; set; }
+}

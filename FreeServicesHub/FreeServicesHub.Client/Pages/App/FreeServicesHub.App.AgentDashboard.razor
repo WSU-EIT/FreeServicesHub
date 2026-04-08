@@ -1,0 +1,423 @@
+@page "/AgentDashboard"
+@page "/{TenantCode}/AgentDashboard"
+@implements IDisposable
+@using Blazored.LocalStorage
+@inject IJSRuntime jsRuntime
+@inject HttpClient Http
+@inject ILocalStorageService LocalStorage
+@inject BlazorDataModel Model
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title">
+            <Language Tag="AgentDashboard" IncludeIcon="true" />
+        </h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title">
+                <Language Tag="AgentDashboard" IncludeIcon="true" />
+                <StickyMenuIcon />
+            </h1>
+            <div class="btn-group mb-2" role="group">
+                <button type="button" class="btn btn-primary" @onclick="LoadData">
+                    <Icon Name="Refresh" /> <Language Tag="Refresh" />
+                </button>
+            </div>
+        </div>
+
+        @* About Section *@
+        <FreeServicesHub_App_AboutSection Title="Agent Dashboard" Subtitle="Monitor your service agents in real time">
+            <div class="row">
+                <div class="col-md-4">
+                    <h6><Icon Name="Info" /> <Language Tag="WhatIsThis" /></h6>
+                    <p class="small text-muted">
+                        This dashboard shows all registered service agents and their current health.
+                        Agents report CPU, memory, and disk metrics via periodic heartbeats.
+                    </p>
+                </div>
+                <div class="col-md-4">
+                    <h6><Icon Name="Eye" /> <Language Tag="WhatYoullSee" /></h6>
+                    <p class="small text-muted">
+                        Summary cards with agent counts by status, individual agent cards with live
+                        metric bars, and a real-time activity feed of recent events.
+                    </p>
+                </div>
+                <div class="col-md-4">
+                    <h6><Icon Name="Settings" /> <Language Tag="Actions" /></h6>
+                    <p class="small text-muted">
+                        Click any agent card to view detailed metrics and history.
+                        Use the API Key Manager to generate registration keys and manage tokens.
+                    </p>
+                </div>
+            </div>
+        </FreeServicesHub_App_AboutSection>
+
+        @* Summary Cards *@
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-md-3">
+                <div class="card text-center border-success">
+                    <div class="card-body py-2">
+                        <h3 class="text-success mb-0">@OnlineCount</h3>
+                        <small class="text-muted"><Language Tag="Online" /></small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center border-warning">
+                    <div class="card-body py-2">
+                        <h3 class="text-warning mb-0">@WarningCount</h3>
+                        <small class="text-muted"><Language Tag="Warning" /></small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center border-danger">
+                    <div class="card-body py-2">
+                        <h3 class="text-danger mb-0">@ErrorCount</h3>
+                        <small class="text-muted"><Language Tag="Error" /></small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center border-secondary">
+                    <div class="card-body py-2">
+                        <h3 class="text-secondary mb-0">@OfflineCount</h3>
+                        <small class="text-muted"><Language Tag="Offline" /></small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* Agent Card Grid *@
+        @if (_agents.Any()) {
+            <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-4 g-3 mb-4">
+                @foreach (var agent in _agents.OrderBy(a => a.Name)) {
+                    var worstStatus = GetWorstStatus(agent);
+                    var cardClass = "agent-card agent-" + worstStatus.ToLower();
+                    if (_recentlyUpdatedIds.Contains(agent.AgentId)) {
+                        cardClass += " agent-card-updated";
+                    }
+                    <div class="col">
+                        <div class="card @cardClass h-100 cursor-pointer" @onclick="@(() => ViewAgent(agent.AgentId))">
+                            <div class="card-body p-3">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <h6 class="card-title mb-0 text-truncate" title="@agent.Name">@agent.Name</h6>
+                                    <span class="badge @GetStatusBadgeClass(agent.Status)">@agent.Status</span>
+                                </div>
+                                <div class="small text-muted mb-2">
+                                    <div><Icon Name="Computer" /> @agent.Hostname</div>
+                                    <div><Icon Name="Settings" /> @agent.OperatingSystem</div>
+                                </div>
+                                @if (_latestHeartbeats.ContainsKey(agent.AgentId)) {
+                                    var hb = _latestHeartbeats[agent.AgentId];
+                                    <div class="mb-1">
+                                        <div class="d-flex justify-content-between small">
+                                            <span>CPU</span>
+                                            <span>@hb.CpuPercent.ToString("F1")%</span>
+                                        </div>
+                                        <div class="progress metric-bar">
+                                            <div class="progress-bar @GetMetricClass(hb.CpuPercent, 70, 90)" role="progressbar"
+                                                 style="width: @hb.CpuPercent.ToString("F0")%"></div>
+                                        </div>
+                                    </div>
+                                    <div class="mb-1">
+                                        <div class="d-flex justify-content-between small">
+                                            <span>MEM</span>
+                                            <span>@hb.MemoryPercent.ToString("F1")%</span>
+                                        </div>
+                                        <div class="progress metric-bar">
+                                            <div class="progress-bar @GetMetricClass(hb.MemoryPercent, 75, 90)" role="progressbar"
+                                                 style="width: @hb.MemoryPercent.ToString("F0")%"></div>
+                                        </div>
+                                    </div>
+                                    @if (_diskMetrics.ContainsKey(agent.AgentId)) {
+                                        @foreach (var disk in _diskMetrics[agent.AgentId]) {
+                                            <div class="mb-1">
+                                                <div class="d-flex justify-content-between small">
+                                                    <span>DISK @disk.Drive</span>
+                                                    <span>@disk.Percent.ToString("F1")%</span>
+                                                </div>
+                                                <div class="progress metric-bar">
+                                                    <div class="progress-bar @GetMetricClass(disk.Percent, 80, 95)" role="progressbar"
+                                                         style="width: @disk.Percent.ToString("F0")%"></div>
+                                                </div>
+                                            </div>
+                                        }
+                                    }
+                                }
+                                @if (agent.LastHeartbeat.HasValue) {
+                                    <div class="small text-muted mt-2">
+                                        <Language Tag="LastHeartbeat" />: @agent.LastHeartbeat.Value.ToString("g")
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        } else {
+            <div class="alert alert-info">
+                <Language Tag="NoAgentsRegistered" />
+            </div>
+        }
+
+        @* Activity Feed *@
+        @if (_activityFeed.Any()) {
+            <div class="card mb-3">
+                <div class="card-header">
+                    <Icon Name="List" /> <Language Tag="RecentActivity" />
+                </div>
+                <div class="card-body p-0">
+                    <div class="activity-feed">
+                        <ul class="list-group list-group-flush">
+                            @foreach (var entry in _activityFeed) {
+                                <li class="list-group-item small py-1">
+                                    <span class="text-muted me-2">@entry.Timestamp.ToString("HH:mm:ss")</span>
+                                    <span class="badge @GetStatusBadgeClass(entry.Status) me-1">@entry.Status</span>
+                                    <strong>@entry.AgentName</strong> &mdash; @entry.Message
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+}
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+
+    protected bool _loadedData = false;
+    protected bool _loading = true;
+    protected bool _validatedUrl = false;
+    protected string _pageName = "agentdashboard";
+
+    protected List<DataObjects.Agent> _agents = new List<DataObjects.Agent>();
+    protected Dictionary<Guid, DataObjects.AgentHeartbeat> _latestHeartbeats = new Dictionary<Guid, DataObjects.AgentHeartbeat>();
+    protected Dictionary<Guid, List<DataObjects.DiskMetric>> _diskMetrics = new Dictionary<Guid, List<DataObjects.DiskMetric>>();
+    protected List<ActivityEntry> _activityFeed = new List<ActivityEntry>();
+    protected HashSet<Guid> _recentlyUpdatedIds = new HashSet<Guid>();
+
+    protected class ActivityEntry
+    {
+        public DateTime Timestamp { get; set; }
+        public string AgentName { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string Message { get; set; } = string.Empty;
+    }
+
+    public void Dispose()
+    {
+        Model.OnChange -= OnDataModelUpdated;
+        Model.OnSignalRUpdate -= SignalRUpdate;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) {
+            Model.TenantCodeFromUrl = TenantCode;
+        }
+
+        if (Model.Loaded && Model.LoggedIn) {
+            if (!_validatedUrl) {
+                _validatedUrl = true;
+                await Helpers.ValidateUrl(TenantCode);
+            }
+
+            if (!_loadedData) {
+                _loadedData = true;
+                await LoadData();
+            }
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.OnChange += OnDataModelUpdated;
+        Model.OnSignalRUpdate += SignalRUpdate;
+        Model.View = _pageName;
+    }
+
+    protected void OnDataModelUpdated()
+    {
+        if (Model.View == _pageName) {
+            StateHasChanged();
+        }
+    }
+
+    protected int OnlineCount => _agents.Count(a => a.Status == DataObjects.AgentStatuses.Online);
+    protected int WarningCount => _agents.Count(a => a.Status == DataObjects.AgentStatuses.Warning);
+    protected int ErrorCount => _agents.Count(a => a.Status == DataObjects.AgentStatuses.Error);
+    protected int OfflineCount => _agents.Count(a => a.Status == DataObjects.AgentStatuses.Offline || a.Status == DataObjects.AgentStatuses.Stale);
+
+    protected string GetMetricClass(double value, double warn, double error) =>
+        value >= error ? "bg-danger" :
+        value >= warn  ? "bg-warning text-dark" :
+                         "bg-success";
+
+    protected string GetWorstStatus(DataObjects.Agent agent)
+    {
+        if (!_latestHeartbeats.ContainsKey(agent.AgentId)) {
+            return agent.Status;
+        }
+
+        var hb = _latestHeartbeats[agent.AgentId];
+        bool hasError = hb.CpuPercent >= 90 || hb.MemoryPercent >= 90;
+        bool hasWarning = hb.CpuPercent >= 70 || hb.MemoryPercent >= 75;
+
+        if (_diskMetrics.ContainsKey(agent.AgentId)) {
+            foreach (var disk in _diskMetrics[agent.AgentId]) {
+                if (disk.Percent >= 95) hasError = true;
+                else if (disk.Percent >= 80) hasWarning = true;
+            }
+        }
+
+        if (agent.Status == DataObjects.AgentStatuses.Offline || agent.Status == DataObjects.AgentStatuses.Stale) return "offline";
+        if (agent.Status == DataObjects.AgentStatuses.Error || hasError) return "error";
+        if (agent.Status == DataObjects.AgentStatuses.Warning || hasWarning) return "warning";
+        return "online";
+    }
+
+    protected string GetStatusBadgeClass(string status) => status switch {
+        DataObjects.AgentStatuses.Online  => "bg-success",
+        DataObjects.AgentStatuses.Warning => "bg-warning text-dark",
+        DataObjects.AgentStatuses.Error   => "bg-danger",
+        DataObjects.AgentStatuses.Offline => "bg-secondary",
+        DataObjects.AgentStatuses.Stale   => "bg-secondary",
+        _ => "bg-secondary"
+    };
+
+    protected void ViewAgent(Guid agentId)
+    {
+        Helpers.NavigateTo("AgentDetail/" + agentId.ToString());
+    }
+
+    protected async Task LoadData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        var agents = await Helpers.GetOrPost<List<DataObjects.Agent>>("api/Data/GetAgents");
+        if (agents != null) {
+            _agents = agents;
+        }
+
+        var heartbeats = await Helpers.GetOrPost<List<DataObjects.AgentHeartbeat>>("api/Data/GetLatestHeartbeats");
+        if (heartbeats != null) {
+            _latestHeartbeats.Clear();
+            _diskMetrics.Clear();
+            foreach (var hb in heartbeats) {
+                _latestHeartbeats[hb.AgentId] = hb;
+                if (!string.IsNullOrWhiteSpace(hb.DiskMetricsJson)) {
+                    try {
+                        var disks = Helpers.DeserializeObject<List<DataObjects.DiskMetric>>(hb.DiskMetricsJson);
+                        if (disks != null) {
+                            _diskMetrics[hb.AgentId] = disks;
+                        }
+                    } catch { }
+                }
+            }
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    protected async void MarkRecentlyUpdated(Guid agentId)
+    {
+        _recentlyUpdatedIds.Add(agentId);
+        StateHasChanged();
+        await Task.Delay(3000);
+        _recentlyUpdatedIds.Remove(agentId);
+        StateHasChanged();
+    }
+
+    protected void AddActivityEntry(string agentName, string status, string message)
+    {
+        _activityFeed.Insert(0, new ActivityEntry {
+            Timestamp = DateTime.Now,
+            AgentName = agentName,
+            Status = status,
+            Message = message
+        });
+
+        // Keep only last 50 entries
+        if (_activityFeed.Count > 50) {
+            _activityFeed.RemoveRange(50, _activityFeed.Count - 50);
+        }
+    }
+
+    protected void SignalRUpdate(DataObjects.SignalRUpdate update)
+    {
+        if (Model.View != _pageName) return;
+        if (update.TenantId != null && update.TenantId != Model.TenantId) return;
+
+        switch (update.UpdateType) {
+            case DataObjects.SignalRUpdateType.AgentHeartbeat:
+                if (update.ObjectAsString != null) {
+                    var heartbeat = Helpers.DeserializeObject<DataObjects.AgentHeartbeat>(update.ObjectAsString);
+                    if (heartbeat != null) {
+                        _latestHeartbeats[heartbeat.AgentId] = heartbeat;
+                        if (!string.IsNullOrWhiteSpace(heartbeat.DiskMetricsJson)) {
+                            try {
+                                var disks = Helpers.DeserializeObject<List<DataObjects.DiskMetric>>(heartbeat.DiskMetricsJson);
+                                if (disks != null) {
+                                    _diskMetrics[heartbeat.AgentId] = disks;
+                                }
+                            } catch { }
+                        }
+                        var agentForHb = _agents.FirstOrDefault(a => a.AgentId == heartbeat.AgentId);
+                        if (agentForHb != null) {
+                            agentForHb.LastHeartbeat = heartbeat.Timestamp;
+                            AddActivityEntry(heartbeat.AgentName ?? agentForHb.Name, agentForHb.Status, "Heartbeat received");
+                        }
+                        MarkRecentlyUpdated(heartbeat.AgentId);
+                    }
+                }
+                break;
+
+            case DataObjects.SignalRUpdateType.AgentConnected:
+                if (update.ObjectAsString != null) {
+                    var agent = Helpers.DeserializeObject<DataObjects.Agent>(update.ObjectAsString);
+                    if (agent != null) {
+                        var existing = _agents.FirstOrDefault(a => a.AgentId == agent.AgentId);
+                        if (existing != null) {
+                            existing.Status = DataObjects.AgentStatuses.Online;
+                            existing.LastHeartbeat = agent.LastHeartbeat;
+                        } else {
+                            _agents.Add(agent);
+                        }
+                        AddActivityEntry(agent.Name, DataObjects.AgentStatuses.Online, "Agent connected");
+                        MarkRecentlyUpdated(agent.AgentId);
+                    }
+                }
+                break;
+
+            case DataObjects.SignalRUpdateType.AgentDisconnected:
+            case DataObjects.SignalRUpdateType.AgentShutdown:
+                if (update.ItemId.HasValue) {
+                    var agentDisc = _agents.FirstOrDefault(a => a.AgentId == update.ItemId.Value);
+                    if (agentDisc != null) {
+                        agentDisc.Status = DataObjects.AgentStatuses.Offline;
+                        AddActivityEntry(agentDisc.Name, DataObjects.AgentStatuses.Offline, "Agent disconnected");
+                        MarkRecentlyUpdated(agentDisc.AgentId);
+                    }
+                }
+                break;
+
+            case DataObjects.SignalRUpdateType.AgentStatusChanged:
+                if (update.ObjectAsString != null) {
+                    var agentStatus = Helpers.DeserializeObject<DataObjects.Agent>(update.ObjectAsString);
+                    if (agentStatus != null) {
+                        var existingAgent = _agents.FirstOrDefault(a => a.AgentId == agentStatus.AgentId);
+                        if (existingAgent != null) {
+                            existingAgent.Status = agentStatus.Status;
+                            AddActivityEntry(existingAgent.Name, agentStatus.Status, "Status changed to " + agentStatus.Status);
+                            MarkRecentlyUpdated(existingAgent.AgentId);
+                        }
+                    }
+                }
+                break;
+        }
+    }
+}

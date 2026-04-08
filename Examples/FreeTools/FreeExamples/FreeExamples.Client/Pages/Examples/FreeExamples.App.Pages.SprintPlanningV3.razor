@@ -1,0 +1,247 @@
+﻿@page "/Examples/SprintPlanningV3"
+@page "/{TenantCode}/Examples/SprintPlanningV3"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V3: Sprint Retrospective — Completed sprint summary with velocity trend *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-rotate-left me-1"></i> Retrospective</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title"><i class="fa-solid fa-rotate-left me-1"></i> V3: Sprint Retrospective <StickyMenuIcon /></h1>
+        </div>
+
+        <ExampleNav />
+        <AboutSection Title="Sprint Retrospective" Subtitle="Completed sprint summary — planned vs. delivered, velocity trend, carried-over tickets" IconClass="fa-solid fa-rotate-left">
+            <p class="small text-muted mb-0">Review a completed sprint: goal achieved?, points planned vs. delivered, velocity trend across recent sprints, and a simple retro form for notes.</p>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Goal-Met Threshold"
+                     Description="The sprint is considered 'goal met' when delivered ≥ 80% of planned points (delivered >= planned * 0.8m). The summary card and the sprint goal alert both change color and icon based on this threshold. A practical pattern for any pass/fail KPI display."
+                     Code="@_codeGoalMet" />
+            <InfoTip Title="CSS-Only Velocity Trend Chart"
+                     Description="A grouped bar chart built entirely with CSS flexbox. Each sprint gets two bars (planned/delivered) whose heights are calculated as a percentage of the max value. No chart library needed — just div heights and bg-primary/bg-success classes."
+                     Code="@_codeVelocityChart" />
+            <InfoTip Title="Three-Column Retro Form"
+                     Description="A row with three col-md-4 columns creates the classic retrospective layout: What went well (green), What didn't (red), Action items (blue). Each column has a color-coded label and a textarea bound to a field. Simple and effective for sprint reviews."
+                     Code="@_codeRetroForm" />
+        </div>
+
+        @* Sprint selector *@
+        <div class="d-flex align-items-center gap-2 mb-3">
+            <label class="form-label mb-0 small fw-semibold">Sprint:</label>
+            <select class="form-select form-select-sm" style="width:auto;" @bind="_selectedSprintId" @bind:after="Refresh">
+                @foreach (var s in _sprints.OrderByDescending(s => s.EndDate)) {
+                    <option value="@s.RecordId">@s.Name (@s.Status)</option>
+                }
+            </select>
+        </div>
+
+        @if (_selected != null) {
+            var tickets = _sprintTickets;
+            var planned = tickets.Where(t => t.StoryPoints.HasValue).Sum(t => t.StoryPoints!.Value);
+            var delivered = tickets.Where(t => (t.Status == DataObjects.TicketStatus.Done || t.Status == DataObjects.TicketStatus.Closed) && t.StoryPoints.HasValue).Sum(t => t.StoryPoints!.Value);
+            var incomplete = tickets.Where(t => t.Status != DataObjects.TicketStatus.Done && t.Status != DataObjects.TicketStatus.Closed).ToList();
+            var goalMet = planned > 0 && delivered >= planned * 0.8m;
+
+            @* Summary cards *@
+            <div class="row g-3 mb-3">
+                <div class="col-md-3 col-6">
+                    <div class="card border-0 shadow-sm text-center">
+                        <div class="card-body py-2">
+                            <div class="fs-5 fw-bold @(goalMet ? "text-success" : "text-danger")"><i class="fa-solid @(goalMet ? "fa-check-circle" : "fa-times-circle") me-1"></i>@(goalMet ? "Yes" : "No")</div>
+                            <div class="text-muted small">Goal Met</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6">
+                    <div class="card border-0 shadow-sm text-center">
+                        <div class="card-body py-2">
+                            <div class="fs-4 fw-bold text-primary">@planned</div>
+                            <div class="text-muted small">Planned Pts</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6">
+                    <div class="card border-0 shadow-sm text-center">
+                        <div class="card-body py-2">
+                            <div class="fs-4 fw-bold text-success">@delivered</div>
+                            <div class="text-muted small">Delivered Pts</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6">
+                    <div class="card border-0 shadow-sm text-center">
+                        <div class="card-body py-2">
+                            <div class="fs-4 fw-bold text-warning">@incomplete.Count</div>
+                            <div class="text-muted small">Carried Over</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @* Goal display *@
+            @if (!string.IsNullOrEmpty(_selected.Goal)) {
+                <div class="alert @(goalMet ? "alert-success" : "alert-warning") py-2 small mb-3">
+                    <i class="fa-solid fa-bullseye me-1"></i><strong>Sprint Goal:</strong> @_selected.Goal
+                </div>
+            }
+
+            @* Velocity trend *@
+            <div class="card border-0 shadow-sm mb-3">
+                <div class="card-header bg-light py-1 small fw-semibold">Velocity Trend (Recent Sprints)</div>
+                <div class="card-body py-2">
+                    <div class="d-flex align-items-end gap-2" style="height:120px;">
+                        @foreach (var v in _velocityData) {
+                            var maxPts = _velocityData.Max(x => Math.Max(x.Planned, x.Delivered));
+                            var hPlanned = maxPts > 0 ? (int)(v.Planned * 100.0 / maxPts) : 0;
+                            var hDelivered = maxPts > 0 ? (int)(v.Delivered * 100.0 / maxPts) : 0;
+                            <div class="d-flex flex-column align-items-center flex-fill">
+                                <div class="d-flex gap-1 align-items-end" style="height:100px;">
+                                    <div class="bg-primary bg-opacity-25 rounded-top" style="width:14px; height:@(hPlanned)px;" title="Planned: @v.Planned"></div>
+                                    <div class="bg-success rounded-top" style="width:14px; height:@(hDelivered)px;" title="Delivered: @v.Delivered"></div>
+                                </div>
+                                <div class="text-muted small mt-1" style="font-size:0.55rem; white-space:nowrap;">@v.Name</div>
+                            </div>
+                        }
+                    </div>
+                    <div class="d-flex gap-3 small mt-2">
+                        <span><span class="d-inline-block bg-primary bg-opacity-25 rounded" style="width:12px; height:12px;"></span> Planned</span>
+                        <span><span class="d-inline-block bg-success rounded" style="width:12px; height:12px;"></span> Delivered</span>
+                    </div>
+                </div>
+            </div>
+
+            @* Carried-over tickets *@
+            @if (incomplete.Any()) {
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-warning bg-opacity-25 py-1 small fw-semibold">Carried-Over Tickets (@incomplete.Count)</div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm mb-0 small">
+                            <tbody>
+                                @foreach (var t in incomplete) {
+                                    <tr><td><code>@t.TicketNumber</code></td><td>@t.Title</td><td><span class="badge bg-secondary">@t.Status</span></td><td>@(t.StoryPoints?.ToString() ?? "—") pts</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+
+            @* Simple retro form *@
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-light py-1 small fw-semibold">Retro Notes</div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold text-success"><i class="fa-solid fa-thumbs-up me-1"></i>What went well</label>
+                            <textarea class="form-control form-control-sm" rows="3" @bind="_retroGood"></textarea>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold text-danger"><i class="fa-solid fa-thumbs-down me-1"></i>What didn't</label>
+                            <textarea class="form-control form-control-sm" rows="3" @bind="_retroBad"></textarea>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold text-primary"><i class="fa-solid fa-lightbulb me-1"></i>Action items</label>
+                            <textarea class="form-control form-control-sm" rows="3" @bind="_retroActions"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "sprintplanningv3", _selectedSprintId = "";
+    private string _retroGood = "", _retroBad = "", _retroActions = "";
+    private List<DataObjects.Sprint> _sprints = new();
+    private List<DataObjects.Ticket> _allTickets = new(), _sprintTickets = new();
+    private DataObjects.Sprint? _selected;
+    private List<(string Name, int Planned, int Delivered)> _velocityData = new();
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            _sprints = await Helpers.GetOrPost<List<DataObjects.Sprint>>("api/Data/GetSprints", new List<Guid>()) ?? new();
+            _allTickets = await Helpers.GetOrPost<List<DataObjects.Ticket>>("api/Data/GetTickets", new List<Guid>()) ?? new();
+            var comp = _sprints.FirstOrDefault(s => s.Status == DataObjects.SprintStatus.Completed) ?? _sprints.FirstOrDefault();
+            if (comp != null) _selectedSprintId = comp.RecordId.ToString();
+            Refresh(); _loading = false; StateHasChanged();
+        }
+    }
+
+    private void Refresh() {
+        _selected = Guid.TryParse(_selectedSprintId, out var sid) ? _sprints.FirstOrDefault(s => s.RecordId == sid) : null;
+        _sprintTickets = _selected != null ? _allTickets.Where(t => t.SprintId == _selected.RecordId).ToList() : new();
+        _velocityData = _sprints.OrderBy(s => s.StartDate).Select(s => {
+            var st = _allTickets.Where(t => t.SprintId == s.RecordId).ToList();
+            var p = st.Where(t => t.StoryPoints.HasValue).Sum(t => t.StoryPoints!.Value);
+            var d = st.Where(t => (t.Status == DataObjects.TicketStatus.Done || t.Status == DataObjects.TicketStatus.Closed) && t.StoryPoints.HasValue).Sum(t => t.StoryPoints!.Value);
+            return (s.Name, p, d);
+        }).ToList();
+    }
+
+    private string _codeGoalMet = @"var planned = tickets
+  .Where(t => t.StoryPoints.HasValue)
+  .Sum(t => t.StoryPoints!.Value);
+var delivered = tickets
+  .Where(t => t.Status == Done && t.StoryPoints.HasValue)
+  .Sum(t => t.StoryPoints!.Value);
+var goalMet = planned > 0
+  && delivered >= planned * 0.8m;
+
+<div class=""@(goalMet ? ""text-success"" : ""text-danger"")"">
+  <i class=""fa-solid @(goalMet
+    ? ""fa-check-circle"" : ""fa-times-circle"")""/>
+  @(goalMet ? ""Yes"" : ""No"")
+</div>";
+
+    private string _codeVelocityChart = @"<div class=""d-flex align-items-end gap-2""
+     style=""height:120px;"">
+  @foreach (var v in _velocityData) {
+    var max = _velocityData.Max(x =>
+      Math.Max(x.Planned, x.Delivered));
+    var hP = max > 0
+      ? (int)(v.Planned * 100.0 / max) : 0;
+    var hD = max > 0
+      ? (int)(v.Delivered * 100.0 / max) : 0;
+    <div class=""d-flex gap-1 align-items-end"">
+      <div class=""bg-primary bg-opacity-25""
+           style=""width:14px; height:@(hP)px;""/>
+      <div class=""bg-success""
+           style=""width:14px; height:@(hD)px;""/>
+    </div>
+  }
+</div>";
+
+    private string _codeRetroForm = @"<div class=""row g-3"">
+  <div class=""col-md-4"">
+    <label class=""text-success"">
+      What went well
+    </label>
+    <textarea @bind=""_retroGood""/>
+  </div>
+  <div class=""col-md-4"">
+    <label class=""text-danger"">
+      What didn't
+    </label>
+    <textarea @bind=""_retroBad""/>
+  </div>
+  <div class=""col-md-4"">
+    <label class=""text-primary"">
+      Action items
+    </label>
+    <textarea @bind=""_retroActions""/>
+  </div>
+</div>";
+}

@@ -1,0 +1,133 @@
+@page "/Examples/FileDemoV3"
+@page "/{TenantCode}/Examples/FileDemoV3"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V3: Resume/CV Upload — multi-step application with file attachments *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-file-circle-check me-1"></i> Resume Upload</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title"><i class="fa-solid fa-file-circle-check me-1"></i> V3: Resume & Document Checklist <StickyMenuIcon /></h1>
+        </div>
+
+        <ExampleNav />
+        <AboutSection Title="File Upload in Context: Application Checklist" Subtitle="Required document checklist — the university admissions or HR onboarding pattern" IconClass="fa-solid fa-file-circle-check">
+            <p class="small text-muted mb-0">A required-document checklist where each document type has its own upload slot. All must be uploaded before submission. Used in admissions, HR onboarding, and grant applications.</p>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Progress Bar for Completion"
+                     Description="A progress bar shows how many required documents have been uploaded vs total. The width is calculated as (uploaded / total * 100)%. The bar turns green (bg-success) when all are uploaded. This is the onboarding/admissions completion pattern."
+                     Code="@_codeProgress" />
+            <InfoTip Title="Required Document Slots"
+                     Description="Each document type has its own card with an upload button. The card shows the document name, requirements, and upload status. A green check replaces the upload button when complete. This ensures every required document is collected."
+                     Code="@_codeDocSlots" />
+            <InfoTip Title="Submit Gate Pattern"
+                     Description="The Submit button is disabled until all required documents are uploaded. The disabled attribute binds to a check: _documents.All(d => d.Uploaded). This prevents incomplete submissions. A progress summary above gives context on what's missing."
+                     Code="@_codeSubmitGate" />
+        </div>
+
+        @* Progress *@
+        <div class="mb-3">
+            <div class="d-flex justify-content-between small mb-1">
+                <span>Documents uploaded</span>
+                <span>@_documents.Count(d => d.Uploaded) of @_documents.Count required</span>
+            </div>
+            <div class="progress" style="height:8px;">
+                <div class="progress-bar bg-success" style="width:@(_documents.Count > 0 ? (int)(_documents.Count(d => d.Uploaded) * 100.0 / _documents.Count) : 0)%"></div>
+            </div>
+        </div>
+
+        @foreach (var doc in _documents) {
+            <div class="card shadow-sm border-0 mb-2 @(doc.Uploaded ? "border-start border-success border-3" : "")">
+                <div class="card-body py-2 d-flex align-items-center gap-3">
+                    <div class="flex-shrink-0">
+                        @if (doc.Uploaded) {
+                            <i class="fa-solid fa-circle-check fa-lg text-success"></i>
+                        } else if (doc.Required) {
+                            <i class="fa-solid fa-circle-exclamation fa-lg text-warning"></i>
+                        } else {
+                            <i class="fa-regular fa-circle fa-lg text-muted"></i>
+                        }
+                    </div>
+                    <div class="flex-grow-1">
+                        <div class="small fw-semibold">
+                            @doc.Title
+                            @if (doc.Required) { <span class="text-danger">*</span> }
+                        </div>
+                        <div class="small text-muted">@doc.Description</div>
+                        @if (doc.Uploaded) {
+                            <div class="small text-success"><i class="fa-solid fa-file me-1"></i>@doc.FileName — @doc.FileSize</div>
+                        }
+                    </div>
+                    <div class="flex-shrink-0">
+                        @if (doc.Uploaded) {
+                            <button class="btn btn-sm btn-outline-danger" @onclick="@(() => doc.Uploaded = false)">
+                                <i class="fa-solid fa-trash me-1"></i> Remove
+                            </button>
+                        } else {
+                            <button class="btn btn-sm btn-outline-primary" @onclick="@(() => SimulateUpload(doc))">
+                                <i class="fa-solid fa-upload me-1"></i> Upload
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="mt-3 d-flex justify-content-between">
+            <div class="small text-muted">
+                @if (_documents.All(d => d.Uploaded)) {
+                    <span class="text-success"><i class="fa-solid fa-check-double me-1"></i>All documents uploaded — ready to submit</span>
+                } else {
+                    <span class="text-warning"><i class="fa-solid fa-triangle-exclamation me-1"></i>@_documents.Count(d => !d.Uploaded && d.Required) required document(s) remaining</span>
+                }
+            </div>
+            <button class="btn btn-success" disabled="@(!_documents.Where(d => d.Required).All(d => d.Uploaded))">
+                <i class="fa-solid fa-paper-plane me-1"></i> Submit Application
+            </button>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "filedemov3";
+    private string _codeProgress = "<div class=\"progress\">\n  <div class=\"progress-bar bg-success\" style=\"width:@pct%\">\n    @uploaded of @total\n  </div>\n</div>";
+    private string _codeDocSlots = "<div class=\"card\">\n  <div class=\"card-body\">\n    @if (doc.Uploaded) { <i class=\"fa-solid fa-check text-success\"></i> }\n    else { <button>Upload</button> }\n  </div>\n</div>";
+    private string _codeSubmitGate = "<button disabled=\"@(!_documents.All(d => d.Uploaded))\">\n  Submit Application\n</button>";
+
+    private List<RequiredDoc> _documents = new() {
+        new("Resume / CV", "PDF or Word document, 2 pages max", true),
+        new("Cover Letter", "Addressed to the hiring committee", true),
+        new("Unofficial Transcript", "From your most recent institution", true),
+        new("Letters of Recommendation", "At least 2, combined into one PDF", true),
+        new("Writing Sample", "A recent paper or report (optional)", false),
+        new("Portfolio / Work Samples", "Link or PDF of relevant work (optional)", false),
+    };
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) Model.TenantCodeFromUrl = TenantCode; if (Model.Loaded && Model.LoggedIn && !_loadedData) { _loadedData = true; _loading = false; StateHasChanged(); } }
+
+    private void SimulateUpload(RequiredDoc doc) {
+        doc.Uploaded = true;
+        doc.FileName = doc.Title.ToLower().Replace(" ", "_").Replace("/", "") + ".pdf";
+        doc.FileSize = new Random().Next(100, 5000) + " KB";
+    }
+
+    private class RequiredDoc {
+        public string Title { get; set; }
+        public string Description { get; set; }
+        public bool Required { get; set; }
+        public bool Uploaded { get; set; }
+        public string FileName { get; set; } = "";
+        public string FileSize { get; set; } = "";
+        public RequiredDoc(string title, string desc, bool required) { Title = title; Description = desc; Required = required; }
+    }
+}

@@ -1,0 +1,232 @@
+﻿@page "/Examples/TicketsV1"
+@page "/{TenantCode}/Examples/TicketsV1"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V1: Ticket Form — Full create/edit with all fields *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-file-lines me-1"></i> Ticket Form</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title"><i class="fa-solid fa-file-lines me-1"></i> V1: Ticket Form <StickyMenuIcon /></h1>
+        </div>
+
+        <ExampleNav />
+        <AboutSection Title="Ticket Create/Edit Form" Subtitle="15+ field multi-section form with Fibonacci story points, tag input, and markdown" IconClass="fa-solid fa-file-lines">
+            <p class="small text-muted mb-0">The most complex form in the example suite. Demonstrates type selector with icons, Fibonacci button group, label tags, status step indicator, and markdown preview.</p>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Fibonacci Button Group"
+                     Description="Story points use a button group with Fibonacci numbers (1,2,3,5,8,13,21). Click to select — the selected value gets a primary highlight."
+                     Code="@_codeFib" />
+            <InfoTip Title="Tag Input Pattern"
+                     Description="Labels are entered by typing and pressing Enter, displayed as badge pills with an X to remove. Stored as comma-separated string."
+                     Code="@_codeTag" />
+        </div>
+
+        <div class="row g-3">
+            @* Left: Ticket list *@
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                        <span>Tickets</span>
+                        <button class="btn btn-sm btn-outline-light" @onclick="NewTicket"><i class="fa-solid fa-plus me-1"></i>New</button>
+                    </div>
+                    <div class="list-group list-group-flush" style="max-height:600px; overflow-y:auto;">
+                        @foreach (var t in _all.Take(30)) {
+                            <button class="list-group-item list-group-item-action py-1 @(_editing?.RecordId == t.RecordId ? "active" : "")" @onclick="() => EditTicket(t)">
+                                <div class="d-flex justify-content-between small">
+                                    <span><code>@t.TicketNumber</code> @t.Title</span>
+                                    <span class="badge @GetPriorityBadge(t.Priority)" style="font-size:0.5rem;">@t.Priority</span>
+                                </div>
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            @* Right: Form *@
+            <div class="col-md-8">
+                @if (_editing != null) {
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <span class="fw-semibold">@(_editing.RecordId == Guid.Empty ? "New Ticket" : _editing.TicketNumber)</span>
+                            @if (_saved) { <span class="badge bg-success"><i class="fa-solid fa-check me-1"></i>Saved</span> }
+                        </div>
+                        <div class="card-body">
+                            @* Status step indicator *@
+                            <div class="d-flex gap-1 mb-3 flex-wrap">
+                                @foreach (var s in Enum.GetValues<DataObjects.TicketStatus>()) {
+                                    var isCurrent = _editing.Status == s;
+                                    <span class="badge @(isCurrent ? "bg-primary" : "bg-light text-muted border") small" style="cursor:pointer;" @onclick="() => _editing.Status = s">@s</span>
+                                }
+                            </div>
+
+                            <div class="row g-3">
+                                @* Type selector *@
+                                <div class="col-md-4">
+                                    <label class="form-label small fw-semibold">Type</label>
+                                    <select class="form-select form-select-sm" @bind="_editing.Type">
+                                        @foreach (var t in Enum.GetValues<DataObjects.TicketType>()) {
+                                            <option value="@t">@t</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label small fw-semibold">Project</label>
+                                    <select class="form-select form-select-sm" @bind="_selectedProjectId">
+                                        @foreach (var p in _projects.OrderBy(p => p.Name)) {
+                                            <option value="@p.RecordId">@p.Name</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label small fw-semibold">Priority</label>
+                                    <div class="btn-group btn-group-sm w-100">
+                                        @foreach (var p in Enum.GetValues<DataObjects.TicketPriority>()) {
+                                            <button type="button" class="btn @(_editing.Priority == p ? "btn-primary" : "btn-outline-secondary")" @onclick="() => _editing.Priority = p">@p</button>
+                                        }
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label small fw-semibold">Title</label>
+                                    <input type="text" class="form-control form-control-sm" @bind="_editing.Title" />
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label small fw-semibold">Description (Markdown)</label>
+                                    <div class="d-flex gap-1 mb-1">
+                                        <button class="btn btn-sm @(!_showPreview ? "btn-dark" : "btn-outline-dark")" @onclick="() => _showPreview = false">Edit</button>
+                                        <button class="btn btn-sm @(_showPreview ? "btn-dark" : "btn-outline-dark")" @onclick="() => _showPreview = true">Preview</button>
+                                    </div>
+                                    @if (!_showPreview) {
+                                        <textarea class="form-control form-control-sm font-monospace" rows="4" @bind="_editing.Description"></textarea>
+                                    } else {
+                                        <div class="border rounded p-2 bg-light small" style="min-height:100px;">@(_editing.Description ?? "Nothing to preview")</div>
+                                    }
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-semibold">Assigned To</label>
+                                    <input type="text" class="form-control form-control-sm" @bind="_editing.AssignedTo" placeholder="Name" />
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-semibold">Reporter</label>
+                                    <input type="text" class="form-control form-control-sm" @bind="_editing.ReporterName" />
+                                </div>
+                                @* Fibonacci story points *@
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-semibold">Story Points</label>
+                                    <div class="btn-group btn-group-sm">
+                                        @foreach (var pts in _fibonacci) {
+                                            <button type="button" class="btn @(_editing.StoryPoints == pts ? "btn-primary" : "btn-outline-secondary")" @onclick="() => _editing.StoryPoints = pts">@pts</button>
+                                        }
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-semibold">Due Date</label>
+                                    <input type="date" class="form-control form-control-sm" @bind="_editing.DueDate" />
+                                </div>
+                                @* Labels tag input *@
+                                <div class="col-12">
+                                    <label class="form-label small fw-semibold">Labels</label>
+                                    <div class="d-flex flex-wrap gap-1 mb-1">
+                                        @foreach (var lbl in _labels) {
+                                            <span class="badge bg-primary d-flex align-items-center gap-1">@lbl <i class="fa-solid fa-xmark" style="cursor:pointer;" @onclick="() => RemoveLabel(lbl)"></i></span>
+                                        }
+                                    </div>
+                                    <input type="text" class="form-control form-control-sm" placeholder="Type label and press Enter" @bind="_newLabel" @onkeydown="HandleLabelKey" />
+                                </div>
+                            </div>
+
+                            <div class="d-flex gap-2 mt-3">
+                                <button class="btn btn-primary btn-sm" @onclick="SaveTicket" disabled="@_saving"><i class="fa-solid fa-floppy-disk me-1"></i>Save</button>
+                                <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editing = null">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                } else {
+                    <div class="card border-0 shadow-sm"><div class="card-body text-center text-muted py-5"><i class="fa-solid fa-file-lines fa-2x mb-2 opacity-50"></i><div>Select a ticket or click <strong>New</strong></div></div></div>
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false, _saving = false, _saved = false, _showPreview = false;
+    private string _pageName = "ticketsv1";
+    private List<DataObjects.Ticket> _all = new();
+    private List<DataObjects.Project> _projects = new();
+    private DataObjects.Ticket? _editing;
+    private string _selectedProjectId = "";
+    private List<string> _labels = new();
+    private string _newLabel = "";
+    private static readonly int[] _fibonacci = [1, 2, 3, 5, 8, 13, 21];
+
+    private string _codeFib = "<div class=\"btn-group\">\n  @foreach (var pts in new[]{1,2,3,5,8,13,21}) {\n    <button class=\"btn @(selected==pts?\"btn-primary\":\"btn-outline-secondary\")\">@pts</button>\n  }\n</div>";
+    private string _codeTag = "<span class=\"badge bg-primary\">@lbl <i class=\"fa-xmark\" @onclick=\"() => Remove(lbl)\"></i></span>";
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            var t = await Helpers.GetOrPost<List<DataObjects.Ticket>>("api/Data/GetTickets", new List<Guid>());
+            var p = await Helpers.GetOrPost<List<DataObjects.Project>>("api/Data/GetProjects", new List<Guid>());
+            _all = t ?? new(); _projects = p ?? new();
+            _loading = false; StateHasChanged();
+        }
+    }
+
+    private void NewTicket() {
+        _editing = new DataObjects.Ticket { ReporterName = "Current User", Status = DataObjects.TicketStatus.Backlog, Priority = DataObjects.TicketPriority.Medium };
+        _selectedProjectId = _projects.FirstOrDefault()?.RecordId.ToString() ?? "";
+        _labels = new(); _newLabel = ""; _saved = false; _showPreview = false;
+    }
+
+    private void EditTicket(DataObjects.Ticket t) {
+        _editing = new DataObjects.Ticket {
+            RecordId = t.RecordId, TenantId = t.TenantId, ProjectId = t.ProjectId, TicketNumber = t.TicketNumber,
+            Title = t.Title, Description = t.Description, Type = t.Type, Status = t.Status, Priority = t.Priority,
+            AssignedTo = t.AssignedTo, ReporterName = t.ReporterName, StoryPoints = t.StoryPoints, Labels = t.Labels,
+            SprintId = t.SprintId, ParentTicketId = t.ParentTicketId, DueDate = t.DueDate, SortOrder = t.SortOrder,
+        };
+        _selectedProjectId = t.ProjectId.ToString();
+        _labels = string.IsNullOrEmpty(t.Labels) ? new() : t.Labels.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        _saved = false; _showPreview = false;
+    }
+
+    private void HandleLabelKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_newLabel)) {
+            var lbl = _newLabel.Trim();
+            if (!_labels.Contains(lbl, StringComparer.OrdinalIgnoreCase)) _labels.Add(lbl);
+            _newLabel = "";
+        }
+    }
+    private void RemoveLabel(string lbl) => _labels.Remove(lbl);
+
+    private async Task SaveTicket() {
+        if (_editing == null) return;
+        _saving = true; _saved = false;
+        if (Guid.TryParse(_selectedProjectId, out var pid)) _editing.ProjectId = pid;
+        _editing.Labels = _labels.Any() ? string.Join(",", _labels) : null;
+        var result = await Helpers.GetOrPost<List<DataObjects.Ticket>>("api/Data/SaveTickets", new List<DataObjects.Ticket> { _editing });
+        if (result?.Any() == true) {
+            var s = result.First();
+            var idx = _all.FindIndex(x => x.RecordId == s.RecordId);
+            if (idx >= 0) _all[idx] = s; else _all.Add(s);
+            _editing = s; _saved = true;
+        }
+        _saving = false; StateHasChanged();
+    }
+
+    private static string GetPriorityBadge(DataObjects.TicketPriority p) => p switch {
+        DataObjects.TicketPriority.Critical => "bg-danger", DataObjects.TicketPriority.High => "bg-warning text-dark",
+        DataObjects.TicketPriority.Medium => "bg-info", _ => "bg-secondary"
+    };
+}

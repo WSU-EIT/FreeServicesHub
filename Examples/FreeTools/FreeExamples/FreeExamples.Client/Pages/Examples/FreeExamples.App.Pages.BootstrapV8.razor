@@ -1,0 +1,244 @@
+@page "/Examples/BootstrapV8"
+@page "/{TenantCode}/Examples/BootstrapV8"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-bars-staggered me-1"></i> Offcanvas Sidebar</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title">
+                <i class="fa-solid fa-bars-staggered me-1"></i> V8: Offcanvas Sidebar Actions
+                <StickyMenuIcon />
+            </h1>
+        </div>
+
+        <ExampleNav />
+
+        <AboutSection Title="Bootstrap in Context: Offcanvas Sidebar" Subtitle="Slide-out panels for quick actions — the MainLayout pattern" IconClass="fa-solid fa-bars-staggered">
+            <div class="row">
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-question-circle me-1"></i>What Is This Page?</h6>
+                    <p class="small text-muted mb-0">
+                        This demonstrates the <strong>offcanvas</strong> component — a slide-out panel used in every
+                        production Blazor app. The MainLayout uses it for user menus and quick-add forms. Helpdesk uses
+                        it to add users without leaving the current page.
+                    </p>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-lightbulb me-1"></i>What You'll Learn</h6>
+                    <ul class="small text-muted mb-0 ps-3">
+                        <li><strong>offcanvas-end</strong> — slide from right (user profile)</li>
+                        <li><strong>offcanvas-start</strong> — slide from left (navigation)</li>
+                        <li><strong>list-group</strong> inside offcanvas for menu items</li>
+                        <li><strong>Form inside offcanvas</strong> for quick-add patterns</li>
+                        <li><strong>Badges</strong> for notification counts</li>
+                    </ul>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-road me-1"></i>How Does It Work?</h6>
+                    <p class="small text-muted mb-0">
+                        Bootstrap offcanvas uses <code>data-bs-toggle="offcanvas"</code> and <code>data-bs-target</code>
+                        to open panels. The panel slides over the page content with a backdrop. Forms inside submit
+                        normally. Close with the X button, Escape key, or clicking the backdrop.
+                    </p>
+                </div>
+            </div>
+        </AboutSection>
+
+        @* ── Trigger Buttons ── *@
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 h-100">
+                    <div class="card-body text-center">
+                        <i class="fa-solid fa-user-plus fa-2x text-primary mb-2"></i>
+                        <h6>Quick Add User</h6>
+                        <p class="small text-muted">Slide-out form to add a user without leaving the page.</p>
+                        <button class="btn btn-primary btn-sm" data-bs-toggle="offcanvas" data-bs-target="#addUserPanel">
+                            <i class="fa-solid fa-plus me-1"></i> Add User
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 h-100">
+                    <div class="card-body text-center">
+                        <i class="fa-solid fa-user-circle fa-2x text-success mb-2"></i>
+                        <h6>User Profile</h6>
+                        <p class="small text-muted">Right-side panel showing user details and actions.</p>
+                        <button class="btn btn-success btn-sm" data-bs-toggle="offcanvas" data-bs-target="#profilePanel">
+                            <i class="fa-solid fa-id-card me-1"></i> View Profile
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 h-100">
+                    <div class="card-body text-center">
+                        <i class="fa-solid fa-bell fa-2x text-warning mb-2"></i>
+                        <h6>Notifications</h6>
+                        <p class="small text-muted">Notification panel with list-group items.</p>
+                        <button class="btn btn-warning btn-sm" data-bs-toggle="offcanvas" data-bs-target="#notificationPanel">
+                            <i class="fa-solid fa-bell me-1"></i> Notifications <span class="badge bg-danger">3</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <InfoTip Title="Offcanvas Trigger"
+                 Description="Any element with data-bs-toggle='offcanvas' and data-bs-target='#panelId' opens the matching offcanvas panel. No JavaScript needed. In MainLayout, the navbar user icon triggers a profile offcanvas. In Helpdesk, an 'Add User' button triggers a form offcanvas."
+                 Code="@_codeTrigger" />
+
+        @* ── Users List (main content) ── *@
+        <h5 class="mb-3"><i class="fa-solid fa-users me-1"></i> Team Members <span class="badge bg-secondary">@_users.Count</span></h5>
+        <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3 mb-3">
+            @foreach (var user in _users) {
+                <div class="col">
+                    <div class="card shadow-sm border-0">
+                        <div class="card-body d-flex align-items-center gap-3">
+                            <div class="rounded-circle bg-primary bg-opacity-10 d-flex align-items-center justify-content-center" style="width:48px;height:48px;">
+                                <i class="fa-solid fa-user text-primary"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <div class="fw-semibold small">@user.Name</div>
+                                <div class="small text-muted">@user.Role</div>
+                                <div class="small text-muted">@user.Email</div>
+                            </div>
+                            <span class="badge @(user.Active ? "bg-success" : "bg-secondary")">@(user.Active ? "Active" : "Inactive")</span>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="d-flex flex-wrap gap-1 mt-2">
+            <InfoTip Title="list-group in Offcanvas"
+                     Description="list-group-item elements inside an offcanvas create a clean menu or notification list. Each item can have badges, icons, and secondary text. list-group-flush removes outer borders for a seamless look inside panels."
+                     Code="@_codeListGroup" />
+            <InfoTip Title="Form in Offcanvas"
+                     Description="Placing a form inside an offcanvas lets users add items without navigating away. The Helpdesk 'Quick Add User' pattern opens an offcanvas, the user fills in name/email/role, clicks Save, and the offcanvas closes. The new item appears in the list immediately."
+                     Code="@_codeFormInOffcanvas" />
+        </div>
+
+        @* ── Offcanvas: Add User (start/left) ── *@
+        <div class="offcanvas offcanvas-start" tabindex="-1" id="addUserPanel">
+            <div class="offcanvas-header">
+                <h5 class="offcanvas-title"><i class="fa-solid fa-user-plus me-1"></i> Add Team Member</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+            </div>
+            <div class="offcanvas-body">
+                <div class="mb-3">
+                    <label class="form-label small">Full Name</label>
+                    <input type="text" class="form-control" @bind="_newName" placeholder="Jane Smith" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small">Email</label>
+                    <input type="email" class="form-control" @bind="_newEmail" placeholder="jane@example.com" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small">Role</label>
+                    <select class="form-select" @bind="_newRole">
+                        <option value="Developer">Developer</option>
+                        <option value="Designer">Designer</option>
+                        <option value="Manager">Manager</option>
+                        <option value="QA">QA Engineer</option>
+                    </select>
+                </div>
+                <button class="btn btn-success w-100" @onclick="AddUser"><i class="fa-solid fa-plus me-1"></i> Add Member</button>
+                @if (_addedMessage) {
+                    <div class="alert alert-success small mt-2 py-1"><i class="fa-solid fa-check me-1"></i> Added!</div>
+                }
+            </div>
+        </div>
+
+        @* ── Offcanvas: Profile (end/right) ── *@
+        <div class="offcanvas offcanvas-end" tabindex="-1" id="profilePanel">
+            <div class="offcanvas-header bg-primary text-white">
+                <h5 class="offcanvas-title"><i class="fa-solid fa-user me-1"></i> Your Profile</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
+            </div>
+            <div class="offcanvas-body">
+                <div class="text-center mb-3">
+                    <div class="rounded-circle bg-primary bg-opacity-10 d-inline-flex align-items-center justify-content-center mb-2" style="width:80px;height:80px;">
+                        <i class="fa-solid fa-user fa-2x text-primary"></i>
+                    </div>
+                    <h6>Admin User</h6>
+                    <div class="small text-muted">admin@freeexamples.com</div>
+                    <span class="badge bg-primary">Administrator</span>
+                </div>
+                <div class="list-group list-group-flush">
+                    <a href="#" class="list-group-item list-group-item-action"><i class="fa-solid fa-gear me-2 text-muted"></i> Account Settings</a>
+                    <a href="#" class="list-group-item list-group-item-action"><i class="fa-solid fa-key me-2 text-muted"></i> Change Password</a>
+                    <a href="#" class="list-group-item list-group-item-action"><i class="fa-solid fa-palette me-2 text-muted"></i> Preferences</a>
+                    <a href="#" class="list-group-item list-group-item-action"><i class="fa-solid fa-clock-rotate-left me-2 text-muted"></i> Activity Log</a>
+                    <a href="#" class="list-group-item list-group-item-action text-danger"><i class="fa-solid fa-right-from-bracket me-2"></i> Sign Out</a>
+                </div>
+            </div>
+        </div>
+
+        @* ── Offcanvas: Notifications (end/right) ── *@
+        <div class="offcanvas offcanvas-end" tabindex="-1" id="notificationPanel" style="width:350px;">
+            <div class="offcanvas-header">
+                <h5 class="offcanvas-title"><i class="fa-solid fa-bell me-1"></i> Notifications</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+            </div>
+            <div class="offcanvas-body p-0">
+                <div class="list-group list-group-flush">
+                    <div class="list-group-item list-group-item-action py-3">
+                        <div class="d-flex justify-content-between"><strong class="small">New item created</strong><small class="text-muted">2m ago</small></div>
+                        <div class="small text-muted">Widget Alpha was added to Engineering.</div>
+                    </div>
+                    <div class="list-group-item list-group-item-action py-3">
+                        <div class="d-flex justify-content-between"><strong class="small">Status changed</strong><small class="text-muted">1h ago</small></div>
+                        <div class="small text-muted">Beta Module moved from Draft to Active.</div>
+                    </div>
+                    <div class="list-group-item list-group-item-action py-3">
+                        <div class="d-flex justify-content-between"><strong class="small">Comment added</strong><small class="text-muted">3h ago</small></div>
+                        <div class="small text-muted">Alice commented on Gamma Report.</div>
+                    </div>
+                </div>
+                <div class="text-center py-3">
+                    <a href="#" class="small text-primary">View all notifications</a>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false, _addedMessage = false;
+    private string _pageName = "bootstrapv8";
+
+    private string _codeTrigger = "<button data-bs-toggle=\"offcanvas\" data-bs-target=\"#addUserPanel\">\n  Add User\n</button>\n<div class=\"offcanvas offcanvas-start\" id=\"addUserPanel\">...</div>";
+    private string _codeListGroup = "<div class=\"list-group list-group-flush\">\n  <a class=\"list-group-item list-group-item-action\">\n    <i class=\"fa-solid fa-gear me-2\"></i> Settings\n  </a>\n</div>";
+    private string _codeFormInOffcanvas = "<div class=\"offcanvas-body\">\n  <input class=\"form-control\" @bind=\"_name\" />\n  <button class=\"btn btn-success\" @onclick=\"Save\">Add</button>\n</div>";
+
+    private string _newName = "", _newEmail = "", _newRole = "Developer";
+
+    private List<TeamUser> _users = new() {
+        new("Alice Johnson", "alice@example.com", "Manager", true),
+        new("Bob Smith", "bob@example.com", "Developer", true),
+        new("Carol White", "carol@example.com", "Designer", true),
+        new("David Lee", "david@example.com", "QA Engineer", true),
+        new("Eve Adams", "eve@example.com", "Developer", false),
+    };
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) Model.TenantCodeFromUrl = TenantCode; if (Model.Loaded && Model.LoggedIn && !_loadedData) { _loadedData = true; _loading = false; StateHasChanged(); } }
+
+    private void AddUser() {
+        if (!string.IsNullOrWhiteSpace(_newName)) {
+            _users.Add(new TeamUser(_newName, _newEmail, _newRole, true));
+            _newName = ""; _newEmail = ""; _newRole = "Developer";
+            _addedMessage = true;
+            _ = Task.Delay(2000).ContinueWith(_ => InvokeAsync(() => { _addedMessage = false; StateHasChanged(); }));
+        }
+    }
+
+    private record TeamUser(string Name, string Email, string Role, bool Active);
+}

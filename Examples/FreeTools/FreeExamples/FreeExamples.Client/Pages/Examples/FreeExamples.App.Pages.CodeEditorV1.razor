@@ -1,0 +1,56 @@
+@page "/Examples/CodeEditorV1"
+@page "/{TenantCode}/Examples/CodeEditorV1"
+@implements IDisposable
+@inject BlazorDataModel Model
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) { <h1 class="page-title"><i class="fa-solid fa-terminal me-1"></i> SQL Query Builder</h1><LoadingMessage /> } else {
+        <div class="@Model.StickyMenuClass"><h1 class="page-title"><i class="fa-solid fa-terminal me-1"></i> V1: SQL Query Builder <StickyMenuIcon /></h1></div>
+
+        <ExampleNav />
+        <AboutSection Title="Code Editor in Context: SQL Query Builder" Subtitle="Write SQL queries, see results in a table — the SSMS / Azure Data Studio pattern" IconClass="fa-solid fa-terminal">
+            <p class="small text-muted mb-0">A code editor configured for SQL with a mock "Run Query" button and tabular results. Same editor component, database context.</p>
+        </AboutSection>
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Code Block with pre + Monospace"
+                     Description="The query editor uses a pre element with bg-dark text-light and font-family:monospace. This preserves whitespace and indentation. The dark background mimics VS Code/SSMS. In production, Monaco Editor replaces this with full IntelliSense."
+                     Code="@_codePreBlock" />
+            <InfoTip Title="Run Button in Header"
+                     Description="The card-header has a d-flex justify-content-between layout with a title on the left and a Run button (btn-success) on the right. The fa-play icon makes it instantly recognizable. This header-with-action pattern is used in every tool page."
+                     Code="@_codeRunButton" />
+            <InfoTip Title="Results Table with Status Badge"
+                     Description="Query results show in a table-sm table-hover below the editor. The card-header shows row count and execution time with a 'Success' badge. This split layout (editor above, results below) is the SSMS/Azure Data Studio pattern."
+                     Code="@_codeResultsTable" />
+        </div>
+        <div class="card shadow-sm border-0 mb-3">
+            <div class="card-header bg-dark text-white d-flex justify-content-between py-1"><span class="small"><i class="fa-solid fa-database me-1"></i> Query Editor</span><button class="btn btn-sm btn-success" @onclick="RunQuery"><i class="fa-solid fa-play me-1"></i> Run</button></div>
+            <div class="card-body p-0"><pre class="bg-dark text-light p-3 mb-0" style="font-family:monospace; font-size:0.8rem; min-height:120px;">SELECT s.Name, s.Category, s.Status, s.Amount
+FROM SampleItems s
+WHERE s.Deleted = 0
+  AND s.Status = 'Active'
+ORDER BY s.Amount DESC;</pre></div>
+        </div>
+        @if (_showResults) {
+            <div class="card shadow-sm border-0"><div class="card-header bg-white py-1 d-flex justify-content-between"><span class="small fw-semibold">Results (5 rows, 12ms)</span><span class="badge bg-success">Success</span></div><div class="card-body p-0">
+                <table class="table table-sm table-hover mb-0 small"><thead class="table-light"><tr><th>Name</th><th>Category</th><th>Status</th><th class="text-end">Amount</th></tr></thead><tbody>
+                    <tr><td>Alpha Widget</td><td>Engineering</td><td>Active</td><td class="text-end">$4,200</td></tr>
+                    <tr><td>Beta Service</td><td>Sales</td><td>Active</td><td class="text-end">$3,100</td></tr>
+                    <tr><td>Gamma Tool</td><td>Support</td><td>Active</td><td class="text-end">$2,800</td></tr>
+                    <tr><td>Delta Module</td><td>Engineering</td><td>Active</td><td class="text-end">$1,900</td></tr>
+                    <tr><td>Epsilon Kit</td><td>Marketing</td><td>Active</td><td class="text-end">$1,200</td></tr>
+                </tbody></table>
+            </div></div>
+        }
+    }
+}
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false, _showResults = false;
+    private string _pageName = "codeeditorv1";
+    private string _codePreBlock = "<pre class=\"bg-dark text-light p-3\"\n  style=\"font-family:monospace\">\nSELECT * FROM Items\n</pre>";
+    private string _codeRunButton = "<div class=\"card-header d-flex justify-content-between\">\n  <span>Query Editor</span>\n  <button class=\"btn btn-success btn-sm\" @onclick=\"RunQuery\">\n    <i class=\"fa-solid fa-play\"></i> Run\n  </button>\n</div>";
+    private string _codeResultsTable = "<div class=\"card-header d-flex justify-content-between\">\n  <span>Results (5 rows, 12ms)</span>\n  <span class=\"badge bg-success\">Success</span>\n</div>";
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) Model.TenantCodeFromUrl = TenantCode; if (Model.Loaded && Model.LoggedIn && !_loadedData) { _loadedData = true; _loading = false; StateHasChanged(); } }
+    private void RunQuery() { _showResults = true; }
+}

@@ -1,0 +1,45 @@
+steps:
+  - task: PowerShell@2
+    displayName: "Clean Workspace"
+    inputs:
+      targetType: inline
+      script: |
+        # Define the key directory paths
+        Write-Output "WORKSPACE: $(Pipeline.Workspace)"
+        $workspaceDir        = "$(Pipeline.Workspace)"
+        $artifactStagingDir  = "$(Build.ArtifactStagingDirectory)"
+        $sourcesDir          = "$(Build.SourcesDirectory)"
+        $binariesDir         = "$(Build.BinariesDirectory)"  # Ensure this is the correct variable name
+
+        # Create an array of directories to clean (not delete)
+        $directoriesToClean = @($artifactStagingDir, $sourcesDir, $binariesDir)
+
+        # Iterate over each directory in the Workspace
+        Get-ChildItem -Path $workspaceDir -Directory | ForEach-Object {
+            $currentDir = $_.FullName
+
+            if ($directoriesToClean -contains $currentDir) {
+                Write-Output "Cleaning contents of: $currentDir"
+                try {
+                    # Remove all contents within the directory without deleting the directory itself
+                    Remove-Item "$currentDir\*" -Recurse -Force
+                    Write-Output "Successfully cleaned: $currentDir"
+                }
+                catch {
+                    Write-Error "Failed to clean directory: $currentDir. Error: $_"
+                }
+            }
+            else {
+                Write-Output "Removing directory: $currentDir"
+                try {
+                    # Remove the entire directory
+                    Remove-Item $currentDir -Recurse -Force
+                    Write-Output "Successfully removed: $currentDir"
+                }
+                catch {
+                    Write-Error "Failed to remove directory: $currentDir. Error: $_"
+                }
+            }
+        }
+
+        Write-Output "Cleanup process completed."

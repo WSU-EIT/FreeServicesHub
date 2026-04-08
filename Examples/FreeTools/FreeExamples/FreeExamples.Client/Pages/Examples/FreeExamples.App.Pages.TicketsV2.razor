@@ -1,0 +1,234 @@
+﻿@page "/Examples/TicketsV2"
+@page "/{TenantCode}/Examples/TicketsV2"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V2: Ticket Detail — Read view with activity timeline and comments *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-clipboard-check me-1"></i> Ticket Detail</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title"><i class="fa-solid fa-clipboard-check me-1"></i> V2: Ticket Detail <StickyMenuIcon /></h1>
+        </div>
+
+        <ExampleNav />
+        <AboutSection Title="Ticket Detail View" Subtitle="Read-only detail with metadata sidebar, comments thread, and activity timeline" IconClass="fa-solid fa-clipboard-check">
+            <p class="small text-muted mb-0">Select a ticket to see its full detail: header with status and priority, description, metadata sidebar, and a comments thread with timestamps.</p>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Master-Detail Split Panel"
+                     Description="A col-md-3 / col-md-9 split creates the classic master-detail layout. The left column holds a scrollable list-group selector; clicking an item sets _selected and the right column re-renders the full detail. The max-height with overflow-y:auto keeps the list contained."
+                     Code="@_codeSplitPanel" />
+            <InfoTip Title="Metadata Sidebar Card"
+                     Description="A col-md-4 nested inside the detail column creates a sidebar for metadata fields (project, type, assignee, sprint, labels, dates). Each field is a label/value pair stacked with mb-2. Overdue dates get text-danger fw-bold automatically."
+                     Code="@_codeMetadataSidebar" />
+            <InfoTip Title="Internal vs. Public Comments"
+                     Description="Comments with IsInternal=true get a warning border and yellow tint (border-warning bg-warning bg-opacity-10) plus an 'Internal' badge. Public comments use the default border. This pattern lets teams keep private notes visible only to staff."
+                     Code="@_codeInternalComment" />
+        </div>
+
+        <div class="row g-3">
+            @* Left: Ticket selector *@
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-dark text-white small">Select Ticket</div>
+                    <div class="list-group list-group-flush" style="max-height:600px; overflow-y:auto;">
+                        @foreach (var t in _all) {
+                            <button class="list-group-item list-group-item-action py-1 small @(_selected?.RecordId == t.RecordId ? "active" : "")" @onclick="() => _selected = t">
+                                <code>@t.TicketNumber</code> @t.Title
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            @* Right: Detail *@
+            <div class="col-md-9">
+                @if (_selected != null) {
+                    var proj = _projects.FirstOrDefault(p => p.RecordId == _selected.ProjectId);
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-body">
+                            @* Header *@
+                            <div class="d-flex justify-content-between align-items-start mb-3">
+                                <div>
+                                    <div class="d-flex align-items-center gap-2 mb-1">
+                                        <i class="@GetTypeIcon(_selected.Type) fa-lg"></i>
+                                        <code class="fs-6">@_selected.TicketNumber</code>
+                                        <span class="badge @GetStatusBadge(_selected.Status)">@_selected.Status</span>
+                                        <span class="badge @GetPriorityBadge(_selected.Priority)">@_selected.Priority</span>
+                                    </div>
+                                    <h4 class="mb-0">@_selected.Title</h4>
+                                </div>
+                                @if (_selected.StoryPoints.HasValue) {
+                                    <div class="text-center">
+                                        <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center fw-bold" style="width:40px; height:40px;">@_selected.StoryPoints</div>
+                                        <div class="small text-muted">pts</div>
+                                    </div>
+                                }
+                            </div>
+
+                            <div class="row g-3">
+                                @* Main content *@
+                                <div class="col-md-8">
+                                    @* Description *@
+                                    <div class="mb-3">
+                                        <h6><i class="fa-solid fa-align-left me-1"></i>Description</h6>
+                                        <div class="border rounded p-3 bg-light small">@(_selected.Description ?? "No description provided.")</div>
+                                    </div>
+
+                                    @* Comments *@
+                                    <h6><i class="fa-solid fa-comments me-1"></i>Comments (@_selected.Comments.Count)</h6>
+                                    @if (_selected.Comments.Any()) {
+                                        @foreach (var c in _selected.Comments.OrderBy(c => c.CreatedDate)) {
+                                            <div class="border rounded p-2 mb-2 @(c.IsInternal ? "border-warning bg-warning bg-opacity-10" : "")">
+                                                <div class="d-flex justify-content-between small">
+                                                    <span class="fw-semibold">@c.AuthorName @if (c.IsInternal) { <span class="badge bg-warning text-dark ms-1">Internal</span> }</span>
+                                                    <span class="text-muted">@c.CreatedDate.ToString("MMM d, yyyy h:mm tt")</span>
+                                                </div>
+                                                <div class="small mt-1">@c.Body</div>
+                                            </div>
+                                        }
+                                    } else {
+                                        <p class="small text-muted">No comments yet.</p>
+                                    }
+                                </div>
+
+                                @* Sidebar metadata *@
+                                <div class="col-md-4">
+                                    <div class="card bg-light border-0">
+                                        <div class="card-body small">
+                                            <div class="mb-2"><div class="text-muted">Project</div><div class="fw-semibold">@(proj?.Name ?? "—")</div></div>
+                                            <div class="mb-2"><div class="text-muted">Type</div><div>@_selected.Type</div></div>
+                                            <div class="mb-2"><div class="text-muted">Assigned To</div><div class="fw-semibold">@(_selected.AssignedTo ?? "Unassigned")</div></div>
+                                            <div class="mb-2"><div class="text-muted">Reporter</div><div>@_selected.ReporterName</div></div>
+                                            @if (_selected.SprintId.HasValue) {
+                                                var sprint = _sprints.FirstOrDefault(s => s.RecordId == _selected.SprintId.Value);
+                                                <div class="mb-2"><div class="text-muted">Sprint</div><div>@(sprint?.Name ?? "—")</div></div>
+                                            }
+                                            @if (!string.IsNullOrEmpty(_selected.Labels)) {
+                                                <div class="mb-2">
+                                                    <div class="text-muted">Labels</div>
+                                                    <div class="d-flex flex-wrap gap-1">
+                                                        @foreach (var lbl in _selected.Labels.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) {
+                                                            <span class="badge bg-primary" style="font-size:0.6rem;">@lbl</span>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            }
+                                            @if (_selected.DueDate.HasValue) {
+                                                <div class="mb-2"><div class="text-muted">Due Date</div><div class="@(_selected.DueDate.Value < DateTime.Now ? "text-danger fw-bold" : "")">@_selected.DueDate.Value.ToString("MMM d, yyyy")</div></div>
+                                            }
+                                            @if (_selected.StartedDate.HasValue) {
+                                                <div class="mb-2"><div class="text-muted">Started</div><div>@_selected.StartedDate.Value.ToString("MMM d, yyyy")</div></div>
+                                            }
+                                            @if (_selected.CompletedDate.HasValue) {
+                                                <div class="mb-2"><div class="text-muted">Completed</div><div>@_selected.CompletedDate.Value.ToString("MMM d, yyyy")</div></div>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                } else {
+                    <div class="card border-0 shadow-sm"><div class="card-body text-center text-muted py-5"><i class="fa-solid fa-clipboard-check fa-2x mb-2 opacity-50"></i><div>Select a ticket to view details</div></div></div>
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "ticketsv2";
+    private List<DataObjects.Ticket> _all = new();
+    private List<DataObjects.Project> _projects = new();
+    private List<DataObjects.Sprint> _sprints = new();
+    private DataObjects.Ticket? _selected;
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            var t = await Helpers.GetOrPost<List<DataObjects.Ticket>>("api/Data/GetTickets", new List<Guid>());
+            var p = await Helpers.GetOrPost<List<DataObjects.Project>>("api/Data/GetProjects", new List<Guid>());
+            var s = await Helpers.GetOrPost<List<DataObjects.Sprint>>("api/Data/GetSprints", new List<Guid>());
+            _all = t ?? new(); _projects = p ?? new(); _sprints = s ?? new();
+            _loading = false; StateHasChanged();
+        }
+    }
+
+    private static string GetTypeIcon(DataObjects.TicketType t) => t switch {
+        DataObjects.TicketType.Epic => "fa-solid fa-bolt text-purple", DataObjects.TicketType.Story => "fa-solid fa-book-open text-success",
+        DataObjects.TicketType.Bug => "fa-solid fa-bug text-danger", DataObjects.TicketType.Task => "fa-solid fa-check-square text-primary",
+        DataObjects.TicketType.Improvement => "fa-solid fa-arrow-up text-info", _ => "fa-solid fa-puzzle-piece text-muted"
+    };
+    private static string GetStatusBadge(DataObjects.TicketStatus s) => s switch {
+        DataObjects.TicketStatus.Done or DataObjects.TicketStatus.Closed => "bg-success", DataObjects.TicketStatus.InProgress => "bg-primary",
+        DataObjects.TicketStatus.InReview or DataObjects.TicketStatus.Testing => "bg-info", DataObjects.TicketStatus.Wontfix => "bg-dark", _ => "bg-secondary"
+    };
+    private static string GetPriorityBadge(DataObjects.TicketPriority p) => p switch {
+        DataObjects.TicketPriority.Critical => "bg-danger", DataObjects.TicketPriority.High => "bg-warning text-dark",
+        DataObjects.TicketPriority.Medium => "bg-info", _ => "bg-secondary"
+    };
+
+    private string _codeSplitPanel = @"<div class=""row g-3"">
+  <div class=""col-md-3"">  @* Selector list *@
+    <div class=""list-group list-group-flush""
+         style=""max-height:600px; overflow-y:auto;"">
+      @foreach (var t in _all) {
+        <button class=""list-group-item list-group-item-action""
+                @onclick=""() => _selected = t"">
+          @t.TicketNumber @t.Title
+        </button>
+      }
+    </div>
+  </div>
+  <div class=""col-md-9"">  @* Detail panel *@
+    @if (_selected != null) { ... }
+  </div>
+</div>";
+
+    private string _codeMetadataSidebar = @"<div class=""col-md-4"">
+  <div class=""card bg-light border-0"">
+    <div class=""card-body small"">
+      <div class=""mb-2"">
+        <div class=""text-muted"">Project</div>
+        <div class=""fw-semibold"">@proj?.Name</div>
+      </div>
+      <div class=""mb-2"">
+        <div class=""text-muted"">Assigned To</div>
+        <div>@(_selected.AssignedTo ?? ""Unassigned"")</div>
+      </div>
+      @if (_selected.DueDate.HasValue) {
+        <div class=""@(_selected.DueDate.Value < DateTime.Now
+               ? ""text-danger fw-bold"" : """")"">
+          @_selected.DueDate.Value.ToString(""MMM d"")
+        </div>
+      }
+    </div>
+  </div>
+</div>";
+
+    private string _codeInternalComment = @"@foreach (var c in _selected.Comments) {
+  <div class=""border rounded p-2 mb-2
+       @(c.IsInternal
+         ? ""border-warning bg-warning bg-opacity-10""
+         : """")"">
+    <span class=""fw-semibold"">@c.AuthorName</span>
+    @if (c.IsInternal) {
+      <span class=""badge bg-warning text-dark ms-1"">
+        Internal
+      </span>
+    }
+    <div class=""small mt-1"">@c.Body</div>
+  </div>
+}";
+}

@@ -1,0 +1,328 @@
+@page "/Settings/ApiKeys"
+@page "/{TenantCode}/Settings/ApiKeys"
+@implements IDisposable
+@using Blazored.LocalStorage
+@inject IJSRuntime jsRuntime
+@inject HttpClient Http
+@inject ILocalStorageService LocalStorage
+@inject BlazorDataModel Model
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title">
+            <Language Tag="ApiKeyManager" IncludeIcon="true" />
+        </h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title">
+                <Language Tag="ApiKeyManager" IncludeIcon="true" />
+                <StickyMenuIcon />
+            </h1>
+            <div class="btn-group mb-2" role="group">
+                <button type="button" class="btn btn-primary" @onclick="LoadData">
+                    <Icon Name="Refresh" /> <Language Tag="Refresh" />
+                </button>
+            </div>
+        </div>
+
+        @* One-time key display *@
+        @if (_newlyGeneratedKeys.Any()) {
+            <div class="alert alert-success mb-3">
+                <h6 class="alert-heading">
+                    <Icon Name="Key" /> <Language Tag="NewKeysGenerated" />
+                </h6>
+                <p class="small mb-2">
+                    <strong><Language Tag="KeysWillNotBeShownAgain" /></strong>
+                </p>
+                @foreach (var key in _newlyGeneratedKeys) {
+                    <div class="d-flex align-items-center mb-1">
+                        <code class="me-2 flex-grow-1 bg-white p-1 rounded border">@key</code>
+                        <button type="button" class="btn btn-sm btn-outline-success" @onclick="@(() => CopyToClipboard(key))">
+                            <Icon Name="Copy" /> <Language Tag="Copy" />
+                        </button>
+                    </div>
+                }
+            </div>
+        }
+
+        @* Registration Keys Section *@
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><Icon Name="Key" /> <Language Tag="RegistrationKeys" /></span>
+                <div class="d-flex align-items-center">
+                    <label for="keycount" class="me-2 small mb-0"><Language Tag="Count" />:</label>
+                    <input type="number" id="keycount" class="form-control form-control-sm me-2" style="width:80px;"
+                           min="1" max="50" @bind="_generateCount" />
+                    <button type="button" class="btn btn-sm btn-success" @onclick="GenerateKeys">
+                        <Icon Name="Add" /> <Language Tag="GenerateKeys" />
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                @if (_registrationKeys.Any()) {
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped mb-0">
+                            <thead>
+                                <tr class="table-dark">
+                                    <th><Language Tag="KeyPrefix" /></th>
+                                    <th><Language Tag="Status" /></th>
+                                    <th><Language Tag="ExpiresAt" /></th>
+                                    <th><Language Tag="UsedBy" /></th>
+                                    <th><Language Tag="Created" /></th>
+                                    <th><Language Tag="CreatedBy" /></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var key in _registrationKeys.OrderByDescending(k => k.Created)) {
+                                    <tr>
+                                        <td><code>@key.KeyPrefix...</code></td>
+                                        <td>
+                                            @if (key.Used) {
+                                                <span class="badge bg-secondary"><Language Tag="Used" /></span>
+                                            } else if (key.ExpiresAt < DateTime.UtcNow) {
+                                                <span class="badge bg-warning text-dark"><Language Tag="Expired" /></span>
+                                            } else {
+                                                <span class="badge bg-success"><Language Tag="Available" /></span>
+                                            }
+                                        </td>
+                                        <td>@key.ExpiresAt.ToString("g")</td>
+                                        <td>
+                                            @if (key.UsedByAgentId.HasValue && key.UsedByAgentId != Guid.Empty) {
+                                                <a href="@(Helpers.BuildUrl("AgentDetail/" + key.UsedByAgentId.Value))">
+                                                    @key.UsedByAgentId.Value.ToString().Substring(0, 8)...
+                                                </a>
+                                            } else {
+                                                <span class="text-muted">-</span>
+                                            }
+                                        </td>
+                                        <td>@key.Created.ToString("g")</td>
+                                        <td>@key.CreatedBy</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                } else {
+                    <div class="p-3 text-muted">
+                        <Language Tag="NoRegistrationKeys" />
+                    </div>
+                }
+            </div>
+        </div>
+
+        @* API Client Tokens Section *@
+        <div class="card mb-3">
+            <div class="card-header">
+                <Icon Name="Lock" /> <Language Tag="ApiClientTokens" />
+            </div>
+            <div class="card-body p-0">
+                @if (_clientTokens.Any()) {
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped mb-0">
+                            <thead>
+                                <tr class="table-dark">
+                                    <th><Language Tag="TokenPrefix" /></th>
+                                    <th><Language Tag="AgentName" /></th>
+                                    <th><Language Tag="Created" /></th>
+                                    <th><Language Tag="Status" /></th>
+                                    <th style="width:1%;"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var token in _clientTokens.OrderByDescending(t => t.Created)) {
+                                    <tr>
+                                        <td><code>@token.TokenPrefix...</code></td>
+                                        <td>
+                                            @if (token.AgentId != Guid.Empty) {
+                                                <a href="@(Helpers.BuildUrl("AgentDetail/" + token.AgentId))">@token.AgentName</a>
+                                            } else {
+                                                @token.AgentName
+                                            }
+                                        </td>
+                                        <td>@token.Created.ToString("g")</td>
+                                        <td>
+                                            @if (token.Active) {
+                                                <span class="badge bg-success"><Language Tag="Active" /></span>
+                                            } else {
+                                                <span class="badge bg-secondary"><Language Tag="Revoked" /></span>
+                                                @if (token.RevokedAt.HasValue) {
+                                                    <span class="small text-muted ms-1">@token.RevokedAt.Value.ToString("g")</span>
+                                                }
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (token.Active) {
+                                                <button type="button" class="btn btn-xs btn-outline-danger nowrap" @onclick="@(() => RevokeToken(token))">
+                                                    <Icon Name="Delete" /> <Language Tag="Revoke" />
+                                                </button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                } else {
+                    <div class="p-3 text-muted">
+                        <Language Tag="NoApiClientTokens" />
+                    </div>
+                }
+            </div>
+        </div>
+    }
+}
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+
+    protected bool _loadedData = false;
+    protected bool _loading = true;
+    protected bool _validatedUrl = false;
+    protected string _pageName = "apikeys";
+
+    protected int _generateCount = 1;
+    protected List<DataObjects.RegistrationKey> _registrationKeys = new List<DataObjects.RegistrationKey>();
+    protected List<DataObjects.ApiClientToken> _clientTokens = new List<DataObjects.ApiClientToken>();
+    protected List<string> _newlyGeneratedKeys = new List<string>();
+
+    public void Dispose()
+    {
+        Model.OnChange -= OnDataModelUpdated;
+        Model.OnSignalRUpdate -= SignalRUpdate;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) {
+            Model.TenantCodeFromUrl = TenantCode;
+        }
+
+        if (Model.Loaded && Model.LoggedIn) {
+            if (!Model.User.Admin) {
+                Helpers.NavigateToRoot();
+                return;
+            }
+
+            if (!_validatedUrl) {
+                _validatedUrl = true;
+                await Helpers.ValidateUrl(TenantCode);
+            }
+
+            if (!_loadedData) {
+                _loadedData = true;
+                await LoadData();
+            }
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.OnChange += OnDataModelUpdated;
+        Model.OnSignalRUpdate += SignalRUpdate;
+        Model.View = _pageName;
+    }
+
+    protected void OnDataModelUpdated()
+    {
+        if (Model.View == _pageName) {
+            StateHasChanged();
+        }
+    }
+
+    protected async Task LoadData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        var keys = await Helpers.GetOrPost<List<DataObjects.RegistrationKey>>("api/Data/GetRegistrationKeys");
+        if (keys != null) {
+            _registrationKeys = keys;
+        }
+
+        var tokens = await Helpers.GetOrPost<List<DataObjects.ApiClientToken>>("api/Data/GetApiClientTokens");
+        if (tokens != null) {
+            _clientTokens = tokens;
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    protected async Task GenerateKeys()
+    {
+        if (_generateCount < 1) _generateCount = 1;
+        if (_generateCount > 50) _generateCount = 50;
+
+        Model.ClearMessages();
+        Model.Message_Saving();
+
+        _newlyGeneratedKeys.Clear();
+
+        var result = await Helpers.GetOrPost<List<DataObjects.RegistrationKey>>("api/Data/GenerateRegistrationKeys", new { Count = _generateCount });
+
+        Model.ClearMessages();
+
+        if (result != null) {
+            foreach (var key in result) {
+                if (!string.IsNullOrWhiteSpace(key.NewKeyPlaintext)) {
+                    _newlyGeneratedKeys.Add(key.NewKeyPlaintext);
+                }
+                _registrationKeys.Add(key);
+            }
+            StateHasChanged();
+        } else {
+            Model.UnknownError();
+        }
+    }
+
+    protected async Task RevokeToken(DataObjects.ApiClientToken token)
+    {
+        Model.ClearMessages();
+        Model.Message_Saving();
+
+        var result = await Helpers.GetOrPost<DataObjects.BooleanResponse>("api/Data/RevokeToken/" + token.ApiClientTokenId);
+
+        Model.ClearMessages();
+
+        if (result != null && result.Result) {
+            token.Active = false;
+            token.RevokedAt = DateTime.UtcNow;
+            StateHasChanged();
+        } else {
+            if (result != null) {
+                Model.ErrorMessages(result.Messages);
+            } else {
+                Model.UnknownError();
+            }
+        }
+    }
+
+    protected async Task CopyToClipboard(string text)
+    {
+        try {
+            await jsRuntime.InvokeVoidAsync("navigator.clipboard.writeText", text);
+        } catch { }
+    }
+
+    protected void SignalRUpdate(DataObjects.SignalRUpdate update)
+    {
+        if (Model.View != _pageName) return;
+        if (update.TenantId != null && update.TenantId != Model.TenantId) return;
+
+        switch (update.UpdateType) {
+            case DataObjects.SignalRUpdateType.RegistrationKeyGenerated:
+                if (update.ObjectAsString != null) {
+                    var key = Helpers.DeserializeObject<DataObjects.RegistrationKey>(update.ObjectAsString);
+                    if (key != null && !_registrationKeys.Any(k => k.RegistrationKeyId == key.RegistrationKeyId)) {
+                        _registrationKeys.Add(key);
+                        StateHasChanged();
+                    }
+                }
+                break;
+
+            case DataObjects.SignalRUpdateType.AgentConnected:
+                // Refresh tokens when a new agent registers
+                _ = LoadData();
+                break;
+        }
+    }
+}

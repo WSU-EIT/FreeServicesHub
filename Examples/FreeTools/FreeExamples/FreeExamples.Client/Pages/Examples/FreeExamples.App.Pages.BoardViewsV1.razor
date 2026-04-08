@@ -1,0 +1,124 @@
+﻿@page "/Examples/BoardViewsV1"
+@page "/{TenantCode}/Examples/BoardViewsV1"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V1: Kanban Board — Full kanban with WIP limits and card counts *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-grip-vertical me-1"></i> Kanban Board</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title"><i class="fa-solid fa-grip-vertical me-1"></i> V1: Kanban Board <StickyMenuIcon /></h1>
+        </div>
+
+        <ExampleNav />
+        <AboutSection Title="Full Kanban Board" Subtitle="Columns with WIP limits — headers turn red when over the limit" IconClass="fa-solid fa-grip-vertical">
+            <p class="small text-muted mb-0">Each column has a configurable Work-In-Progress limit. When a column exceeds its WIP limit, the header turns red as a visual warning. Drag cards between columns to move work forward.</p>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="WIP Limits"
+                     Description="WIP (Work In Progress) limits cap how many items can be in a column. When exceeded, the column header turns bg-danger to signal a bottleneck. This is a core Kanban practice."
+                     Code="@_codeWip" />
+        </div>
+
+        <div class="d-flex gap-2 overflow-auto pb-3">
+            @foreach (var col in _columnDefs) {
+                var colTickets = _tickets.Where(t => t.Status == col.Status).OrderBy(t => t.SortOrder).ToList();
+                var overWip = col.WipLimit > 0 && colTickets.Count > col.WipLimit;
+                var isDropTarget = _dragOverCol == col.Status;
+
+                <div class="flex-shrink-0" style="width:240px;">
+                    <div class="card border-0 shadow-sm @(isDropTarget ? "border-primary border-2" : "")"
+                         @ondragover="() => _dragOverCol = col.Status" @ondragover:preventDefault="true"
+                         @ondrop="() => HandleDrop(col.Status)" @ondragleave="() => _dragOverCol = null">
+                        <div class="card-header py-1 d-flex justify-content-between small @(overWip ? "bg-danger text-white" : "bg-dark text-white")">
+                            <span>@col.Title</span>
+                            <span>
+                                <span class="badge @(overWip ? "bg-white text-danger" : "bg-white text-dark") rounded-pill">@colTickets.Count</span>
+                                @if (col.WipLimit > 0) { <span class="opacity-75">/@col.WipLimit</span> }
+                            </span>
+                        </div>
+                        <div class="card-body p-1" style="min-height:200px; max-height:500px; overflow-y:auto;">
+                            @foreach (var t in colTickets) {
+                                <div class="card mb-1 border-0 shadow-sm @(_collapsed.Contains(col.Status) ? "d-none" : "")"
+                                     draggable="true" @ondragstart="() => _dragging = t" @ondragend="() => _dragging = null" style="cursor:grab;">
+                                    <div class="card-body p-2 small">
+                                        <div class="d-flex justify-content-between mb-1">
+                                            <code style="font-size:0.6rem;">@t.TicketNumber</code>
+                                            <span class="badge @GetPriorityBadge(t.Priority)" style="font-size:0.5rem;">@t.Priority</span>
+                                        </div>
+                                        <div class="fw-semibold" style="font-size:0.75rem;">@t.Title</div>
+                                        @if (!string.IsNullOrEmpty(t.AssignedTo)) {
+                                            <div class="text-muted mt-1" style="font-size:0.65rem;"><i class="fa-solid fa-user me-1"></i>@t.AssignedTo</div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            @if (!colTickets.Any()) {
+                                <div class="text-center text-muted small py-3 opacity-50">Empty</div>
+                            }
+                        </div>
+                        @if (colTickets.Count > 3) {
+                            <div class="card-footer bg-light py-1 text-center">
+                                <button class="btn btn-link btn-sm p-0 text-muted" @onclick="() => ToggleCollapse(col.Status)">
+                                    @(_collapsed.Contains(col.Status) ? $"Show {colTickets.Count} cards" : "Collapse")
+                                </button>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "boardviewsv1";
+    private List<DataObjects.Ticket> _tickets = new();
+    private DataObjects.Ticket? _dragging;
+    private DataObjects.TicketStatus? _dragOverCol;
+    private HashSet<DataObjects.TicketStatus> _collapsed = new();
+    private string _codeWip = "var overWip = col.WipLimit > 0 && count > col.WipLimit;\n<div class=\"card-header @(overWip ? \"bg-danger\" : \"bg-dark\")\">";
+
+    private record ColumnDef(string Title, DataObjects.TicketStatus Status, int WipLimit);
+    private static readonly List<ColumnDef> _columnDefs = [
+        new("Backlog", DataObjects.TicketStatus.Backlog, 0),
+        new("To Do", DataObjects.TicketStatus.ToDo, 6),
+        new("In Progress", DataObjects.TicketStatus.InProgress, 4),
+        new("In Review", DataObjects.TicketStatus.InReview, 3),
+        new("Testing", DataObjects.TicketStatus.Testing, 3),
+        new("Done", DataObjects.TicketStatus.Done, 0),
+    ];
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            var t = await Helpers.GetOrPost<List<DataObjects.Ticket>>("api/Data/GetTickets", new List<Guid>());
+            _tickets = t ?? new(); _loading = false; StateHasChanged();
+        }
+    }
+
+    private void ToggleCollapse(DataObjects.TicketStatus s) { if (!_collapsed.Remove(s)) _collapsed.Add(s); }
+
+    private async Task HandleDrop(DataObjects.TicketStatus newStatus) {
+        _dragOverCol = null;
+        if (_dragging == null || _dragging.Status == newStatus) return;
+        _dragging.Status = newStatus;
+        await Helpers.GetOrPost<List<DataObjects.Ticket>>("api/Data/SaveTickets", new List<DataObjects.Ticket> { _dragging });
+        _dragging = null; StateHasChanged();
+    }
+
+    private static string GetPriorityBadge(DataObjects.TicketPriority p) => p switch {
+        DataObjects.TicketPriority.Critical => "bg-danger", DataObjects.TicketPriority.High => "bg-warning text-dark",
+        DataObjects.TicketPriority.Medium => "bg-info", _ => "bg-secondary"
+    };
+}

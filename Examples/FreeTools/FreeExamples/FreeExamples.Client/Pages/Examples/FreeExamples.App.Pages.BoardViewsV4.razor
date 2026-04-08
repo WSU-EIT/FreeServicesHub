@@ -1,0 +1,170 @@
+﻿@page "/Examples/BoardViewsV4"
+@page "/{TenantCode}/Examples/BoardViewsV4"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V4: Board Settings — Configuration form for board layout *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-sliders me-1"></i> Board Settings</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title"><i class="fa-solid fa-sliders me-1"></i> V4: Board Settings <StickyMenuIcon /></h1>
+        </div>
+
+        <ExampleNav />
+        <AboutSection Title="Board Settings" Subtitle="Configure which statuses become columns, WIP limits, swimlane grouping, and card density" IconClass="fa-solid fa-sliders">
+            <p class="small text-muted mb-0">This is the settings/configuration form for board views. Demonstrates a form that manages display preferences — column ordering, WIP limits, default filters, and density toggles.</p>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Board Configuration Entity"
+                     Description="BoardConfig is its own IJsonEntity — each user/project can have multiple saved board configurations. Column mappings and WIP limits are stored as JSON strings."
+                     Code="@_codeConfig" />
+        </div>
+
+        <div class="row g-3">
+            @* Left: Saved configs *@
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-dark text-white d-flex justify-content-between small">
+                        <span>Saved Boards</span>
+                        <button class="btn btn-sm btn-outline-light" @onclick="NewConfig"><i class="fa-solid fa-plus me-1"></i>New</button>
+                    </div>
+                    <div class="list-group list-group-flush">
+                        @foreach (var c in _configs) {
+                            <button class="list-group-item list-group-item-action small @(_editing?.RecordId == c.RecordId ? "active" : "")" @onclick="() => EditConfig(c)">
+                                <div class="d-flex justify-content-between">
+                                    <span><i class="fa-solid @(c.BoardType == DataObjects.BoardType.Sprint ? "fa-person-running" : "fa-grip-vertical") me-1"></i>@c.BoardName</span>
+                                    <span class="badge bg-secondary">@c.BoardType</span>
+                                </div>
+                            </button>
+                        }
+                        @if (!_configs.Any()) {
+                            <div class="list-group-item text-muted small">No saved boards</div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            @* Right: Config form *@
+            <div class="col-md-8">
+                @if (_editing != null) {
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-header bg-light d-flex justify-content-between">
+                            <span class="fw-semibold">@(_editing.RecordId == Guid.Empty ? "New Board" : _editing.BoardName)</span>
+                            @if (_saved) { <span class="badge bg-success"><i class="fa-solid fa-check me-1"></i>Saved</span> }
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-semibold">Board Name</label>
+                                    <input type="text" class="form-control form-control-sm" @bind="_editing.BoardName" />
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-semibold">Board Type</label>
+                                    <div class="btn-group btn-group-sm w-100">
+                                        <button class="btn @(_editing.BoardType == DataObjects.BoardType.Kanban ? "btn-primary" : "btn-outline-secondary")" @onclick="() => _editing.BoardType = DataObjects.BoardType.Kanban">Kanban</button>
+                                        <button class="btn @(_editing.BoardType == DataObjects.BoardType.Sprint ? "btn-primary" : "btn-outline-secondary")" @onclick="() => _editing.BoardType = DataObjects.BoardType.Sprint">Sprint</button>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-semibold">Project</label>
+                                    <select class="form-select form-select-sm" @bind="_selectedProjectId">
+                                        @foreach (var p in _projects.OrderBy(p => p.Name)) { <option value="@p.RecordId">@p.Name</option> }
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-semibold">Default Swimlane</label>
+                                    <select class="form-select form-select-sm" @bind="_editing.SwimlaneField">
+                                        <option value="">None</option>
+                                        <option value="assignee">By Assignee</option>
+                                        <option value="priority">By Priority</option>
+                                        <option value="type">By Type</option>
+                                    </select>
+                                </div>
+
+                                @* Column / WIP config *@
+                                <div class="col-12">
+                                    <label class="form-label small fw-semibold">Columns & WIP Limits</label>
+                                    <table class="table table-sm small mb-0">
+                                        <thead class="table-light">
+                                            <tr><th>Status</th><th>Enabled</th><th>WIP Limit</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var s in Enum.GetValues<DataObjects.TicketStatus>()) {
+                                                var enabled = _enabledColumns.Contains(s);
+                                                <tr>
+                                                    <td>@s</td>
+                                                    <td><input type="checkbox" class="form-check-input" checked="@enabled" @onchange="() => ToggleColumn(s)" /></td>
+                                                    <td><input type="number" class="form-control form-control-sm" style="width:80px;" min="0" @bind="_wipLimits[s]" disabled="@(!enabled)" /></td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                @* Card density *@
+                                <div class="col-12">
+                                    <label class="form-label small fw-semibold">Card Density</label>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn @(_density == "compact" ? "btn-primary" : "btn-outline-secondary")" @onclick='() => _density = "compact"'>Compact</button>
+                                        <button class="btn @(_density == "normal" ? "btn-primary" : "btn-outline-secondary")" @onclick='() => _density = "normal"'>Normal</button>
+                                        <button class="btn @(_density == "detailed" ? "btn-primary" : "btn-outline-secondary")" @onclick='() => _density = "detailed"'>Detailed</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="d-flex gap-2 mt-3">
+                                <button class="btn btn-primary btn-sm" @onclick="SaveConfig"><i class="fa-solid fa-floppy-disk me-1"></i>Save</button>
+                                <button class="btn btn-outline-secondary btn-sm" @onclick="() => _editing = null">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                } else {
+                    <div class="card border-0 shadow-sm"><div class="card-body text-center text-muted py-5"><i class="fa-solid fa-sliders fa-2x mb-2 opacity-50"></i><div>Select a board or click <strong>New</strong></div></div></div>
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false, _saved = false;
+    private string _pageName = "boardviewsv4";
+    private List<DataObjects.BoardConfig> _configs = new();
+    private List<DataObjects.Project> _projects = new();
+    private DataObjects.BoardConfig? _editing;
+    private string _selectedProjectId = "", _density = "normal";
+    private HashSet<DataObjects.TicketStatus> _enabledColumns = new(Enum.GetValues<DataObjects.TicketStatus>());
+    private Dictionary<DataObjects.TicketStatus, int> _wipLimits = Enum.GetValues<DataObjects.TicketStatus>().ToDictionary(s => s, s => 0);
+    private string _codeConfig = "BoardConfig : IJsonEntity {\n  string ColumnConfig; // JSON\n  string WipLimits;    // JSON\n}";
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            _configs = await Helpers.GetOrPost<List<DataObjects.BoardConfig>>("api/Data/GetBoardConfigs", new List<Guid>()) ?? new();
+            _projects = await Helpers.GetOrPost<List<DataObjects.Project>>("api/Data/GetProjects", new List<Guid>()) ?? new();
+            _loading = false; StateHasChanged();
+        }
+    }
+
+    private void NewConfig() { _editing = new DataObjects.BoardConfig { BoardType = DataObjects.BoardType.Kanban }; _saved = false; ResetColumns(); }
+    private void EditConfig(DataObjects.BoardConfig c) { _editing = c; _saved = false; _selectedProjectId = c.ProjectId.ToString(); ResetColumns(); }
+    private void ResetColumns() { _enabledColumns = new(Enum.GetValues<DataObjects.TicketStatus>()); _wipLimits = Enum.GetValues<DataObjects.TicketStatus>().ToDictionary(s => s, s => 0); }
+    private void ToggleColumn(DataObjects.TicketStatus s) { if (!_enabledColumns.Remove(s)) _enabledColumns.Add(s); }
+
+    private async Task SaveConfig() {
+        if (_editing == null) return;
+        if (Guid.TryParse(_selectedProjectId, out var pid)) _editing.ProjectId = pid;
+        var result = await Helpers.GetOrPost<List<DataObjects.BoardConfig>>("api/Data/SaveBoardConfigs", new List<DataObjects.BoardConfig> { _editing });
+        if (result?.Any() == true) { var s = result.First(); var idx = _configs.FindIndex(c => c.RecordId == s.RecordId); if (idx >= 0) _configs[idx] = s; else _configs.Add(s); _editing = s; _saved = true; }
+        StateHasChanged();
+    }
+}

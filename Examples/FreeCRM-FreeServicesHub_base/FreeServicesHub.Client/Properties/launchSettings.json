@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "FreeServicesHub.Client": {
+      "commandName": "Project",
+      "nativeDebugging": false
+    }
+  }
+}

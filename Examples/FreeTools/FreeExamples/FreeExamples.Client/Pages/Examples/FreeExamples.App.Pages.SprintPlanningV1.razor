@@ -1,0 +1,171 @@
+﻿@page "/Examples/SprintPlanningV1"
+@page "/{TenantCode}/Examples/SprintPlanningV1"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V1: Planning View — Split panel: backlog on left, sprint on right, drag to assign *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-arrows-left-right me-1"></i> Planning View</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title"><i class="fa-solid fa-arrows-left-right me-1"></i> V1: Planning View <StickyMenuIcon /></h1>
+        </div>
+
+        <ExampleNav />
+        <AboutSection Title="Sprint Planning View" Subtitle="Drag tickets from backlog into a sprint with running capacity gauge" IconClass="fa-solid fa-arrows-left-right">
+            <p class="small text-muted mb-0">Split panel: left shows backlog (tickets not in any sprint), right shows the selected sprint. Drag tickets from left to right to plan the sprint. Running story point total vs. capacity with over-commitment warning.</p>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Drag to Assign"
+                     Description="Drag a ticket card from the backlog panel and drop it on the sprint panel. The ticket's SprintId is updated and saved immediately."
+                     Code="@_codeDrag" />
+            <InfoTip Title="Capacity Warning"
+                     Description="When planned story points exceed the sprint's capacity, the progress bar turns red and shows an 'Over capacity!' badge."
+                     Code="@_codeCapacity" />
+        </div>
+
+        @* Sprint selector *@
+        <div class="d-flex align-items-center gap-2 mb-3">
+            <label class="form-label mb-0 small fw-semibold">Sprint:</label>
+            <select class="form-select form-select-sm" style="width:auto;" @bind="_selectedSprintId" @bind:after="Refresh">
+                @foreach (var s in _sprints.Where(s => s.Status == DataObjects.SprintStatus.Planning || s.Status == DataObjects.SprintStatus.Active).OrderBy(s => s.StartDate)) {
+                    <option value="@s.RecordId">@s.Name @(s.CapacityPoints.HasValue ? $"(cap: {s.CapacityPoints} pts)" : "")</option>
+                }
+            </select>
+        </div>
+
+        <div class="row g-3">
+            @* Left: Backlog *@
+            <div class="col-md-6">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center py-1">
+                        <span><i class="fa-solid fa-inbox me-1"></i>Backlog</span>
+                        <span class="badge bg-white text-dark rounded-pill">@_backlog.Count</span>
+                    </div>
+                    <div class="card-body p-1" style="max-height:550px; overflow-y:auto;">
+                        @foreach (var t in _backlog.OrderBy(t => t.SortOrder)) {
+                            <div class="card mb-1 border-0 shadow-sm" draggable="true" @ondragstart="() => _dragging = t" @ondragend="() => _dragging = null" style="cursor:grab;">
+                                <div class="card-body p-2 small">
+                                    <div class="d-flex justify-content-between">
+                                        <span><code style="font-size:0.65rem;">@t.TicketNumber</code> @t.Title</span>
+                                        <span class="badge bg-secondary rounded-pill" style="font-size:0.55rem;">@(t.StoryPoints?.ToString() ?? "?") pts</span>
+                                    </div>
+                                    <div class="d-flex gap-1 mt-1">
+                                        <span class="badge @GetPriorityBadge(t.Priority)" style="font-size:0.5rem;">@t.Priority</span>
+                                        <span class="badge bg-info bg-opacity-25 text-dark" style="font-size:0.5rem;">@t.Type</span>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                        @if (!_backlog.Any()) { <div class="text-center text-muted py-4 small">Backlog is empty</div> }
+                    </div>
+                </div>
+            </div>
+
+            @* Right: Sprint *@
+            <div class="col-md-6">
+                <div class="card border-0 shadow-sm @(_dragOverSprint ? "border-primary border-2" : "")"
+                     @ondragover="() => _dragOverSprint = true" @ondragover:preventDefault="true"
+                     @ondrop="HandleDropOnSprint" @ondragleave="() => _dragOverSprint = false">
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center py-1">
+                        <span><i class="fa-solid fa-flag me-1"></i>@(_activeSprint?.Name ?? "Select Sprint")</span>
+                        <span class="badge bg-white text-dark rounded-pill">@_sprintTickets.Count</span>
+                    </div>
+
+                    @* Capacity gauge *@
+                    @if (_activeSprint?.CapacityPoints > 0) {
+                        var cap = _activeSprint.CapacityPoints!.Value;
+                        var planned = _sprintTickets.Where(t => t.StoryPoints.HasValue).Sum(t => t.StoryPoints!.Value);
+                        var pct = Math.Min(100, (int)(planned * 100.0 / cap));
+                        var over = planned > cap;
+                        <div class="card-header bg-light py-1">
+                            <div class="d-flex justify-content-between small mb-1">
+                                <span>@planned / @cap pts</span>
+                                @if (over) { <span class="badge bg-danger">Over capacity!</span> }
+                            </div>
+                            <div class="progress" style="height:6px;">
+                                <div class="progress-bar @(over ? "bg-danger" : "bg-primary")" style="width:@pct%"></div>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="card-body p-1" style="min-height:200px; max-height:480px; overflow-y:auto;">
+                        @foreach (var t in _sprintTickets.OrderBy(t => t.SortOrder)) {
+                            <div class="card mb-1 border-0 shadow-sm">
+                                <div class="card-body p-2 small d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <code style="font-size:0.65rem;">@t.TicketNumber</code> @t.Title
+                                        <div class="d-flex gap-1 mt-1">
+                                            <span class="badge @GetPriorityBadge(t.Priority)" style="font-size:0.5rem;">@t.Priority</span>
+                                            <span class="badge @GetStatusBadge(t.Status)" style="font-size:0.5rem;">@t.Status</span>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex align-items-center gap-1">
+                                        <span class="badge bg-secondary rounded-pill" style="font-size:0.55rem;">@(t.StoryPoints?.ToString() ?? "?") pts</span>
+                                        <button class="btn btn-sm btn-outline-danger p-0 px-1" style="font-size:0.6rem;" @onclick="() => RemoveFromSprint(t)" title="Remove"><i class="fa-solid fa-times"></i></button>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                        @if (!_sprintTickets.Any()) { <div class="text-center text-muted py-4 small"><i class="fa-solid fa-arrow-left me-1"></i>Drag tickets here</div> }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false, _dragOverSprint = false;
+    private string _pageName = "sprintplanningv1";
+    private List<DataObjects.Sprint> _sprints = new();
+    private List<DataObjects.Ticket> _allTickets = new(), _backlog = new(), _sprintTickets = new();
+    private DataObjects.Sprint? _activeSprint;
+    private DataObjects.Ticket? _dragging;
+    private string _selectedSprintId = "";
+
+    private string _codeDrag = "@ondragstart=\"() => _dragging = ticket\"\n@ondrop=\"HandleDropOnSprint\"";
+    private string _codeCapacity = "var over = planned > capacity;\n<div class=\"progress-bar @(over ? \"bg-danger\" : \"bg-primary\")\">";
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            _sprints = await Helpers.GetOrPost<List<DataObjects.Sprint>>("api/Data/GetSprints", new List<Guid>()) ?? new();
+            _allTickets = await Helpers.GetOrPost<List<DataObjects.Ticket>>("api/Data/GetTickets", new List<Guid>()) ?? new();
+            var first = _sprints.FirstOrDefault(s => s.Status == DataObjects.SprintStatus.Planning || s.Status == DataObjects.SprintStatus.Active);
+            if (first != null) _selectedSprintId = first.RecordId.ToString();
+            Refresh(); _loading = false; StateHasChanged();
+        }
+    }
+
+    private void Refresh() {
+        _activeSprint = Guid.TryParse(_selectedSprintId, out var sid) ? _sprints.FirstOrDefault(s => s.RecordId == sid) : null;
+        _backlog = _allTickets.Where(t => t.SprintId == null || t.SprintId == Guid.Empty).ToList();
+        _sprintTickets = _activeSprint != null ? _allTickets.Where(t => t.SprintId == _activeSprint.RecordId).ToList() : new();
+    }
+
+    private async Task HandleDropOnSprint() {
+        _dragOverSprint = false;
+        if (_dragging == null || _activeSprint == null) return;
+        _dragging.SprintId = _activeSprint.RecordId;
+        await Helpers.GetOrPost<List<DataObjects.Ticket>>("api/Data/SaveTickets", new List<DataObjects.Ticket> { _dragging });
+        _dragging = null; Refresh(); StateHasChanged();
+    }
+
+    private async Task RemoveFromSprint(DataObjects.Ticket t) {
+        t.SprintId = null;
+        await Helpers.GetOrPost<List<DataObjects.Ticket>>("api/Data/SaveTickets", new List<DataObjects.Ticket> { t });
+        Refresh(); StateHasChanged();
+    }
+
+    private static string GetPriorityBadge(DataObjects.TicketPriority p) => p switch { DataObjects.TicketPriority.Critical => "bg-danger", DataObjects.TicketPriority.High => "bg-warning text-dark", DataObjects.TicketPriority.Medium => "bg-info", _ => "bg-secondary" };
+    private static string GetStatusBadge(DataObjects.TicketStatus s) => s switch { DataObjects.TicketStatus.Done or DataObjects.TicketStatus.Closed => "bg-success", DataObjects.TicketStatus.InProgress => "bg-primary", _ => "bg-secondary" };
+}

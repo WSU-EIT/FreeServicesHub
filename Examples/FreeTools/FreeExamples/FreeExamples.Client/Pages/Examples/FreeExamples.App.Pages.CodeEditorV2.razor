@@ -1,0 +1,67 @@
+@page "/Examples/CodeEditorV2"
+@page "/{TenantCode}/Examples/CodeEditorV2"
+@implements IDisposable
+@inject BlazorDataModel Model
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) { <h1 class="page-title"><i class="fa-solid fa-code me-1"></i> API Tester</h1><LoadingMessage /> } else {
+        <div class="@Model.StickyMenuClass"><h1 class="page-title"><i class="fa-solid fa-code me-1"></i> V2: REST API Tester <StickyMenuIcon /></h1></div>
+
+        <ExampleNav />
+        <AboutSection Title="Code Editor in Context: API Tester" Subtitle="Postman-style API request builder with JSON response viewer" IconClass="fa-solid fa-code">
+            <p class="small text-muted mb-0">Build an API request (method, URL, headers, body), send it, and view the JSON response — the Postman / Insomnia pattern.</p>
+        </AboutSection>
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="HTTP Method Badge"
+                     Description="The method dropdown uses colored badges: bg-success for GET, bg-primary for POST, bg-warning for PUT, bg-danger for DELETE. This visual coding matches Postman and Swagger UI. The badge color changes dynamically based on the selected method."
+                     Code="@_codeMethodBadge" />
+            <InfoTip Title="Request/Response Split"
+                     Description="The API tester splits into request (top) and response (bottom). The request has URL, method, headers, and body. The response shows status code, headers, and body. This vertical split is the Postman/Insomnia layout."
+                     Code="@_codeReqResSplit" />
+            <InfoTip Title="Status Code Coloring"
+                     Description="Response status codes are color-coded: 2xx green (bg-success), 4xx yellow (bg-warning), 5xx red (bg-danger). The badge shows both code and text (200 OK, 404 Not Found). This instant visual feedback is standard in API tools."
+                     Code="@_codeStatusCode" />
+        </div>
+        <div class="card shadow-sm border-0 mb-3">
+            <div class="card-header bg-white py-2"><span class="small fw-semibold"><i class="fa-solid fa-paper-plane me-1"></i> Request</span></div>
+            <div class="card-body">
+                <div class="d-flex gap-2 mb-3">
+                    <select class="form-select form-select-sm" style="width:120px;" @bind="_method"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option></select>
+                    <input type="text" class="form-control form-control-sm" @bind="_url" />
+                    <button class="btn btn-sm btn-primary" @onclick="Send"><i class="fa-solid fa-play me-1"></i> Send</button>
+                </div>
+                <div class="mb-2"><label class="form-label small">Headers</label><pre class="bg-light p-2 rounded small mb-0" style="font-size:0.75rem;">Content-Type: application/json
+Authorization: Bearer eyJhbG...mock</pre></div>
+                @if (_method == "POST" || _method == "PUT") {
+                    <div><label class="form-label small">Body (JSON)</label><pre class="bg-dark text-light p-2 rounded small mb-0" style="font-size:0.75rem;">@_requestBody</pre></div>
+                }
+            </div>
+        </div>
+        @if (_sent) {
+            <div class="card shadow-sm border-0"><div class="card-header bg-white py-2 d-flex justify-content-between"><span class="small fw-semibold"><i class="fa-solid fa-arrow-down me-1"></i> Response</span><div><span class="badge bg-success me-1">200 OK</span><span class="badge bg-light text-dark border">142ms</span></div></div>
+                <div class="card-body p-0"><pre class="bg-dark text-light p-3 mb-0" style="font-size:0.75rem; max-height:300px; overflow-y:auto;">{
+  "success": true,
+  "data": [
+    { "name": "Widget Alpha", "category": "Engineering", "amount": 1200 },
+    { "name": "Beta Module", "category": "Sales", "amount": 800 },
+    { "name": "Gamma Service", "category": "Support", "amount": 2100 }
+  ],
+  "totalCount": 3,
+  "timestamp": "@DateTime.UtcNow.ToString("o")"
+}</pre></div></div>
+        }
+    }
+}
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false, _sent = false;
+    private string _pageName = "codeeditorv2";
+    private string _codeMethodBadge = "<span class=\"badge @(_method == \"GET\" ? \"bg-success\" :\n  _method == \"POST\" ? \"bg-primary\" :\n  _method == \"DELETE\" ? \"bg-danger\" : \"bg-warning\")\">\n  @_method\n</span>";
+    private string _codeReqResSplit = "<div class=\"card\">Request: URL + method + body</div>\n<div class=\"card\">Response: status + headers + body</div>";
+    private string _codeStatusCode = "<span class=\"badge @(code < 300 ? \"bg-success\" :\n  code < 400 ? \"bg-info\" : code < 500 ? \"bg-warning\" : \"bg-danger\")\">\n  @code @text\n</span>";
+    private string _method = "GET", _url = "https://api.example.com/v1/sampleitems";
+    private string _requestBody = "{\n  \"name\": \"New Item\",\n  \"category\": \"Engineering\",\n  \"amount\": 1500\n}";
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) Model.TenantCodeFromUrl = TenantCode; if (Model.Loaded && Model.LoggedIn && !_loadedData) { _loadedData = true; _loading = false; StateHasChanged(); } }
+    private void Send() { _sent = true; }
+}

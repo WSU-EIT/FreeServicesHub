@@ -1,0 +1,520 @@
+﻿@* Pipeline Card Component *@
+@* Displays a single pipeline with status badge and action buttons *@
+@* Phase 1 Dashboard Enhancement: Added Build Number, Duration, BranchBadge, Relative Timestamps *@
+@* Phase 2 Clickability Enhancement: All links are proper anchor tags for right-click/middle-click *@
+
+@using Humanizer
+
+<div class="card h-100 shadow-sm border-0 pipeline-card">
+    @* Card Header with Status + Build Number + Branch Badge *@
+    <div class="card-header bg-white border-bottom-0 py-3">
+        <div class="d-flex justify-content-between align-items-start">
+            <div class="flex-grow-1 me-2">
+                <h6 class="card-title mb-0 d-flex align-items-center flex-wrap gap-1">
+                    <a href="@Pipeline?.ResourceUrl" target="_blank" 
+                       class="text-decoration-none text-dark pipeline-title-link text-truncate" 
+                       title="@Pipeline?.Name - Open in Azure DevOps"
+                       style="max-width: 180px;">
+                        @Pipeline?.Name
+                    </a>
+                    @if (!string.IsNullOrWhiteSpace(Pipeline?.LastRunBuildNumber)) {
+                        @* Build number links to pipeline runs *@
+                        <a href="@Pipeline?.PipelineRunsUrl" target="_blank"
+                           class="text-muted small text-decoration-none link-underline-opacity-0 link-underline-opacity-75-hover" 
+                           title="View all runs for #@Pipeline.LastRunBuildNumber">
+                            #@TruncateName(Pipeline.LastRunBuildNumber, 10)
+                        </a>
+                    }
+                </h6>
+                @* Branch Badge - Now prominent in header *@
+                @if (!string.IsNullOrWhiteSpace(GetBranchToDisplay())) {
+                    <div class="mt-1">
+                        <BranchBadge Branch="@GetBranchToDisplay()" BranchUrl="@Pipeline?.CodeBranchUrl" MaxLength="18" />
+                    </div>
+                }
+            </div>
+            @* Status Badge - Clickable link to build results *@
+            @if (!string.IsNullOrWhiteSpace(Pipeline?.LastRunResultsUrl)) {
+                <a href="@Pipeline.LastRunResultsUrl" target="_blank"
+                   class="text-decoration-none clickable-badge"
+                   title="View build results in Azure DevOps">
+                    @GetStatusBadge()
+                </a>
+            } else {
+                @GetStatusBadge()
+            }
+        </div>
+    </div>
+
+    @* Card Body *@
+    <div class="card-body pt-0">
+        @* Repository Info (clickable) - Prefer CodeRepo (actual code) over RepositoryName (YAML storage) *@
+        @{
+            var displayRepoName = GetRepoNameToDisplay();
+            var displayRepoUrl = GetRepoUrlToDisplay();
+        }
+        @if (!string.IsNullOrWhiteSpace(displayRepoName)) {
+            <div class="small mb-2">
+                <a href="@displayRepoUrl" target="_blank"
+                   class="text-muted text-decoration-none link-underline-opacity-0 link-underline-opacity-75-hover"
+                   title="Open @displayRepoName repository">
+                    <i class="fa fa-database me-1"></i>@displayRepoName
+                </a>
+            </div>
+        }
+
+        @* Commit hash (clickable) *@
+        @if (!string.IsNullOrWhiteSpace(Pipeline?.LastCommitId)) {
+            <div class="small mb-2">
+                <a href="@Pipeline?.CommitUrl" target="_blank"
+                   class="text-muted font-monospace text-decoration-none link-underline-opacity-0 link-underline-opacity-75-hover"
+                   title="View commit @Pipeline.LastCommitId">
+                    <i class="fa fa-code-fork me-1"></i>@Pipeline.LastCommitId
+                </a>
+            </div>
+        }
+
+        @* Last Run Time (Relative) + Duration *@
+        <div class="small text-muted d-flex align-items-center gap-2 flex-wrap mb-1">
+            @if (Pipeline?.LastRunTime.HasValue == true) {
+                @if (!string.IsNullOrWhiteSpace(Pipeline?.LastRunLogsUrl)) {
+                    <a href="@Pipeline.LastRunLogsUrl" target="_blank"
+                       class="text-muted text-decoration-none link-underline-opacity-0 link-underline-opacity-75-hover"
+                       title="View build logs - @Pipeline.LastRunTime.Value.ToString("g")">
+                        <i class="fa fa-calendar me-1"></i>
+                        @Pipeline.LastRunTime.Value.Humanize()
+                    </a>
+                } else {
+                    <span title="@Pipeline.LastRunTime.Value.ToString("g")" class="cursor-help">
+                        <i class="fa fa-calendar me-1"></i>
+                        @Pipeline.LastRunTime.Value.Humanize()
+                    </span>
+                }
+            } else {
+                <span>
+                    <i class="fa fa-calendar me-1"></i>
+                    Never run
+                </span>
+            }
+            @* Duration *@
+            @if (Pipeline?.Duration.HasValue == true) {
+                <span class="text-muted">•</span>
+                <span title="@FormatDurationFull(Pipeline.Duration)">
+                    <i class="fa fa-clock-o me-1"></i>
+                    @FormatDuration(Pipeline.Duration)
+                </span>
+            }
+        </div>
+
+        @* Trigger Info - Clickable link to pipeline config *@
+        <div class="small text-muted d-flex align-items-center gap-2 flex-wrap">
+            @if (!string.IsNullOrWhiteSpace(Pipeline?.TriggeredByAvatarUrl)) {
+                <img src="@Pipeline.TriggeredByAvatarUrl" 
+                     alt="@Pipeline.TriggeredByUser" 
+                     title="@Pipeline.TriggeredByUser" 
+                     class="rounded-circle" 
+                     style="width: 18px; height: 18px; object-fit: cover;" 
+                     onerror="this.style.display='none'" />
+            }
+            @if (!string.IsNullOrWhiteSpace(Pipeline?.TriggerReason)) {
+                @if (!string.IsNullOrWhiteSpace(Pipeline?.PipelineConfigUrl)) {
+                    <a href="@Pipeline.PipelineConfigUrl" target="_blank"
+                       class="text-decoration-none clickable-badge"
+                       title="Configure pipeline triggers in Azure DevOps">
+                        @GetTriggerBadge()
+                    </a>
+                } else {
+                    @GetTriggerBadge()
+                }
+            }
+        </div>
+
+        @* Stage Bubbles *@
+        @if (Pipeline?.Stages?.Any() == true) {
+            <div class="small mt-1 d-flex align-items-center gap-0 flex-wrap" style="gap: 2px !important;">
+                <span class="text-muted me-1" style="font-size: 0.8em;">Stages:</span>
+                @foreach (var stage in Pipeline.Stages.OrderBy(s => s.Order)) {
+                    @GetCardStageBubble(stage)
+                }
+            </div>
+        }
+
+        @* YAML File *@
+        @if (!string.IsNullOrWhiteSpace(Pipeline?.YamlFileName)) {
+            <div class="small text-muted mt-1 text-truncate" title="@Pipeline.YamlFileName">
+                <i class="fa fa-file-code-o me-1"></i>
+                @System.IO.Path.GetFileName(Pipeline.YamlFileName)
+            </div>
+        }
+
+        @* Variable Groups - Per-Environment Links *@
+        @if (Pipeline?.VariableGroups?.Any() == true) {
+            <div class="mt-2">
+                @RenderVariableGroupBadges()
+            </div>
+        }
+    </div>
+
+    @* Card Footer with Actions - ALL proper anchor tags *@
+    <div class="card-footer bg-white border-top-0 pt-0">
+        <div class="d-flex gap-2">
+            <a href="@(Helpers.BuildUrl(Pipeline?.EditWizardUrl))" 
+               class="btn btn-sm btn-outline-primary flex-grow-1" 
+               title="Edit in Wizard">
+                <i class="fa fa-pencil me-1"></i>
+                Edit
+            </a>
+            <a href="@Pipeline?.PipelineRunsUrl" target="_blank" 
+               class="btn btn-sm btn-outline-info flex-grow-1" 
+               title="View pipeline runs">
+                <i class="fa fa-list me-1"></i>
+                Runs
+            </a>
+            @* More actions dropdown *@
+            <div class="dropdown">
+                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" 
+                        data-bs-toggle="dropdown" aria-expanded="false" title="More actions">
+                    <i class="fa fa-ellipsis-v"></i>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li>
+                        <button class="dropdown-item" @onclick="OnRunPipelineClick" @onclick:stopPropagation="true">
+                            <i class="fa fa-play text-success me-2"></i>Run Pipeline
+                        </button>
+                    </li>
+                    <li><hr class="dropdown-divider" /></li>
+                    <li>
+                        <a class="dropdown-item" href="@Pipeline?.ResourceUrl" target="_blank">
+                            <i class="fa fa-external-link me-2"></i>View in Azure DevOps
+                        </a>
+                    </li>
+                    <li>
+                        <button class="dropdown-item" @onclick="OnCopyYamlClick" @onclick:stopPropagation="true">
+                            <i class="fa fa-clipboard me-2"></i>Copy YAML
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public DataObjects.PipelineListItem? Pipeline { get; set; }
+    [Parameter] public EventCallback OnEdit { get; set; }
+    [Parameter] public EventCallback OnView { get; set; }
+    [Parameter] public EventCallback<DataObjects.PipelineListItem> OnCopyYaml { get; set; }
+    [Parameter] public EventCallback<DataObjects.PipelineListItem> OnRunPipeline { get; set; }
+
+    private async Task OnEditClick()
+    {
+        if (OnEdit.HasDelegate) {
+            await OnEdit.InvokeAsync();
+        }
+    }
+
+    private async Task OnCopyYamlClick()
+    {
+        if (OnCopyYaml.HasDelegate && Pipeline != null) {
+            await OnCopyYaml.InvokeAsync(Pipeline);
+        }
+    }
+
+    private async Task OnRunPipelineClick()
+    {
+        if (OnRunPipeline.HasDelegate && Pipeline != null) {
+            await OnRunPipeline.InvokeAsync(Pipeline);
+        }
+    }
+
+    /// <summary>
+    /// Gets the branch to display - prefers CodeBranch (from YAML BuildRepo) → TriggerBranch (from actual build) → DefaultBranch (from repo).
+    /// </summary>
+    private string? GetBranchToDisplay()
+    {
+        // Prefer CodeBranch (from YAML BuildRepo) → TriggerBranch (from actual build) → DefaultBranch (from repo)
+        return !string.IsNullOrWhiteSpace(Pipeline?.CodeBranch) 
+            ? Pipeline.CodeBranch 
+            : !string.IsNullOrWhiteSpace(Pipeline?.TriggerBranch) 
+                ? Pipeline.TriggerBranch 
+                : Pipeline?.DefaultBranch;
+    }
+
+    /// <summary>
+    /// Gets the repository name to display (prefers code repo over YAML repo).
+    /// </summary>
+    private string? GetRepoNameToDisplay()
+    {
+        return !string.IsNullOrWhiteSpace(Pipeline?.CodeRepoName) 
+            ? Pipeline.CodeRepoName 
+            : Pipeline?.RepositoryName;
+    }
+
+    /// <summary>
+    /// Gets the repository URL to display (prefers code repo over YAML repo).
+    /// </summary>
+    private string? GetRepoUrlToDisplay()
+    {
+        return !string.IsNullOrWhiteSpace(Pipeline?.CodeRepoUrl) 
+            ? Pipeline.CodeRepoUrl 
+            : Pipeline?.RepositoryUrl;
+    }
+
+    /// <summary>
+    /// Formats duration as full text for tooltip.
+    /// </summary>
+    private string FormatDurationFull(TimeSpan? duration)
+    {
+        if (duration == null) return "";
+        return duration.Value.Humanize(2);
+    }
+
+    /// <summary>
+    /// Formats duration as abbreviated text (e.g., "5m 30s").
+    /// </summary>
+    private string FormatDuration(TimeSpan? duration)
+    {
+        if (duration == null) return "-";
+        var totalSeconds = (int)duration.Value.TotalSeconds;
+        var minutes = totalSeconds / 60;
+        var seconds = totalSeconds % 60;
+        if (seconds == 0) return $"{minutes}m";
+        if (minutes == 0) return $"{seconds}s";
+        return $"{minutes}m {seconds}s";
+    }
+
+    private RenderFragment GetStatusBadge()
+    {
+        var status = Pipeline?.LastRunStatus?.ToLower() ?? "";
+        var result = Pipeline?.LastRunResult?.ToLower() ?? "";
+
+        // Determine badge appearance based on status and result
+        string badgeClass;
+        string badgeIcon;
+        string badgeText;
+
+        if (string.IsNullOrWhiteSpace(status)) {
+            badgeClass = "bg-secondary";
+            badgeIcon = "fa-question";
+            badgeText = "Unknown";
+        } else if (status == "completed" || status == "finished") {
+            switch (result) {
+                case "succeeded":
+                    badgeClass = "bg-success";
+                    badgeIcon = "fa-check";
+                    badgeText = "Succeeded";
+                    break;
+                case "failed":
+                    badgeClass = "bg-danger";
+                    badgeIcon = "fa-times";
+                    badgeText = "Failed";
+                    break;
+                case "partiallysucceeded":
+                    badgeClass = "bg-warning text-dark";
+                    badgeIcon = "fa-exclamation-triangle";
+                    badgeText = "Partial";
+                    break;
+                case "canceled":
+                    badgeClass = "bg-secondary";
+                    badgeIcon = "fa-ban";
+                    badgeText = "Canceled";
+                    break;
+                default:
+                    badgeClass = "bg-secondary";
+                    badgeIcon = "fa-question";
+                    badgeText = result.Humanize(LetterCasing.Title);
+                    break;
+            }
+        } else if (status == "inprogress" || status == "running") {
+            badgeClass = "bg-info";
+            badgeIcon = "fa-spinner fa-spin";
+            badgeText = "Running";
+        } else if (status == "notstarted" || status == "queued") {
+            badgeClass = "bg-secondary";
+            badgeIcon = "fa-pause";
+            badgeText = "Queued";
+        } else if (status == "cancelling") {
+            badgeClass = "bg-warning text-dark";
+            badgeIcon = "fa-ban";
+            badgeText = "Cancelling";
+        } else {
+            badgeClass = "bg-secondary";
+            badgeIcon = "fa-question";
+            badgeText = status.Humanize(LetterCasing.Title);
+        }
+
+        return @<span class="badge @badgeClass">
+            <i class="fa @badgeIcon me-1"></i>
+            @badgeText
+        </span>;
+    }
+
+    private RenderFragment GetTriggerBadge()
+    {
+        if (Pipeline == null) return @<span></span>;
+
+        // Get icon and tooltip based on trigger type
+        var (icon, tooltipText) = Pipeline.TriggerType switch {
+            DataObjects.TriggerType.Manual => ("fa-user", 
+                $"Manually triggered{(!string.IsNullOrWhiteSpace(Pipeline.TriggeredByUser) ? $" by {Pipeline.TriggeredByUser}" : "")}"),
+            DataObjects.TriggerType.CodePush => ("fa-bolt", "Triggered by code push (CI)"),
+            DataObjects.TriggerType.Scheduled => ("fa-clock-o", "Scheduled trigger"),
+            DataObjects.TriggerType.PullRequest => ("fa-code-fork", "Pull request trigger"),
+            DataObjects.TriggerType.PipelineCompletion => ("fa-link", 
+                $"Triggered by pipeline completion{(!string.IsNullOrWhiteSpace(Pipeline.TriggeredByPipeline) ? $": {Pipeline.TriggeredByPipeline}" : "")}"),
+            DataObjects.TriggerType.ResourceTrigger => ("fa-cube", "Resource trigger"),
+            _ => ("fa-cog", Pipeline.TriggerDisplayText ?? "Unknown trigger")
+        };
+
+        // Determine display text (shorter for card view)
+        var displayText = Pipeline.TriggerType switch {
+            DataObjects.TriggerType.Manual => TruncateName(Pipeline.TriggeredByUser, 10) ?? "Manual",
+            DataObjects.TriggerType.CodePush => "CI",
+            DataObjects.TriggerType.Scheduled => "Scheduled",
+            DataObjects.TriggerType.PullRequest => "PR",
+            DataObjects.TriggerType.PipelineCompletion => "Pipeline",
+            DataObjects.TriggerType.ResourceTrigger => "Resource",
+            _ => "Other"
+        };
+
+        return @<span class="small" title="@tooltipText">
+            <i class="fa @icon me-1"></i>
+            @displayText
+        </span>;
+    }
+
+    private string TruncateName(string? name, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "";
+        return name.Length > maxLength ? name[..(maxLength - 2)] + ".." : name;
+    }
+
+    private RenderFragment RenderVariableGroupBadges() => __builder =>
+    {
+        var groups = Pipeline?.VariableGroups ?? [];
+        
+        <div class="d-flex flex-wrap gap-1">
+            @foreach (var group in groups) {
+                var envLabel = GetEnvironmentLabel(group.Environment);
+                var hasLink = !string.IsNullOrWhiteSpace(group.ResourceUrl);
+                var tooltip = $"{group.Name}" + (group.VariableCount > 0 ? $" ({group.VariableCount} vars)" : "");
+                
+                @if (hasLink) {
+                    <a href="@group.ResourceUrl" target="_blank" 
+                       class="badge @GetEnvironmentBadgeClass(group.Environment) text-decoration-none library-link"
+                       title="@tooltip">
+                        @envLabel
+                        <i class="fa fa-external-link-square ms-1 small"></i>
+                    </a>
+                } else {
+                    <span class="badge bg-secondary-subtle text-secondary-emphasis border" 
+                          title="@tooltip (not found)">
+                        @envLabel
+                    </span>
+                }
+            }
+        </div>
+    };
+
+    private string GetEnvironmentLabel(string? environment)
+    {
+        if (string.IsNullOrWhiteSpace(environment)) return "Vars";
+        
+        // Return short label for common environments
+        return environment.ToUpperInvariant() switch {
+            "DEV" => "DEV",
+            "PROD" => "PROD",
+            "CMS" => "CMS",
+            "STAGING" => "STG",
+            "QA" => "QA",
+            "UAT" => "UAT",
+            "TEST" => "TEST",
+            _ => environment.Length > 4 ? environment[..4].ToUpperInvariant() : environment.ToUpperInvariant()
+        };
+    }
+
+    private string GetEnvironmentBadgeClass(string? environment)
+    {
+        if (string.IsNullOrWhiteSpace(environment)) 
+            return "bg-secondary-subtle text-secondary-emphasis border";
+        
+        return environment.ToUpperInvariant() switch {
+            "DEV" => "bg-info-subtle text-info-emphasis border border-info-subtle",
+            "PROD" => "bg-success-subtle text-success-emphasis border border-success-subtle",
+            "CMS" => "bg-warning-subtle text-warning-emphasis border border-warning-subtle",
+            "STAGING" or "STG" => "bg-primary-subtle text-primary-emphasis border border-primary-subtle",
+            "QA" or "UAT" or "TEST" => "bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle",
+            _ => "bg-light text-dark border"
+        };
+    }
+
+    private string GetTimeAgo(DateTime dateTime)
+    {
+        try {
+            var timeSpan = DateTime.UtcNow - dateTime.ToUniversalTime();
+            // Use simpler Humanize without namespace-qualified types
+            if (timeSpan.TotalMinutes < 1) return "just now";
+            if (timeSpan.TotalMinutes < 60) return $"{(int)timeSpan.TotalMinutes} minutes ago";
+            if (timeSpan.TotalHours < 24) return $"{(int)timeSpan.TotalHours} hours ago";
+            if (timeSpan.TotalDays < 7) return $"{(int)timeSpan.TotalDays} days ago";
+            return dateTime.ToString("MMM d, yyyy");
+        } catch {
+            return dateTime.ToString("g");
+        }
+    }
+
+    private RenderFragment GetCardStageBubble(DataObjects.StageBubble stage) => __builder =>
+    {
+        var (icon, colorClass, tooltip) = (stage.State, stage.Result) switch {
+            ("completed", "succeeded") => ("fa-check-circle", "text-success", $"{stage.Name}: Succeeded"),
+            ("completed", "failed") => ("fa-times-circle", "text-danger", $"{stage.Name}: Failed"),
+            ("completed", "canceled") => ("fa-minus-circle", "text-secondary", $"{stage.Name}: Canceled"),
+            ("completed", "skipped") => ("fa-minus-circle", "text-secondary", $"{stage.Name}: Skipped"),
+            ("inprogress", _) => ("fa-spinner fa-spin", "text-info", $"{stage.Name}: Running..."),
+            ("pending", _) => ("fa-circle-o", "text-muted", $"{stage.Name}: Pending"),
+            _ => ("fa-circle-o", "text-muted", $"{stage.Name}: Not started")
+        };
+
+        <i class="fa @icon @colorClass" style="font-size: 0.8em; margin: 0 1px;" title="@tooltip"></i>
+    };
+}
+
+<style>
+    .pipeline-card {
+        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    }
+    
+    .pipeline-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+    }
+
+    .pipeline-title-link:hover {
+        color: var(--bs-primary) !important;
+        text-decoration: underline !important;
+    }
+
+    .library-link {
+        transition: transform 0.1s ease, box-shadow 0.1s ease;
+    }
+
+    .library-link:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    /* Clickable badge styles for Status and Trigger */
+    .clickable-badge {
+        display: inline-block;
+        transition: transform 0.1s ease, filter 0.1s ease;
+    }
+    
+    .clickable-badge:hover {
+        transform: translateY(-1px);
+        filter: brightness(0.95);
+    }
+    
+    .clickable-badge:hover .badge {
+        box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+    }
+</style>

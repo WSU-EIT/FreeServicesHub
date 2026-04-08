@@ -1,0 +1,163 @@
+﻿@page "/Examples/ProjectsV3"
+@page "/{TenantCode}/Examples/ProjectsV3"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V3: Project Cards — Top-level projects as dashboard cards *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-rectangle-list me-1"></i> Project Cards</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title"><i class="fa-solid fa-rectangle-list me-1"></i> V3: Project Cards <StickyMenuIcon /></h1>
+        </div>
+
+        <ExampleNav />
+        <AboutSection Title="Project Cards Dashboard" Subtitle="Top-level projects displayed as cards with progress donuts and ticket counts" IconClass="fa-solid fa-rectangle-list">
+            <p class="small text-muted mb-0">Each top-level project is a card showing lead, status, progress, open ticket count, and sub-project count. Click to drill into sub-projects.</p>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Progress Donut"
+                     Description="A CSS-based donut chart using conic-gradient. The percentage is computed from completed vs total tickets across the project and all descendants."
+                     Code="@_codeDonut" />
+        </div>
+
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+            <select class="form-select form-select-sm" style="width:auto;" @bind="_statusFilter" @bind:after="ApplyFilter">
+                <option value="">All Statuses</option>
+                @foreach (var s in Enum.GetValues<DataObjects.ProjectStatus>()) {
+                    <option value="@s">@s</option>
+                }
+            </select>
+            <span class="text-muted small ms-auto">@_viewProjects.Count projects</span>
+        </div>
+
+        @* Breadcrumb for drill-in *@
+        @if (_drillPath.Count > 0) {
+            <nav class="mb-3">
+                <ol class="breadcrumb small">
+                    <li class="breadcrumb-item"><a href="javascript:void(0)" @onclick="() => DrillTo(null)">All Projects</a></li>
+                    @foreach (var crumb in _drillPath) {
+                        var isLast = crumb.RecordId == _drillPath.Last().RecordId;
+                        <li class="breadcrumb-item @(isLast ? "active" : "")">
+                            @if (!isLast) {
+                                <a href="javascript:void(0)" @onclick="() => DrillTo(crumb.RecordId)">@crumb.Name</a>
+                            } else { @crumb.Name }
+                        </li>
+                    }
+                </ol>
+            </nav>
+        }
+
+        <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-4 g-3">
+            @foreach (var p in _viewProjects) {
+                var ticketCount = CountTickets(p.RecordId);
+                var completedCount = CountCompleted(p.RecordId);
+                var pct = ticketCount > 0 ? (int)(completedCount * 100.0 / ticketCount) : 0;
+                var openCount = ticketCount - completedCount;
+                var subCount = _all.Count(c => c.ParentProjectId == p.RecordId);
+
+                <div class="col">
+                    <div class="card shadow-sm border-0 h-100" style="cursor:pointer; border-left:4px solid @(p.Color ?? "#6c757d") !important;" @onclick="() => DrillTo(p.RecordId)">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div>
+                                    <h6 class="card-title mb-0">@p.Name</h6>
+                                    <code class="small text-muted">@p.ProjectKey</code>
+                                </div>
+                                <span class="badge @GetStatusBadge(p.Status)">@p.Status</span>
+                            </div>
+                            <div class="small text-muted mb-2"><i class="fa-solid fa-user me-1"></i>@p.LeadName</div>
+
+                            <div class="d-flex align-items-center gap-3 mb-2">
+                                @* Donut *@
+                                <div style="width:50px; height:50px; border-radius:50%; background:conic-gradient(#198754 @(pct * 3.6)deg, #e9ecef @(pct * 3.6)deg); display:flex; align-items:center; justify-content:center;">
+                                    <div style="width:34px; height:34px; border-radius:50%; background:white; display:flex; align-items:center; justify-content:center;">
+                                        <span class="fw-bold small">@pct%</span>
+                                    </div>
+                                </div>
+                                <div class="small">
+                                    <div><strong>@ticketCount</strong> tickets</div>
+                                    <div class="text-success">@completedCount done</div>
+                                    <div class="text-warning">@openCount open</div>
+                                </div>
+                            </div>
+
+                            @if (subCount > 0) {
+                                <div class="small text-muted border-top pt-2">
+                                    <i class="fa-solid fa-sitemap me-1"></i> @subCount sub-project@(subCount != 1 ? "s" : "")
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        @if (!_viewProjects.Any()) {
+            <div class="text-center text-muted py-5"><i class="fa-solid fa-folder-open fa-2x mb-2 opacity-50"></i><div>No projects at this level</div></div>
+        }
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "projectsv3";
+    private string _statusFilter = "";
+    private List<DataObjects.Project> _all = new(), _viewProjects = new();
+    private List<DataObjects.Ticket> _allTickets = new();
+    private List<DataObjects.Project> _drillPath = new();
+    private Guid? _currentParent = null;
+
+    private string _codeDonut = "background: conic-gradient(#198754 @(pct*3.6)deg, #e9ecef @(pct*3.6)deg);";
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            var p = await Helpers.GetOrPost<List<DataObjects.Project>>("api/Data/GetProjects", new List<Guid>());
+            var t = await Helpers.GetOrPost<List<DataObjects.Ticket>>("api/Data/GetTickets", new List<Guid>());
+            _all = p ?? new(); _allTickets = t ?? new();
+            ApplyFilter();
+            _loading = false; StateHasChanged();
+        }
+    }
+
+    private void ApplyFilter() {
+        var projects = _all.Where(p => p.ParentProjectId == _currentParent);
+        if (!string.IsNullOrEmpty(_statusFilter) && Enum.TryParse<DataObjects.ProjectStatus>(_statusFilter, out var st))
+            projects = projects.Where(p => p.Status == st);
+        _viewProjects = projects.OrderBy(p => p.SortOrder).ToList();
+    }
+
+    private void DrillTo(Guid? projectId) {
+        _currentParent = projectId;
+        if (projectId == null) { _drillPath.Clear(); } else {
+            var idx = _drillPath.FindIndex(p => p.RecordId == projectId.Value);
+            if (idx >= 0) { _drillPath = _drillPath.Take(idx + 1).ToList(); }
+            else { var proj = _all.FirstOrDefault(p => p.RecordId == projectId); if (proj != null) _drillPath.Add(proj); }
+        }
+        ApplyFilter();
+    }
+
+    private int CountTickets(Guid projectId) {
+        var c = _allTickets.Count(t => t.ProjectId == projectId);
+        foreach (var child in _all.Where(p => p.ParentProjectId == projectId)) c += CountTickets(child.RecordId);
+        return c;
+    }
+    private int CountCompleted(Guid projectId) {
+        var c = _allTickets.Count(t => t.ProjectId == projectId && (t.Status == DataObjects.TicketStatus.Done || t.Status == DataObjects.TicketStatus.Closed));
+        foreach (var child in _all.Where(p => p.ParentProjectId == projectId)) c += CountCompleted(child.RecordId);
+        return c;
+    }
+    private static string GetStatusBadge(DataObjects.ProjectStatus s) => s switch {
+        DataObjects.ProjectStatus.Active => "bg-success", DataObjects.ProjectStatus.Completed => "bg-primary",
+        DataObjects.ProjectStatus.OnHold => "bg-warning text-dark", DataObjects.ProjectStatus.Archived => "bg-dark", _ => "bg-secondary"
+    };
+}

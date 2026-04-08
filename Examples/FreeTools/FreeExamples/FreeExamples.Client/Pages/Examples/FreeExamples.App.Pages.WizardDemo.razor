@@ -1,0 +1,361 @@
+@page "/Examples/WizardDemo"
+@page "/{TenantCode}/Examples/WizardDemo"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title">Wizard Demo</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title">
+                <i class="fa-solid fa-hat-wizard me-1"></i> Multi-Step Wizard Demo
+                <StickyMenuIcon />
+            </h1>
+        </div>
+
+        <ExampleNav />
+
+        <AboutSection Title="About Wizard Demo" Subtitle="A step-by-step form that guides you through a process, one question at a time" IconClass="fa-solid fa-hat-wizard">
+            <div class="row">
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-question-circle me-1"></i>What Is This Page?</h6>
+                    <p class="small text-muted mb-0">
+                        A <strong>wizard</strong> breaks a complex form into small steps. Instead of showing
+                        20 fields on one page (which is overwhelming), you see 3–4 fields at a time with
+                        Back/Next buttons. Think of it like a setup assistant when you install new software —
+                        it walks you through choices one screen at a time and shows a summary at the end.
+                    </p>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-lightbulb me-1"></i>What You'll Learn</h6>
+                    <ul class="small text-muted mb-0 ps-3">
+                        <li><strong>Stepper</strong> — numbered circles with connecting lines showing your progress</li>
+                        <li><strong>Validation</strong> — preventing you from moving forward until required fields are filled</li>
+                        <li><strong>Summary badges</strong> — showing your previous choices inline so you don't forget</li>
+                        <li><strong>Review step</strong> — a final confirmation screen before submitting</li>
+                        <li><strong>Accessibility</strong> — screen readers can navigate the wizard using ARIA attributes</li>
+                    </ul>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-road me-1"></i>How Does It Work?</h6>
+                    <p class="small text-muted mb-0">
+                        The wizard is one page with a <code>_currentStep</code> variable. When you click Next,
+                        the code checks if all required fields are filled (<code>IsCurrentStepValid()</code>).
+                        If valid, it increments the step number and Blazor re-renders to show the next panel.
+                        The stepper circles at the top are clickable — you can jump back to any completed step.
+                        All your choices are stored in memory until you click Finish.
+                    </p>
+                </div>
+            </div>
+        </AboutSection>
+
+        <div class="container-fluid px-0" style="max-width: 800px;">
+
+            @* Wizard Stepper - Clickable breadcrumbs with connector lines *@
+            <FreeExamples.Client.Shared.Wizard.WizardStepper
+                Steps="@GetStepperInfo()"
+                CurrentStep="@_currentStep"
+                OnStepClick="@GoToStep" />
+            <InfoTip Title="Wizard Stepper"
+                     Description="The numbered circles at the top show your progress through the wizard. Completed steps are clickable — you can jump back to review or change answers. The current step is highlighted. Connector lines between circles show the flow."
+                     Code="@_codeStepper" />
+
+            @* Selection Summary - Shows previous selections as badges *@
+            @if (_currentStep > 0) {
+                <FreeExamples.Client.Shared.Wizard.WizardSummary Selections="@GetSelections()" />
+                <InfoTip Title="Selection Summary"
+                         Description="These colored badge pills show what you chose in previous steps — like breadcrumbs of your decisions. They remind you what you picked without going back. They appear between the stepper and the current step content."
+                         Code="@_codeSummary" />
+            }
+
+            @* Main Wizard Card *@
+            <div class="card shadow-sm border-0 mb-4">
+                @switch (_currentStep) {
+                    case 0:
+                        <FreeExamples.Client.Shared.Wizard.WizardStepHeader
+                            StepNumber="1"
+                            Title="Select a Category"
+                            ShowNext="true"
+                            NextDisabled="@(string.IsNullOrWhiteSpace(_selectedCategory))"
+                            OnNext="@Next" />
+                        <InfoTip Title="Step Navigation"
+                                 Description="Back and Next buttons control movement through steps. Next is disabled (greyed out) until required fields are filled. The NextDisabled parameter is calculated from validation — for example, preventing advancing without picking a category."
+                                 Code="@_codeStepNav" />
+                        break;
+                    case 1:
+                        <FreeExamples.Client.Shared.Wizard.WizardStepHeader
+                            StepNumber="2"
+                            Title="Enter Details"
+                            ShowBack="true"
+                            ShowNext="true"
+                            NextDisabled="@(string.IsNullOrWhiteSpace(_itemName))"
+                            OnBack="@Back"
+                            OnNext="@Next" />
+                        break;
+                    case 2:
+                        <FreeExamples.Client.Shared.Wizard.WizardStepHeader
+                            StepNumber="3"
+                            Title="Set Priority"
+                            ShowBack="true"
+                            ShowNext="true"
+                            NextDisabled="@(_priority < 1 || _priority > 5)"
+                            OnBack="@Back"
+                            OnNext="@Next" />
+                        break;
+                    case 3:
+                        <FreeExamples.Client.Shared.Wizard.WizardStepHeader
+                            StepNumber="4"
+                            Title="Review & Submit"
+                            ShowBack="true"
+                            ShowFinish="true"
+                            OnBack="@Back"
+                            OnFinish="@Finish"
+                            HeaderClass="bg-success text-white" />
+                        break;
+                }
+
+                <div class="card-body p-4">
+                    @switch (_currentStep) {
+                        case 0:
+                            <fieldset>
+                                <legend class="visually-hidden">Step 1: Select a Category</legend>
+                                <div class="mb-3">
+                                        <label for="wizard-category" class="form-label fw-semibold">
+                                            Category <span class="text-danger" aria-hidden="true">*</span>
+                                            <InfoTip Title="Required Fields"
+                                                     Description="The red asterisk means this field must be filled in. If you click Next without selecting a value, the field turns red with an error message. The _attemptedNext flag tracks whether you have tried to advance — validation errors only show after your first attempt so the form does not start angry."
+                                                     Code="@_codeWizardRequired" />
+                                        </label>
+                                    <select id="wizard-category"
+                                            class="form-select @((_attemptedNext && string.IsNullOrWhiteSpace(_selectedCategory)) ? "is-invalid" : "")"
+                                            @bind="_selectedCategory"
+                                            aria-required="true"
+                                            aria-describedby="category-help @((_attemptedNext && string.IsNullOrWhiteSpace(_selectedCategory)) ? "category-error" : "")"
+                                            aria-invalid="@((_attemptedNext && string.IsNullOrWhiteSpace(_selectedCategory)) ? "true" : null)">
+                                        <option value="">-- Choose a category --</option>
+                                        <option value="Engineering">Engineering</option>
+                                        <option value="Marketing">Marketing</option>
+                                        <option value="Operations">Operations</option>
+                                    </select>
+                                    <div id="category-help" class="form-text">Choose the department this item belongs to.</div>
+                                    @if (_attemptedNext && string.IsNullOrWhiteSpace(_selectedCategory)) {
+                                        <div id="category-error" class="invalid-feedback" role="alert">
+                                            <i class="fa fa-exclamation-circle me-1" aria-hidden="true"></i>
+                                            Please select a category before continuing.
+                                        </div>
+                                    }
+                                </div>
+                            </fieldset>
+                            break;
+
+                        case 1:
+                            <fieldset>
+                                <legend class="visually-hidden">Step 2: Enter Details</legend>
+                                <div class="mb-3">
+                                    <label for="wizard-name" class="form-label fw-semibold">
+                                        Name <span class="text-danger" aria-hidden="true">*</span>
+                                    </label>
+                                    <input type="text"
+                                           id="wizard-name"
+                                           class="form-control @((_attemptedNext && string.IsNullOrWhiteSpace(_itemName)) ? "is-invalid" : "")"
+                                           @bind="_itemName"
+                                           @bind:event="oninput"
+                                           placeholder="Enter a descriptive name"
+                                           aria-required="true"
+                                           aria-describedby="name-help @((_attemptedNext && string.IsNullOrWhiteSpace(_itemName)) ? "name-error" : "")"
+                                           aria-invalid="@((_attemptedNext && string.IsNullOrWhiteSpace(_itemName)) ? "true" : null)" />
+                                    <div id="name-help" class="form-text">Provide a name for this item (required).</div>
+                                    @if (_attemptedNext && string.IsNullOrWhiteSpace(_itemName)) {
+                                        <div id="name-error" class="invalid-feedback" role="alert">
+                                            <i class="fa fa-exclamation-circle me-1" aria-hidden="true"></i>
+                                            Name is required. Please enter a value.
+                                        </div>
+                                    }
+                                </div>
+                            </fieldset>
+                            break;
+
+                        case 2:
+                            <fieldset>
+                                <legend class="visually-hidden">Step 3: Set Priority</legend>
+                                <div class="mb-3">
+                                    <label for="wizard-priority" class="form-label fw-semibold">
+                                        Priority <span class="text-danger" aria-hidden="true">*</span>
+                                    </label>
+                                    <input type="number"
+                                           id="wizard-priority"
+                                           class="form-control @((_attemptedNext && (_priority < 1 || _priority > 5)) ? "is-invalid" : "")"
+                                           @bind="_priority"
+                                           min="1"
+                                           max="5"
+                                           aria-required="true"
+                                           aria-describedby="priority-help @((_attemptedNext && (_priority < 1 || _priority > 5)) ? "priority-error" : "")"
+                                           aria-invalid="@((_attemptedNext && (_priority < 1 || _priority > 5)) ? "true" : null)" />
+                                    <div id="priority-help" class="form-text">Enter a priority between 1 (lowest) and 5 (highest).</div>
+                                    @if (_attemptedNext && (_priority < 1 || _priority > 5)) {
+                                        <div id="priority-error" class="invalid-feedback" role="alert">
+                                            <i class="fa fa-exclamation-circle me-1" aria-hidden="true"></i>
+                                            Priority must be between 1 and 5.
+                                        </div>
+                                    }
+                                </div>
+                            </fieldset>
+                            break;
+
+                        case 3:
+                            <fieldset>
+                                <legend class="visually-hidden">Step 4: Review & Submit</legend>
+                                <h6 class="mb-3"><i class="fa fa-clipboard-check me-1" aria-hidden="true"></i> Review Your Selections
+                                    <InfoTip Title="Review Step"
+                                             Description="The final step shows all your choices in a summary table before submitting. This is a common UX pattern — let users verify everything before committing. The Finish button replaces Next, signaling that this is the last step. No data is saved until you click Finish."
+                                             Code="@_codeReview" />
+                                </h6>
+                                <div class="table-responsive">
+                                    <table class="table table-bordered mb-0" aria-label="Review of your wizard selections">
+                                        <tbody>
+                                            <tr>
+                                                <th scope="row" class="bg-light" style="width:140px;">Category</th>
+                                                <td>
+                                                    @if (!string.IsNullOrWhiteSpace(_selectedCategory)) {
+                                                        <strong>@_selectedCategory</strong>
+                                                    } else {
+                                                        <span class="text-danger"><i class="fa fa-exclamation-circle me-1" aria-hidden="true"></i> Not set</span>
+                                                    }
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <th scope="row" class="bg-light">Name</th>
+                                                <td>
+                                                    @if (!string.IsNullOrWhiteSpace(_itemName)) {
+                                                        <strong>@_itemName</strong>
+                                                    } else {
+                                                        <span class="text-danger"><i class="fa fa-exclamation-circle me-1" aria-hidden="true"></i> Not set</span>
+                                                    }
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <th scope="row" class="bg-light">Priority</th>
+                                                <td><strong>@_priority</strong></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </fieldset>
+                            break;
+                    }
+                </div>
+            </div>
+
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+
+    private bool _loading = true;
+    private bool _loadedData = false;
+    private string _pageName = "wizarddemo";
+    private string _codeStepper = "<WizardStepper Steps=\"@GetStepperInfo()\"\n    CurrentStep=\"@_currentStep\"\n    OnStepClick=\"@GoToStep\" />";
+    private string _codeSummary = "<WizardSummary Selections=\"@GetSelections()\" />";
+    private string _codeStepNav = "NextDisabled=\"@(string.IsNullOrWhiteSpace(_selectedCategory))\"";
+    private string _codeWizardRequired = "aria-required=\"true\"\naria-invalid=\"@(_attemptedNext && empty)\"";
+    private string _codeReview = "<WizardStepHeader ShowFinish=\"true\"\n    OnFinish=\"@Finish\" />";
+    private int _currentStep = 0;
+    private bool _attemptedNext = false;
+
+    private string _selectedCategory = "";
+    private string _itemName = "";
+    private int _priority = 3;
+
+    private List<string> _stepNames = new() { "Category", "Details", "Priority", "Review" };
+
+    public void Dispose()
+    {
+        Model.OnChange -= OnDataModelUpdated;
+        Model.Subscribers_OnChange.Remove(_pageName);
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.View = _pageName;
+        Model.OnChange += OnDataModelUpdated;
+        if (!Model.Subscribers_OnChange.Contains(_pageName)) { Model.Subscribers_OnChange.Add(_pageName); }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnDataModelUpdated()
+    {
+        if (Model.View == _pageName) StateHasChanged();
+    }
+
+    private bool IsCurrentStepValid() => _currentStep switch {
+        0 => !string.IsNullOrWhiteSpace(_selectedCategory),
+        1 => !string.IsNullOrWhiteSpace(_itemName),
+        2 => _priority >= 1 && _priority <= 5,
+        _ => true
+    };
+
+    private void Next()
+    {
+        _attemptedNext = true;
+        if (!IsCurrentStepValid()) return;
+
+        _attemptedNext = false;
+        if (_currentStep < _stepNames.Count - 1) _currentStep++;
+    }
+
+    private void Back()
+    {
+        _attemptedNext = false;
+        if (_currentStep > 0) _currentStep--;
+    }
+
+    private void GoToStep(int step)
+    {
+        if (step < _currentStep) {
+            _attemptedNext = false;
+            _currentStep = step;
+        }
+    }
+
+    private async Task Finish()
+    {
+        var item = new DataObjects.SampleItem {
+            Name = _itemName,
+            Category = _selectedCategory,
+            Priority = _priority,
+            Status = DataObjects.SampleItemStatus.Active,
+            Enabled = true,
+        };
+
+        await Helpers.GetOrPost<List<DataObjects.SampleItem>>("api/Data/SaveSampleItems", new List<DataObjects.SampleItem> { item });
+        Model.Message_Saved();
+        Helpers.NavigateTo("Examples/SampleItems");
+    }
+
+    private List<FreeExamples.Client.Shared.Wizard.WizardStepper.WizardStepInfo> GetStepperInfo() => new() {
+        new() { Name = "Category", SelectedValue = _selectedCategory },
+        new() { Name = "Details", SelectedValue = _itemName },
+        new() { Name = "Priority", SelectedValue = _priority >= 1 && _priority <= 5 ? _priority.ToString() : "" },
+        new() { Name = "Review", SelectedValue = "" },
+    };
+
+    private List<FreeExamples.Client.Shared.Wizard.WizardSummary.SelectionItem> GetSelections() => new() {
+        new() { Label = "Category", Value = _selectedCategory },
+        new() { Label = "Name", Value = _itemName },
+        new() { Label = "Priority", Value = _priority >= 1 && _priority <= 5 ? _priority.ToString() : "" },
+    };
+}

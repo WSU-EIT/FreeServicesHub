@@ -1,0 +1,1040 @@
+﻿@* Pipeline Table View Component *@
+@* Displays pipelines in a dense table format with clickable sortable columns *@
+@* Phase 1 Dashboard Enhancement: Added Duration column, Build Number, Relative Timestamps *@
+
+@using Humanizer
+
+<div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+            <tr>
+                <th scope="col" style="width: 20%;" class="sortable-header user-select-none" @onclick="@(() => OnColumnClick(ColName))">
+                    <div class="d-flex align-items-center gap-1">
+                        Name
+                        @GetSortIcon(ColName)
+                    </div>
+                </th>
+                <th scope="col" style="width: 8%;" class="sortable-header user-select-none" @onclick="@(() => OnColumnClick(ColBranch))">
+                    <div class="d-flex align-items-center gap-1">
+                        Branch
+                        @GetSortIcon(ColBranch)
+                    </div>
+                </th>
+                <th scope="col" style="width: 8%;" class="sortable-header user-select-none" @onclick="@(() => OnColumnClick(ColRepository))">
+                    <div class="d-flex align-items-center gap-1">
+                        Repository
+                        @GetSortIcon(ColRepository)
+                    </div>
+                </th>
+                <th scope="col" style="width: 7%;" class="sortable-header user-select-none" @onclick="@(() => OnColumnClick(ColStatus))">
+                    <div class="d-flex align-items-center gap-1">
+                        Status
+                        @GetSortIcon(ColStatus)
+                    </div>
+                </th>
+                <th scope="col" style="width: 14%;" title="Build stages progress">
+                    <div class="d-flex align-items-center gap-1">
+                        Stages
+                    </div>
+                </th>
+                <th scope="col" style="width: 9%;" class="sortable-header user-select-none" @onclick="@(() => OnColumnClick(ColTrigger))">
+                    <div class="d-flex align-items-center gap-1">
+                        Trigger
+                        @GetSortIcon(ColTrigger)
+                    </div>
+                </th>
+                <th scope="col" style="width: 8%;" class="sortable-header user-select-none" @onclick="@(() => OnColumnClick(ColLastRun))">
+                    <div class="d-flex align-items-center gap-1">
+                        Last Run
+                        @GetSortIcon(ColLastRun)
+                    </div>
+                </th>
+                <th scope="col" style="width: 6%;" class="sortable-header user-select-none" @onclick="@(() => OnColumnClick(ColDuration))" title="Build duration">
+                    <div class="d-flex align-items-center gap-1">
+                        <i class="fa fa-clock-o text-muted me-1"></i>
+                        Duration
+                        @GetSortIcon(ColDuration)
+                    </div>
+                </th>
+                <th scope="col" style="width: 8%;" title="Variable Groups (Library Sets) for appsettings.json replacement">
+                    <div class="d-flex align-items-center gap-1">
+                        <i class="fa fa-database text-muted"></i>
+                        Library
+                    </div>
+                </th>
+                <th scope="col" style="width: 12%;" class="text-end">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Pipelines?.Any() == true) {
+                @foreach (var pipeline in Pipelines) {
+                    <tr>
+                        @* Name + Build Number (both clickable) *@
+                        <td>
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="fa fa-rocket text-muted"></i>
+                                <div>
+                                    <a href="@pipeline.ResourceUrl" target="_blank" 
+                                       class="fw-medium text-decoration-none link-body-emphasis link-underline-opacity-0 link-underline-opacity-100-hover" 
+                                       title="@pipeline.Name - Open in Azure DevOps">
+                                        @TruncateName(pipeline.Name, 22)
+                                    </a>
+                                    @if (!string.IsNullOrWhiteSpace(pipeline.LastRunBuildNumber)) {
+                                        @* Build number links to pipeline runs page *@
+                                        <a href="@pipeline.PipelineRunsUrl" target="_blank"
+                                           class="text-muted small ms-1 text-decoration-none link-underline-opacity-0 link-underline-opacity-75-hover" 
+                                           title="View all runs for #@pipeline.LastRunBuildNumber">
+                                            #@TruncateName(pipeline.LastRunBuildNumber, 12)
+                                        </a>
+                                    }
+                                </div>
+                            </div>
+                            @* Commit hash link *@
+                            @if (!string.IsNullOrWhiteSpace(pipeline.LastCommitId)) {
+                                <div class="small">
+                                    <a href="@pipeline.CommitUrl" target="_blank"
+                                       class="text-muted font-monospace text-decoration-none link-underline-opacity-0 link-underline-opacity-75-hover"
+                                       title="View commit @pipeline.LastCommitId in Azure DevOps">
+                                        <i class="fa fa-code-fork me-1"></i>@pipeline.LastCommitId
+                                    </a>
+                                    @if (!string.IsNullOrWhiteSpace(pipeline.YamlFileName)) {
+                                        <span class="text-muted mx-1">•</span>
+                                        <span class="text-muted">
+                                            <i class="fa fa-file-code-o me-1"></i>@System.IO.Path.GetFileName(pipeline.YamlFileName)
+                                        </span>
+                                    }
+                                </div>
+                            } else if (!string.IsNullOrWhiteSpace(pipeline.YamlFileName)) {
+                                <div class="small text-muted">
+                                    <i class="fa fa-file-code-o me-1"></i>
+                                    @System.IO.Path.GetFileName(pipeline.YamlFileName)
+                                </div>
+                            }
+                        </td>
+
+                        @* Branch - Using BranchBadge component *@
+                        <td>
+                            @{
+                                // Prefer CodeBranch (from YAML BuildRepo) → TriggerBranch (from actual build) → DefaultBranch (from repo)
+                                var branchToShow = !string.IsNullOrWhiteSpace(pipeline.CodeBranch) 
+                                    ? pipeline.CodeBranch 
+                                    : !string.IsNullOrWhiteSpace(pipeline.TriggerBranch) 
+                                        ? pipeline.TriggerBranch 
+                                        : pipeline.DefaultBranch;
+                                // Use CodeBranchUrl if available
+                                var branchUrl = pipeline.CodeBranchUrl;
+                            }
+                            @if (!string.IsNullOrWhiteSpace(branchToShow)) {
+                                <BranchBadge Branch="@branchToShow" BranchUrl="@branchUrl" MaxLength="15" />
+                            } else {
+                                <span class="text-muted">—</span>
+                            }
+                        </td>
+
+                        @* Repository (clickable) - Prefer CodeRepo (actual code) over RepositoryName (YAML storage) *@
+                        <td>
+                            @{
+                                var repoName = !string.IsNullOrWhiteSpace(pipeline.CodeRepoName) 
+                                    ? pipeline.CodeRepoName 
+                                    : pipeline.RepositoryName;
+                                var repoUrl = !string.IsNullOrWhiteSpace(pipeline.CodeRepoUrl) 
+                                    ? pipeline.CodeRepoUrl 
+                                    : pipeline.RepositoryUrl;
+                            }
+                            @if (!string.IsNullOrWhiteSpace(repoName)) {
+                                <a href="@repoUrl" target="_blank"
+                                   class="text-decoration-none link-body-emphasis link-underline-opacity-0 link-underline-opacity-75-hover"
+                                   title="Open @repoName repository in Azure DevOps">
+                                    @TruncateName(repoName, 14)
+                                </a>
+                            } else {
+                                <span class="text-muted">—</span>
+                            }
+                        </td>
+
+                        @* Status - Clickable link to build results *@
+                        <td>
+                            @if (!string.IsNullOrWhiteSpace(pipeline.LastRunResultsUrl)) {
+                                <a href="@pipeline.LastRunResultsUrl" target="_blank" 
+                                   class="text-decoration-none clickable-badge"
+                                   title="View build results in Azure DevOps">
+                                    @GetStatusBadge(pipeline)
+                                </a>
+                            } else {
+                                @GetStatusBadge(pipeline)
+                            }
+                        </td>
+
+                        @* Stage Bubbles *@
+                        <td>
+                            @if (pipeline.Stages?.Any() == true) {
+                                <div class="d-flex align-items-center gap-0 flex-wrap" style="gap: 2px !important;">
+                                    @foreach (var stage in pipeline.Stages.OrderBy(s => s.Order)) {
+                                        @GetStageBubble(stage)
+                                    }
+                                    @if (pipeline.LastRunBuildId.HasValue) {
+                                        <button class="btn btn-link btn-sm p-0 ms-1 text-muted" 
+                                                @onclick="@(() => ToggleExpand(pipeline.Id))" @onclick:stopPropagation="true"
+                                                title="@(_expandedPipelineIds.Contains(pipeline.Id) ? "Collapse stage details" : "Expand stage details")">
+                                            <i class="fa @(_expandedPipelineIds.Contains(pipeline.Id) ? "fa-chevron-up" : "fa-chevron-down")" 
+                                               style="font-size: 0.7em;"></i>
+                                        </button>
+                                    }
+                                </div>
+                            } else if (pipeline.LastRunStatus?.ToLower() == "inprogress" || pipeline.LastRunStatus?.ToLower() == "running") {
+                                <span class="text-info small"><i class="fa fa-spinner fa-spin me-1"></i>Starting...</span>
+                            } else {
+                                <span class="text-muted">—</span>
+                            }
+                        </td>
+
+                        @* Trigger - Clickable link to pipeline config *@
+                        <td>
+                            <div class="d-flex align-items-center gap-1">
+                                @if (!string.IsNullOrWhiteSpace(pipeline.TriggeredByAvatarUrl)) {
+                                    <img src="@pipeline.TriggeredByAvatarUrl" 
+                                         alt="@pipeline.TriggeredByUser" 
+                                         title="@pipeline.TriggeredByUser" 
+                                         class="rounded-circle" 
+                                         style="width: 20px; height: 20px; object-fit: cover;" 
+                                         onerror="this.style.display='none'" />
+                                }
+                                @if (!string.IsNullOrWhiteSpace(pipeline.PipelineConfigUrl)) {
+                                    <a href="@pipeline.PipelineConfigUrl" target="_blank" 
+                                       class="text-decoration-none clickable-badge"
+                                       title="Configure pipeline triggers in Azure DevOps">
+                                        @GetTriggerDisplay(pipeline)
+                                    </a>
+                                } else {
+                                    @GetTriggerDisplay(pipeline)
+                                }
+                            </div>
+                        </td>
+
+                        @* Last Run - Clickable link to build logs *@
+                        <td>
+                            @if (pipeline.LastRunTime.HasValue) {
+                                @if (!string.IsNullOrWhiteSpace(pipeline.LastRunLogsUrl)) {
+                                    <a href="@pipeline.LastRunLogsUrl" target="_blank" 
+                                       class="text-decoration-none link-body-emphasis link-underline-opacity-0 link-underline-opacity-75-hover"
+                                       title="View build logs - @pipeline.LastRunTime.Value.ToString("g")">
+                                        @pipeline.LastRunTime.Value.Humanize()
+                                        <i class="fa fa-external-link-square ms-1 small text-muted"></i>
+                                    </a>
+                                } else {
+                                    <span title="@pipeline.LastRunTime.Value.ToString("g")" class="cursor-help">
+                                        @pipeline.LastRunTime.Value.Humanize()
+                                    </span>
+                                }
+                            } else {
+                                <span class="text-muted">Never run</span>
+                            }
+                        </td>
+
+                        @* Duration *@
+                        <td>
+                            @if (pipeline.Duration.HasValue) {
+                                <span class="text-muted small" title="@FormatDurationFull(pipeline.Duration)">
+                                    <i class="fa fa-clock-o me-1"></i>@FormatDuration(pipeline.Duration)
+                                </span>
+                            } else if (pipeline.LastRunStatus?.ToLower() is "inprogress" or "running") {
+                                <span class="text-info small">
+                                    <i class="fa fa-spinner fa-spin me-1"></i>Running...
+                                </span>
+                            } else {
+                                <span class="text-muted">—</span>
+                            }
+                        </td>
+
+                        @* Variable Groups (Library Sets) *@
+                        <td>
+                            @if (pipeline.VariableGroups?.Any() == true) {
+                                @RenderVariableGroupCell(pipeline)
+                            } else {
+                                <span class="text-muted">—</span>
+                            }
+                        </td>
+
+                        @* Actions - ALL proper anchor tags for right-click/middle-click support *@
+                        <td class="text-end">
+                            <div class="btn-group btn-group-sm">
+                                <a href="@(Helpers.BuildUrl(pipeline.EditWizardUrl))" 
+                                   class="btn btn-outline-primary" 
+                                   title="Edit in Wizard">
+                                    <i class="fa fa-pencil"></i>
+                                </a>
+                                <a href="@pipeline.PipelineRunsUrl" target="_blank" 
+                                   class="btn btn-outline-info" 
+                                   title="View pipeline runs">
+                                    <i class="fa fa-list"></i>
+                                </a>
+                                @* More actions dropdown *@
+                                <div class="btn-group btn-group-sm">
+                                    <button type="button" class="btn btn-outline-secondary dropdown-toggle" 
+                                            data-bs-toggle="dropdown" aria-expanded="false" title="More actions">
+                                        <i class="fa fa-ellipsis-v"></i>
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end">
+                                        <li>
+                                            <button class="dropdown-item" @onclick="@(() => OnRunPipelineClick(pipeline))" @onclick:stopPropagation="true">
+                                                <i class="fa fa-play text-success me-2"></i>Run Pipeline
+                                            </button>
+                                        </li>
+                                        <li><hr class="dropdown-divider" /></li>
+                                        <li>
+                                            <a class="dropdown-item" href="@pipeline.ResourceUrl" target="_blank">
+                                                <i class="fa fa-external-link me-2"></i>View in Azure DevOps
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <button class="dropdown-item" @onclick="@(() => OnCopyYamlClick(pipeline))" @onclick:stopPropagation="true">
+                                                <i class="fa fa-clipboard me-2"></i>Copy YAML
+                                            </button>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    @* Expandable stage detail row *@
+                    @if (_expandedPipelineIds.Contains(pipeline.Id)) {
+                        <tr class="table-light">
+                            <td colspan="10" class="p-0">
+                                @RenderStageDetail(pipeline)
+                            </td>
+                        </tr>
+                    }
+                }
+            } else {
+                <tr>
+                    <td colspan="10" class="text-center text-muted py-4">
+                        <i class="fa fa-inbox fa-2x mb-2 d-block"></i>
+                        No pipelines found
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+// Column name constants to avoid escaping issues in Razor
+private const string ColName = "name";
+private const string ColBranch = "branch";
+private const string ColRepository = "repository";
+private const string ColStatus = "status";
+private const string ColTrigger = "trigger";
+private const string ColLastRun = "lastrun";
+private const string ColDuration = "duration";
+
+[Parameter] public List<DataObjects.PipelineListItem>? Pipelines { get; set; }
+[Parameter] public EventCallback<DataObjects.PipelineListItem> OnEdit { get; set; }
+[Parameter] public EventCallback<DataObjects.PipelineListItem> OnView { get; set; }
+[Parameter] public EventCallback<DataObjects.PipelineListItem> OnCopyYaml { get; set; }
+[Parameter] public EventCallback<DataObjects.PipelineListItem> OnRunPipeline { get; set; }
+
+// Sort state from parent (unified sort)
+[Parameter] public string SortColumn { get; set; } = ColLastRun;
+[Parameter] public bool SortAscending { get; set; } = false;
+[Parameter] public EventCallback<(string Column, bool Ascending)> OnSortChanged { get; set; }
+
+private async Task OnCopyYamlClick(DataObjects.PipelineListItem pipeline)
+{
+    if (OnCopyYaml.HasDelegate) {
+        await OnCopyYaml.InvokeAsync(pipeline);
+    }
+}
+
+private async Task OnRunPipelineClick(DataObjects.PipelineListItem pipeline)
+{
+    if (OnRunPipeline.HasDelegate) {
+        await OnRunPipeline.InvokeAsync(pipeline);
+    }
+}
+
+private async Task OnColumnClick(string column)
+    {
+        bool newAscending;
+        if (SortColumn == column) {
+            // Toggle direction if clicking same column
+            newAscending = !SortAscending;
+        } else {
+            // New column - set appropriate default direction
+            newAscending = column switch {
+                ColName => true,       // A-Z by default
+                ColBranch => true,     // A-Z by default
+                ColRepository => true, // A-Z by default
+                ColStatus => false,    // Failed first by default
+                ColTrigger => true,    // Manual first by default
+                ColLastRun => false,   // Newest first by default
+                ColDuration => false,  // Longest first by default
+                _ => true
+            };
+        }
+
+        // Notify parent of sort change
+        if (OnSortChanged.HasDelegate) {
+            await OnSortChanged.InvokeAsync((column, newAscending));
+        }
+    }
+
+    private RenderFragment GetSortIcon(string column)
+    {
+        if (SortColumn != column) {
+            // Show subtle sort hint on hover-able columns
+            return @<i class="fa fa-sort text-muted opacity-50"></i>;
+        }
+
+        // Show active sort direction
+        var iconClass = SortAscending ? "fa-sort-up" : "fa-sort-down";
+        return @<i class="fa @iconClass text-primary"></i>;
+    }
+
+    private async Task OnEditPipeline(DataObjects.PipelineListItem pipeline)
+    {
+        await OnEdit.InvokeAsync(pipeline);
+    }
+
+    private async Task OnViewPipeline(DataObjects.PipelineListItem pipeline)
+    {
+        await OnView.InvokeAsync(pipeline);
+    }
+
+    private string TruncateName(string? name, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "";
+        return name.Length > maxLength ? name[..(maxLength - 3)] + "..." : name;
+    }
+
+    private RenderFragment GetStatusBadge(DataObjects.PipelineListItem pipeline)
+    {
+        var status = pipeline.LastRunStatus?.ToLower() ?? "";
+        var result = pipeline.LastRunResult?.ToLower() ?? "";
+
+        string badgeClass;
+        string badgeIcon;
+        string badgeText;
+
+        if (string.IsNullOrWhiteSpace(status)) {
+            badgeClass = "bg-secondary";
+            badgeIcon = "fa-question";
+            badgeText = "Unknown";
+        } else if (status == "completed" || status == "finished") {
+            switch (result) {
+                case "succeeded":
+                    badgeClass = "bg-success";
+                    badgeIcon = "fa-check";
+                    badgeText = "Succeeded";
+                    break;
+                case "failed":
+                    badgeClass = "bg-danger";
+                    badgeIcon = "fa-times";
+                    badgeText = "Failed";
+                    break;
+                case "partiallysucceeded":
+                    badgeClass = "bg-warning text-dark";
+                    badgeIcon = "fa-exclamation-triangle";
+                    badgeText = "Partial";
+                    break;
+                case "canceled":
+                    badgeClass = "bg-secondary";
+                    badgeIcon = "fa-ban";
+                    badgeText = "Canceled";
+                    break;
+                default:
+                    badgeClass = "bg-secondary";
+                    badgeIcon = "fa-question";
+                    badgeText = result.Humanize(LetterCasing.Title);
+                    break;
+            }
+        } else if (status == "inprogress" || status == "running") {
+            badgeClass = "bg-info";
+            badgeIcon = "fa-spinner fa-spin";
+            badgeText = "Running";
+        } else if (status == "notstarted" || status == "queued") {
+            badgeClass = "bg-secondary";
+            badgeIcon = "fa-pause";
+            badgeText = "Queued";
+        } else if (status == "cancelling") {
+            badgeClass = "bg-warning text-dark";
+            badgeIcon = "fa-ban";
+            badgeText = "Cancelling";
+        } else {
+            badgeClass = "bg-secondary";
+            badgeIcon = "fa-question";
+            badgeText = status.Humanize(LetterCasing.Title);
+        }
+
+        return @<span class="badge @badgeClass">
+            <i class="fa @badgeIcon me-1"></i>
+            @badgeText
+        </span>;
+    }
+
+    private RenderFragment GetTriggerDisplay(DataObjects.PipelineListItem pipeline)
+    {
+        // Get icon and color based on trigger type
+        var (icon, badgeClass, tooltipText) = pipeline.TriggerType switch {
+            DataObjects.TriggerType.Manual => ("fa-user", "bg-primary-subtle text-primary-emphasis border border-primary-subtle", 
+                $"Manually triggered{(!string.IsNullOrWhiteSpace(pipeline.TriggeredByUser) ? $" by {pipeline.TriggeredByUser}" : "")}"),
+            DataObjects.TriggerType.CodePush => ("fa-bolt", "bg-warning-subtle text-warning-emphasis border border-warning-subtle", 
+                "Triggered by code push (CI)"),
+            DataObjects.TriggerType.Scheduled => ("fa-clock-o", "bg-info-subtle text-info-emphasis border border-info-subtle", 
+                "Scheduled trigger"),
+            DataObjects.TriggerType.PullRequest => ("fa-code-fork", "bg-purple-subtle text-purple-emphasis border border-purple-subtle", 
+                "Pull request trigger"),
+            DataObjects.TriggerType.PipelineCompletion => ("fa-link", "bg-success-subtle text-success-emphasis border border-success-subtle", 
+                $"Triggered by pipeline completion{(!string.IsNullOrWhiteSpace(pipeline.TriggeredByPipeline) ? $": {pipeline.TriggeredByPipeline}" : "")}"),
+            DataObjects.TriggerType.ResourceTrigger => ("fa-cube", "bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle", 
+                "Resource trigger (container/package)"),
+            _ => ("fa-cog", "bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle", 
+                pipeline.TriggerDisplayText ?? "Unknown trigger")
+        };
+
+        // Determine display text
+        var displayText = pipeline.TriggerType switch {
+            DataObjects.TriggerType.Manual => TruncateName(pipeline.TriggeredByUser, 12) ?? "Manual",
+            DataObjects.TriggerType.CodePush => "Code push",
+            DataObjects.TriggerType.Scheduled => "Scheduled",
+            DataObjects.TriggerType.PullRequest => "PR",
+            DataObjects.TriggerType.PipelineCompletion => "Pipeline",
+            DataObjects.TriggerType.ResourceTrigger => "Resource",
+            _ => TruncateName(pipeline.TriggerDisplayText, 10) ?? "Other"
+        };
+
+        // Use secondary colors if no trigger info available
+        if (string.IsNullOrWhiteSpace(pipeline.TriggerReason)) {
+            return @<span class="text-muted">—</span>;
+        }
+
+        // For PR, use a custom purple since Bootstrap doesn't have it - fall back to secondary
+        if (pipeline.TriggerType == DataObjects.TriggerType.PullRequest) {
+            badgeClass = "bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle";
+        }
+
+        return @<span class="badge @badgeClass" title="@tooltipText">
+            <i class="fa @icon me-1"></i>
+            @displayText
+        </span>;
+    }
+
+    private string GetTimeAgo(DateTime dateTime)
+    {
+        try {
+            var timeSpan = DateTime.UtcNow - dateTime.ToUniversalTime();
+            if (timeSpan.TotalMinutes < 1) return "just now";
+            if (timeSpan.TotalMinutes < 60) return $"{(int)timeSpan.TotalMinutes}m ago";
+            if (timeSpan.TotalHours < 24) return $"{(int)timeSpan.TotalHours}h ago";
+            if (timeSpan.TotalDays < 7) return $"{(int)timeSpan.TotalDays}d ago";
+            return dateTime.ToString("MMM d");
+        } catch {
+            return dateTime.ToString("g");
+        }
+    }
+
+    private RenderFragment RenderVariableGroupCell(DataObjects.PipelineListItem pipeline) => __builder =>
+    {
+        var groups = pipeline.VariableGroups ?? [];
+        
+        <div class="d-flex flex-wrap gap-1">
+            @foreach (var group in groups) {
+                var envLabel = GetEnvironmentLabel(group.Environment);
+                var hasLink = !string.IsNullOrWhiteSpace(group.ResourceUrl);
+                var tooltip = $"{group.Name}" + (group.VariableCount > 0 ? $" ({group.VariableCount} vars)" : "");
+                
+                @if (hasLink) {
+                    <a href="@group.ResourceUrl" target="_blank" 
+                       class="badge @GetEnvironmentBadgeClass(group.Environment) text-decoration-none library-link"
+                       title="@tooltip">
+                        @envLabel
+                        <i class="fa fa-external-link-square ms-1 small"></i>
+                    </a>
+                } else {
+                    <span class="badge bg-secondary-subtle text-secondary-emphasis border" 
+                          title="@tooltip (not found)">
+                        @envLabel
+                    </span>
+                }
+            }
+        </div>
+    };
+
+    private string GetEnvironmentLabel(string? environment)
+    {
+        if (string.IsNullOrWhiteSpace(environment)) return "Vars";
+        
+        // Return short label for common environments
+        return environment.ToUpperInvariant() switch {
+            "DEV" => "DEV",
+            "PROD" => "PROD",
+            "CMS" => "CMS",
+            "STAGING" => "STG",
+            "QA" => "QA",
+            "UAT" => "UAT",
+            "TEST" => "TEST",
+            _ => environment.Length > 4 ? environment[..4].ToUpperInvariant() : environment.ToUpperInvariant()
+        };
+    }
+
+    private string GetEnvironmentBadgeClass(string? environment)
+    {
+        if (string.IsNullOrWhiteSpace(environment)) 
+            return "bg-secondary-subtle text-secondary-emphasis border";
+        
+        return environment.ToUpperInvariant() switch {
+            "DEV" => "bg-info-subtle text-info-emphasis border border-info-subtle",
+            "PROD" => "bg-success-subtle text-success-emphasis border border-success-subtle",
+            "CMS" => "bg-warning-subtle text-warning-emphasis border border-warning-subtle",
+            "STAGING" or "STG" => "bg-primary-subtle text-primary-emphasis border border-primary-subtle",
+            "QA" or "UAT" or "TEST" => "bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle",
+            _ => "bg-light text-dark border"
+        };
+    }
+
+    /// <summary>
+    /// Formats duration as full text for tooltip (e.g., "2 minutes 15 seconds").
+    /// </summary>
+    private string FormatDurationFull(TimeSpan? duration)
+    {
+        if (duration == null) return "";
+        return duration.Value.Humanize(2);
+    }
+
+    private string FormatDuration(TimeSpan? duration)
+    {
+        if (duration == null) return "";
+    
+        // Format as abbreviated duration (e.g., "5m 30s")
+        var totalSeconds = (int)duration.Value.TotalSeconds;
+        var minutes = totalSeconds / 60;
+        var seconds = totalSeconds % 60;
+    
+        // Handle special cases for round minutes or seconds
+        if (seconds == 0) {
+            return $"{minutes}m";
+        } else if (minutes == 0) {
+            return $"{seconds}s";
+        } else {
+                    return $"{minutes}m {seconds}s";
+                    }
+                }
+
+            // === Stage Bubbles & Expandable Detail ===
+
+            private HashSet<int> _expandedPipelineIds = [];
+            private Dictionary<int, DataObjects.BuildTimelineResponse?> _timelineCache = [];
+            private HashSet<int> _loadingTimelines = [];
+
+            // Log viewer state
+            private string? _activeLogKey; // "buildId:jobId"
+            private DataObjects.BuildLogResponse? _activeLog;
+            private bool _loadingLog;
+
+            private async Task ToggleExpand(int pipelineId)
+            {
+                if (_expandedPipelineIds.Contains(pipelineId)) {
+                    _expandedPipelineIds.Remove(pipelineId);
+                } else {
+                    _expandedPipelineIds.Add(pipelineId);
+                    // Fetch timeline if not cached
+                    if (!_timelineCache.ContainsKey(pipelineId)) {
+                        await LoadTimeline(pipelineId);
+                    }
+                }
+            }
+
+            private async Task LoadTimeline(int pipelineId)
+            {
+                var pipeline = Pipelines?.FirstOrDefault(p => p.Id == pipelineId);
+                if (pipeline?.LastRunBuildId == null) return;
+
+                _loadingTimelines.Add(pipelineId);
+                StateHasChanged();
+
+                try {
+                    var response = await Helpers.GetOrPost<DataObjects.BuildTimelineResponse>(
+                        $"api/Pipelines/builds/{pipeline.LastRunBuildId}/timeline");
+                    _timelineCache[pipelineId] = response;
+                } catch {
+                    _timelineCache[pipelineId] = null;
+                }
+
+                _loadingTimelines.Remove(pipelineId);
+                    StateHasChanged();
+                }
+
+                private async Task LoadJobLogs(int buildId, string jobId, string jobName)
+                {
+                    var key = $"{buildId}:{jobId}";
+                    if (_activeLogKey == key) {
+                        _activeLogKey = null;
+                        _activeLog = null;
+                        return;
+                    }
+
+                    _activeLogKey = key;
+                    _activeLog = null;
+                    _loadingLog = true;
+                    StateHasChanged();
+
+                    try {
+                        _activeLog = await Helpers.GetOrPost<DataObjects.BuildLogResponse>(
+                            $"api/Pipelines/builds/{buildId}/jobs/{jobId}/logs");
+                    } catch {
+                        _activeLog = new DataObjects.BuildLogResponse { ErrorMessage = "Failed to load logs" };
+                    }
+
+                    _loadingLog = false;
+                    StateHasChanged();
+                }
+
+                private void CloseLogViewer()
+                {
+                    _activeLogKey = null;
+                    _activeLog = null;
+                }
+
+                /// <summary>
+                /// Groups stages by their Column value for flow graph rendering.
+                /// Returns a list of columns, each containing the stages that run in parallel.
+                /// </summary>
+                private List<List<DataObjects.BuildStageInfo>> GroupStagesByColumn(List<DataObjects.BuildStageInfo> stages)
+                {
+                    return stages
+                        .OrderBy(s => s.Column)
+                        .ThenBy(s => s.Order)
+                        .GroupBy(s => s.Column)
+                        .OrderBy(g => g.Key)
+                        .Select(g => g.ToList())
+                        .ToList();
+                }
+
+            private RenderFragment GetStageBubble(DataObjects.StageBubble stage) => __builder =>
+            {
+                var (icon, colorClass, tooltip) = (stage.State, stage.Result) switch {
+                    ("completed", "succeeded") => ("fa-check-circle", "text-success", $"{stage.Name}: Succeeded"),
+                    ("completed", "failed") => ("fa-times-circle", "text-danger", $"{stage.Name}: Failed"),
+                    ("completed", "canceled") => ("fa-minus-circle", "text-secondary", $"{stage.Name}: Canceled"),
+                    ("completed", "skipped") => ("fa-minus-circle", "text-secondary", $"{stage.Name}: Skipped"),
+                    ("inprogress", _) => ("fa-spinner fa-spin", "text-info", $"{stage.Name}: Running..."),
+                    ("pending", _) => ("fa-circle-o", "text-muted", $"{stage.Name}: Pending"),
+                    _ => ("fa-circle-o", "text-muted", $"{stage.Name}: Not started")
+                };
+
+                <i class="fa @icon @colorClass" style="font-size: 0.85em; margin: 0 1px;" title="@tooltip"></i>
+            };
+
+            private RenderFragment RenderStageDetail(DataObjects.PipelineListItem pipeline) => __builder =>
+            {
+                if (_loadingTimelines.Contains(pipeline.Id)) {
+                    <div class="p-3 text-center text-muted">
+                        <i class="fa fa-spinner fa-spin me-2"></i>Loading stage details...
+                    </div>
+                } else if (_timelineCache.TryGetValue(pipeline.Id, out var timeline) && timeline?.Stages?.Any() == true) {
+                    var columns = GroupStagesByColumn(timeline.Stages);
+                    <div class="p-3">
+                        @* Flow Graph *@
+                        <div class="py-1" style="overflow-x: auto;">
+                            <div class="d-flex align-items-stretch" style="gap: 0; min-width: fit-content;">
+                                @for (int colIdx = 0; colIdx < columns.Count; colIdx++) {
+                                    var column = columns[colIdx];
+                                    var isLast = colIdx == columns.Count - 1;
+                                    var prevColumn = colIdx > 0 ? columns[colIdx - 1] : null;
+
+                                    @* Connector before this column (except first) *@
+                                    @if (colIdx > 0) {
+                                        <div class="d-flex align-items-center flex-shrink-0" style="min-width: 32px; position: relative;">
+                                            @RenderConnector(prevColumn!, column)
+                                        </div>
+                                    }
+
+                                    @* Stage column *@
+                                    <div class="d-flex flex-column justify-content-center flex-shrink-0" style="gap: 6px;">
+                                        @foreach (var stage in column) {
+                                            @RenderStageCard(stage, pipeline)
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        @* Log Viewer Panel *@
+                        @if (_loadingLog) {
+                            <div class="mt-3 p-3 bg-dark text-light rounded" style="font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 0.8em;">
+                                <i class="fa fa-spinner fa-spin me-2"></i>Loading logs...
+                            </div>
+                        } else if (_activeLog != null && _activeLogKey?.StartsWith($"{pipeline.LastRunBuildId}:") == true) {
+                            <div class="mt-3 border rounded overflow-hidden">
+                                <div class="d-flex justify-content-between align-items-center bg-dark text-light px-3 py-2">
+                                    <span class="fw-medium small">
+                                        <i class="fa fa-file-text-o me-2"></i>@_activeLog.JobName
+                                    </span>
+                                    <div class="d-flex gap-2">
+                                        <span class="small text-muted">@_activeLog.Lines.Count lines</span>
+                                        <button class="btn btn-sm btn-outline-light py-0 px-1" @onclick="CloseLogViewer" @onclick:stopPropagation="true" title="Close logs">
+                                            <i class="fa fa-times" style="font-size: 0.75em;"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(_activeLog.ErrorMessage)) {
+                                    <div class="p-3 text-danger bg-danger-subtle small">
+                                        <i class="fa fa-exclamation-triangle me-1"></i>@_activeLog.ErrorMessage
+                                    </div>
+                                } else {
+                                    <div class="bg-dark text-light p-2 overflow-auto" style="max-height: 400px; font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 0.75em; line-height: 1.5;">
+                                        @foreach (var line in _activeLog.Lines) {
+                                            var lineClass = line.Severity switch {
+                                                "error" => "text-danger fw-bold",
+                                                "warning" => "text-warning",
+                                                "section" => "text-info fw-bold",
+                                                _ => "text-light"
+                                            };
+                                            var bgClass = line.Severity == "error" ? "bg-danger bg-opacity-10" : "";
+                                            <div class="@lineClass @bgClass d-flex" style="min-height: 1.5em;">
+                                                <span class="text-secondary me-2 user-select-none" style="min-width: 3em; text-align: right;">@line.LineNumber</span>
+                                                <span style="white-space: pre-wrap; word-break: break-all;">@line.Text</span>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(pipeline.LastRunResultsUrl)) {
+                            <div class="mt-2">
+                                <a href="@pipeline.LastRunResultsUrl" target="_blank" class="small text-decoration-none">
+                                    <i class="fa fa-external-link me-1"></i>View full build in Azure DevOps
+                                </a>
+                            </div>
+                        }
+                    </div>
+                } else if (pipeline.Stages?.Any() == true) {
+                    @* Fallback: show basic stage info from pipeline data if timeline fetch failed *@
+                    <div class="p-3">
+                        <div class="d-flex flex-wrap gap-2">
+                            @foreach (var stage in pipeline.Stages.OrderBy(s => s.Order)) {
+                                var bubbleIcon = (stage.State, stage.Result) switch {
+                                    ("completed", "succeeded") => "fa-check-circle text-success",
+                                    ("completed", "failed") => "fa-times-circle text-danger",
+                                    ("inprogress", _) => "fa-spinner fa-spin text-info",
+                                    _ => "fa-circle-o text-muted"
+                                };
+                                <span class="badge bg-light text-dark border">
+                                    <i class="fa @bubbleIcon me-1"></i>@stage.Name
+                                </span>
+                            }
+                        </div>
+                    </div>
+                } else {
+                    <div class="p-3 text-center text-muted small">
+                        <i class="fa fa-info-circle me-1"></i>No stage information available
+                    </div>
+                }
+            };
+
+            /// <summary>
+            /// Renders a single stage card for the flow graph.
+            /// </summary>
+            private RenderFragment RenderStageCard(DataObjects.BuildStageInfo stage, DataObjects.PipelineListItem pipeline) => __builder =>
+            {
+                var stageClass = (stage.State, stage.Result) switch {
+                    ("completed", "succeeded") => "border-success",
+                    ("completed", "failed") => "border-danger",
+                    ("completed", "canceled") => "border-secondary",
+                    ("inprogress", _) => "border-info",
+                    _ => "border-secondary-subtle"
+                };
+                var headerBg = (stage.State, stage.Result) switch {
+                    ("completed", "succeeded") => "bg-success-subtle",
+                    ("completed", "failed") => "bg-danger-subtle",
+                    ("inprogress", _) => "bg-info-subtle",
+                    _ => "bg-light"
+                };
+                var stageIcon = (stage.State, stage.Result) switch {
+                    ("completed", "succeeded") => "fa-check-circle text-success",
+                    ("completed", "failed") => "fa-times-circle text-danger",
+                    ("completed", "canceled") => "fa-ban text-secondary",
+                    ("completed", "skipped") => "fa-minus-circle text-secondary",
+                    ("inprogress", _) => "fa-spinner fa-spin text-info",
+                    _ => "fa-circle-o text-muted"
+                };
+
+                <div class="card border @stageClass" style="min-width: 150px; max-width: 200px;">
+                    <div class="card-header py-1 px-2 @headerBg">
+                        <div class="d-flex align-items-center gap-1">
+                            <i class="fa @stageIcon" style="font-size: 0.8em;"></i>
+                            <span class="small fw-medium text-truncate" title="@stage.Name" style="max-width: 140px;">
+                                @stage.Name
+                            </span>
+                        </div>
+                        @if (stage.StartTime.HasValue && stage.FinishTime.HasValue) {
+                            var duration = stage.FinishTime.Value - stage.StartTime.Value;
+                            <div class="text-muted" style="font-size: 0.65em;">
+                                <i class="fa fa-clock-o me-1"></i>@FormatDuration(duration)
+                            </div>
+                        } else if (stage.State == "inprogress" && stage.StartTime.HasValue) {
+                            <div class="text-info" style="font-size: 0.65em;">
+                                <i class="fa fa-clock-o me-1"></i>Running...
+                            </div>
+                        }
+                    </div>
+                    @if (stage.Jobs?.Any() == true) {
+                        <div class="card-body p-0">
+                            <ul class="list-group list-group-flush">
+                                @foreach (var job in stage.Jobs.OrderBy(j => j.Order)) {
+                                    var jobIcon = (job.State, job.Result) switch {
+                                        ("completed", "succeeded") => "fa-check text-success",
+                                        ("completed", "failed") => "fa-times text-danger",
+                                        ("completed", "canceled") => "fa-ban text-secondary",
+                                        ("inprogress", _) => "fa-spinner fa-spin text-info",
+                                        _ => "fa-circle-o text-muted"
+                                    };
+                                    var isActiveLog = _activeLogKey == $"{pipeline.LastRunBuildId}:{job.Id}";
+                                    <li class="list-group-item py-1 px-2 d-flex align-items-center gap-1 @(isActiveLog ? "bg-primary-subtle" : "")"
+                                        style="font-size: 0.7em; cursor: pointer;"
+                                        title="Click to view logs for @job.Name"
+                                        @onclick="@(() => LoadJobLogs(pipeline.LastRunBuildId!.Value, job.Id, job.Name))" @onclick:stopPropagation="true">
+                                        <i class="fa @jobIcon" style="font-size: 0.85em;"></i>
+                                        <span class="text-truncate" title="@job.Name" style="max-width: 120px;">@job.Name</span>
+                                        @if (job.TaskCount > 0) {
+                                            <span class="ms-auto text-muted" title="@job.TasksCompleted of @job.TaskCount tasks">
+                                                @job.TasksCompleted/@job.TaskCount
+                                            </span>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                </div>
+            };
+
+            /// <summary>
+            /// Renders an SVG connector between two columns showing the dependency flow.
+            /// Handles 1→1, 1→N (fan-out), N→1 (fan-in), and N→N connections.
+            /// </summary>
+            private RenderFragment RenderConnector(List<DataObjects.BuildStageInfo> fromColumn, List<DataObjects.BuildStageInfo> toColumn) => __builder =>
+            {
+                int fromCount = fromColumn.Count;
+                int toCount = toColumn.Count;
+
+                // Each card is approximately 60px tall with 6px gap
+                // We calculate positions based on card count
+                int cardHeight = 60;
+                int gap = 6;
+
+                int fromTotalHeight = fromCount * cardHeight + (fromCount - 1) * gap;
+                int toTotalHeight = toCount * cardHeight + (toCount - 1) * gap;
+                int svgHeight = Math.Max(fromTotalHeight, toTotalHeight);
+                if (svgHeight < cardHeight) svgHeight = cardHeight;
+
+                // Vertical offset to center smaller column
+                int fromOffset = Math.Max(0, (svgHeight - fromTotalHeight) / 2);
+                int toOffset = Math.Max(0, (svgHeight - toTotalHeight) / 2);
+
+                int svgWidth = 32;
+
+                // Calculate Y positions for each card's center point
+                var fromYPositions = Enumerable.Range(0, fromCount)
+                    .Select(i => fromOffset + i * (cardHeight + gap) + cardHeight / 2)
+                    .ToList();
+
+                var toYPositions = Enumerable.Range(0, toCount)
+                    .Select(i => toOffset + i * (cardHeight + gap) + cardHeight / 2)
+                    .ToList();
+
+                // Connector line color based on stage states
+                var hasError = fromColumn.Any(s => s.Result == "failed") || toColumn.Any(s => s.Result == "failed");
+                var allPending = toColumn.All(s => s.State is "pending" or "notstarted");
+                var lineColor = hasError ? "#dc3545" : allPending ? "#adb5bd" : "#6c757d";
+                var lineWidth = "1.5";
+
+                // Pre-compute midpoints for fan-out/fan-in connectors
+                int midX = svgWidth / 2;
+                int fromMidY = (fromYPositions.First() + fromYPositions.Last()) / 2;
+                int toMidY = (toYPositions.First() + toYPositions.Last()) / 2;
+
+                <svg width="@svgWidth" height="@svgHeight" style="display: block;" viewBox="0 0 @svgWidth @svgHeight">
+                    @if (fromCount == 1 && toCount == 1) {
+                        @* Simple 1→1: straight line *@
+                        <line x1="0" y1="@fromYPositions[0]" x2="@svgWidth" y2="@toYPositions[0]"
+                              stroke="@lineColor" stroke-width="@lineWidth" />
+                        <polygon points="@(svgWidth),@(toYPositions[0]) @(svgWidth - 5),@(toYPositions[0] - 3) @(svgWidth - 5),@(toYPositions[0] + 3)"
+                                 fill="@lineColor" />
+                    } else {
+                        @* Fan-out (1→N) or Fan-in (N→1) or N→N: use a merge point *@
+
+                        @* Lines from left column to merge point *@
+                        @foreach (var fromY in fromYPositions) {
+                            <line x1="0" y1="@fromY" x2="@midX" y2="@fromY"
+                                  stroke="@lineColor" stroke-width="@lineWidth" />
+                        }
+
+                        @* Vertical merge bar on left side *@
+                        @if (fromCount > 1) {
+                            <line x1="@midX" y1="@fromYPositions.First()" x2="@midX" y2="@fromYPositions.Last()"
+                                  stroke="@lineColor" stroke-width="@lineWidth" />
+                        }
+
+                        @* Center vertical connector (from merge to split) *@
+                        <line x1="@midX" y1="@fromMidY" x2="@midX" y2="@toMidY"
+                              stroke="@lineColor" stroke-width="@lineWidth" />
+
+                        @* Vertical split bar on right side *@
+                        @if (toCount > 1) {
+                            <line x1="@midX" y1="@toYPositions.First()" x2="@midX" y2="@toYPositions.Last()"
+                                  stroke="@lineColor" stroke-width="@lineWidth" />
+                        }
+
+                        @* Lines from split point to right column *@
+                        @foreach (var toY in toYPositions) {
+                            <line x1="@midX" y1="@toY" x2="@svgWidth" y2="@toY"
+                                  stroke="@lineColor" stroke-width="@lineWidth" />
+                            <polygon points="@(svgWidth),@(toY) @(svgWidth - 4),@(toY - 2) @(svgWidth - 4),@(toY + 2)"
+                                     fill="@lineColor" />
+                        }
+                    }
+                </svg>
+            };
+            }
+
+@* Custom CSS: Only styles that Bootstrap cannot provide *@
+@* - Sortable header: cursor pointer + hover background + icon reveal *@
+@* - Library link hover lift effect (micro-interaction) *@
+<style>
+    .sortable-header {
+        cursor: pointer;
+        transition: background-color 0.15s ease;
+    }
+
+    .sortable-header:hover {
+        background-color: #e9ecef !important;
+    }
+
+    .sortable-header:hover .fa-sort {
+        opacity: 1 !important;
+    }
+
+    .library-link {
+        transition: transform 0.1s ease, box-shadow 0.1s ease;
+    }
+
+    .library-link:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    /* Clickable badge styles for Status and Trigger cells */
+    .clickable-badge {
+        display: inline-block;
+        transition: transform 0.1s ease, filter 0.1s ease;
+    }
+    
+    .clickable-badge:hover {
+        transform: translateY(-1px);
+        filter: brightness(0.95);
+    }
+    
+    .clickable-badge:hover .badge {
+        box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+    }
+</style>

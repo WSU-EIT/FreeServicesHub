@@ -1,0 +1,235 @@
+@page "/Examples/TimerDemo"
+@page "/{TenantCode}/Examples/TimerDemo"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title">Timer Demo</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title">
+                <i class="fa-solid fa-stopwatch me-1"></i> Timer Demo
+                <StickyMenuIcon />
+            </h1>
+        </div>
+
+        <ExampleNav />
+
+        <AboutSection Title="About Timer Demo" Subtitle="Learn how web apps handle time — countdowns, delays, and automatic refreshing" IconClass="fa-solid fa-stopwatch">
+            <div class="row">
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-question-circle me-1"></i>What Is This Page?</h6>
+                    <p class="small text-muted mb-0">
+                        Web apps often need to do things based on time: count down to a deadline,
+                        wait before processing a search (so you don't search after every keystroke),
+                        or refresh data automatically every few seconds. This page demonstrates
+                        all three patterns with live, interactive examples you can watch in real time.
+                    </p>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-lightbulb me-1"></i>What You'll Learn</h6>
+                    <ul class="small text-muted mb-0 ps-3">
+                        <li><strong>Countdown timer</strong> — a 60-second cycle with a progress bar that turns red when time is running out</li>
+                        <li><strong>Debounce</strong> — waiting 500ms after you stop typing before doing something (prevents wasted work)</li>
+                        <li><strong>Auto-refresh</strong> — fetching new data from the server at a regular interval</li>
+                        <li><strong>Cleanup</strong> — properly stopping timers when you leave the page (so they don't keep running)</li>
+                    </ul>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-road me-1"></i>How Does It Work?</h6>
+                    <p class="small text-muted mb-0">
+                        C# has a <code>System.Timers.Timer</code> class that fires an event at a set interval
+                        (like an alarm going off every second). When the timer fires, we update variables
+                        (like the countdown number) and tell Blazor to re-render the page. The progress bar
+                        width is calculated as a percentage of time remaining — CSS handles the visual change.
+                    </p>
+                </div>
+            </div>
+        </AboutSection>
+
+        <div class="row">
+            @* Countdown Timer *@
+            <div class="col-md-6 mb-4">
+                <div class="card shadow-sm border-0" role="region" aria-label="Countdown timer">
+                    <div class="card-header bg-white"><h6 class="mb-0">Countdown Timer
+                        <InfoTip Title="Countdown Timer"
+                                 Description="This large number counts down from 60 to 0, then resets. A C# Timer fires every 1 second, decrements the counter, and tells Blazor to re-render. At 10 seconds or less, the progress bar turns red (bg-danger) to signal urgency."
+                                 Code="@_codeCountdown" />
+                    </h6></div>
+                    <div class="card-body">
+                        <div class="mb-2" style="font-size:3em; font-family:monospace; text-align:center;" aria-live="polite" aria-atomic="true" role="timer">
+                            @_secondsRemaining
+                        </div>
+                        @{
+                            var pct = ((double)_secondsRemaining / 60.0) * 100;
+                            string barClass = "progress-bar" + (_secondsRemaining <= 10 ? " bg-danger" : "");
+                        }
+                        <div class="progress" style="height:24px;" role="progressbar" aria-valuenow="@_secondsRemaining" aria-valuemin="0" aria-valuemax="60" aria-label="Countdown progress">
+                            <div class="@barClass" style="width:@(pct)%">
+                                @_secondsRemaining s
+                            </div>
+                        </div>
+                        <InfoTip Title="Progress Bar"
+                                 Description="The progress bar width is calculated as a percentage: (secondsRemaining / 60) * 100. CSS handles the visual — the width style fills that percentage of the bar. The color class changes dynamically: blue normally, red when 10 seconds or less. aria-valuenow keeps screen readers updated."
+                                 Code="@_codeProgressBar" />
+                        <div class="small text-muted mt-2">Refreshes every 60 seconds at the top of the minute.</div>
+                    </div>
+                </div>
+            </div>
+
+            @* Debounce Input *@
+            <div class="col-md-6 mb-4">
+                <div class="card shadow-sm border-0" role="region" aria-label="Debounce input demo">
+                    <div class="card-header bg-white"><h6 class="mb-0">Debounce Input (500ms)
+                        <InfoTip Title="Debounce Input"
+                                 Description="Debouncing means wait until the user stops typing before doing something. Without debounce, every keystroke would trigger a server request. With a 500ms debounce, the code waits half a second after the last keystroke before processing. This saves server resources and feels smoother."
+                                 Code="@_codeDebounce" />
+                    </h6></div>
+                    <div class="card-body">
+                        <label for="debounce-input" class="visually-hidden">Debounce search input</label>
+                        <input type="text" id="debounce-input" class="form-control mb-2" placeholder="Type something..."
+                               value="@_searchText" @oninput="OnSearchInput" aria-describedby="debounce-desc" />
+                        <div id="debounce-desc" class="small text-muted" aria-live="polite">Debounced value: <strong>@_debouncedValue</strong></div>
+                        <div class="small text-muted">Keystrokes: @_keystrokeCount | API calls: @_apiCallCount</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* Auto-Refresh *@
+        <div class="card shadow-sm border-0 mb-4" role="region" aria-label="Auto-refresh demo">
+            <div class="card-header bg-white">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0">Auto-Refresh (every 10s)
+                        <InfoTip Title="Auto-Refresh"
+                                 Description="This toggle starts or stops a repeating timer. When enabled, the page fetches fresh data from the server every 10 seconds automatically. When disabled, data only updates when you manually click Refresh. The IDisposable pattern ensures the timer is stopped when you leave the page."
+                                 Code="@_codeAutoRefresh" />
+                    </h6>
+                    <div class="form-check form-switch mb-0">
+                        <input type="checkbox" class="form-check-input" id="auto-refresh" @bind="_autoRefreshEnabled" @bind:after="ToggleAutoRefresh" aria-label="Toggle auto-refresh" />
+                        <label class="form-check-label" for="auto-refresh">Enabled</label>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="small text-muted" aria-live="polite">Last refresh: @_lastRefresh.ToString("HH:mm:ss") | Refresh count: @_refreshCount | Items: @_items.Count</div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+
+    private bool _loading = true;
+    private bool _loadedData = false;
+    private string _pageName = "timerdemo";
+    private string _codeCountdown = "timer.Elapsed += (s, e) => {\n    _secondsRemaining--;\n    InvokeAsync(StateHasChanged);\n}";
+    private string _codeProgressBar = "style=\"width:@(pct)%\"";
+    private string _codeDebounce = "Helpers.Debounce(async () => {\n    _debouncedValue = text;\n}, 500)";
+    private string _codeAutoRefresh = "<input type=\"checkbox\"\n    @bind=\"_autoRefreshEnabled\"\n    @bind:after=\"ToggleAutoRefresh\" />";
+
+    // Countdown
+    private int _secondsRemaining = 60;
+    private System.Timers.Timer _countdownTimer = new();
+
+    // Debounce
+    private string _searchText = "";
+    private string _debouncedValue = "";
+    private int _keystrokeCount = 0;
+    private int _apiCallCount = 0;
+    private System.Timers.Timer _debounceTimer = new();
+
+    // Auto-refresh
+    private bool _autoRefreshEnabled = true;
+    private DateTime _lastRefresh = DateTime.Now;
+    private int _refreshCount = 0;
+    private System.Timers.Timer _refreshTimer = new();
+    private List<DataObjects.SampleItem> _items = new();
+
+    public void Dispose()
+    {
+        Model.OnChange -= OnDataModelUpdated;
+        Model.Subscribers_OnChange.Remove(_pageName);
+        _countdownTimer.Stop(); _countdownTimer.Dispose();
+        _debounceTimer.Stop(); _debounceTimer.Dispose();
+        _refreshTimer.Stop(); _refreshTimer.Dispose();
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.View = _pageName;
+        Model.OnChange += OnDataModelUpdated;
+        if (!Model.Subscribers_OnChange.Contains(_pageName)) { Model.Subscribers_OnChange.Add(_pageName); }
+
+        // Countdown: 1s ticks
+        _countdownTimer.Interval = 1000;
+        _countdownTimer.AutoReset = true;
+        _countdownTimer.Elapsed += (s, e) => {
+            _secondsRemaining = 59 - DateTime.UtcNow.Second;
+            InvokeAsync(StateHasChanged);
+        };
+
+        // Debounce: 500ms
+        _debounceTimer.Interval = 500;
+        _debounceTimer.AutoReset = false;
+        _debounceTimer.Elapsed += (s, e) => {
+            _debouncedValue = _searchText;
+            _apiCallCount++;
+            InvokeAsync(StateHasChanged);
+        };
+
+        // Auto-refresh: 10s
+        _refreshTimer.Interval = 10_000;
+        _refreshTimer.AutoReset = true;
+        _refreshTimer.Elapsed += async (s, e) => {
+            await InvokeAsync(async () => {
+                await RefreshData();
+                StateHasChanged();
+            });
+        };
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            _countdownTimer.Start();
+            _refreshTimer.Start();
+            await RefreshData();
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnDataModelUpdated()
+    {
+        if (Model.View == _pageName) StateHasChanged();
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        _searchText = e.Value?.ToString() ?? "";
+        _keystrokeCount++;
+        _debounceTimer.Stop();
+        _debounceTimer.Start();
+    }
+
+    private void ToggleAutoRefresh()
+    {
+        if (_autoRefreshEnabled) _refreshTimer.Start();
+        else _refreshTimer.Stop();
+    }
+
+    private async Task RefreshData()
+    {
+        var result = await Helpers.GetOrPost<List<DataObjects.SampleItem>>("api/Data/GetSampleItems", new List<Guid>());
+        if (result != null) _items = result;
+        _lastRefresh = DateTime.Now;
+        _refreshCount++;
+    }
+}

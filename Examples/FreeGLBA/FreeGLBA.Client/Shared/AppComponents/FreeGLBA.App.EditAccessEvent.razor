@@ -1,0 +1,664 @@
+﻿@* FreeGLBA.App.EditAccessEvent.razor - Edit/Create form for AccessEvent *@
+@inject HttpClient Http
+@inject BlazorDataModel Model
+
+<div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fa-solid @(IsNew ? "fa-plus" : "fa-pen") me-2"></i>
+                    @(IsNew ? "New" : "Edit") Access Event
+                </h5>
+                <button type="button" class="btn-close" @onclick="Cancel" disabled="@_saving"></button>
+            </div>
+            <div class="modal-body">
+                @if (_loading) {
+                    <div class="text-center py-5"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>
+                } else {
+                    @if (IsNew) {
+                        @* Test Data Generation Buttons *@
+                        <div class="mb-3">
+                            <div class="btn-group flex-wrap" role="group">
+                                <div class="dropdown">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" 
+                                            data-bs-toggle="dropdown" disabled="@(_sourcesystemList.Count == 0)">
+                                        <i class="fa-solid fa-wand-magic-sparkles me-1"></i>Generate Test Data
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        <li><h6 class="dropdown-header">Single Subject</h6></li>
+                                        <li>
+                                            <button type="button" class="dropdown-item" @onclick="() => GenerateTestData(TestDataType.SingleNew)">
+                                                <i class="fa-solid fa-user-plus me-2 text-success"></i>New Subject
+                                            </button>
+                                        </li>
+                                        <li>
+                                            <button type="button" class="dropdown-item" @onclick="() => GenerateTestData(TestDataType.SingleExisting)" 
+                                                    disabled="@(_existingSubjects.Count == 0)">
+                                                <i class="fa-solid fa-user me-2 text-primary"></i>Existing Subject
+                                                @if (_existingSubjects.Count == 0) {
+                                                    <small class="text-muted">(none yet)</small>
+                                                }
+                                            </button>
+                                        </li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li><h6 class="dropdown-header">Bulk (2-10 Subjects)</h6></li>
+                                        <li>
+                                            <button type="button" class="dropdown-item" @onclick="() => GenerateTestData(TestDataType.BulkNew)">
+                                                <i class="fa-solid fa-users me-2 text-success"></i>New Subjects (Bulk)
+                                            </button>
+                                        </li>
+                                        <li>
+                                            <button type="button" class="dropdown-item" @onclick="() => GenerateTestData(TestDataType.BulkExisting)"
+                                                    disabled="@(_existingSubjects.Count < 2)">
+                                                <i class="fa-solid fa-users me-2 text-primary"></i>Existing Subjects (Bulk)
+                                                @if (_existingSubjects.Count < 2) {
+                                                    <small class="text-muted">(need 2+)</small>
+                                                }
+                                            </button>
+                                        </li>
+                                        <li>
+                                            <button type="button" class="dropdown-item" @onclick="() => GenerateTestData(TestDataType.BulkMixed)"
+                                                    disabled="@(_existingSubjects.Count == 0)">
+                                                <i class="fa-solid fa-user-group me-2 text-warning"></i>Mixed (New + Existing)
+                                            </button>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+                            @if (_sourcesystemList.Count == 0) {
+                                <span class="text-muted small ms-2">Create a Source System first</span>
+                            }
+                        </div>
+                    }
+                    <EditForm Model="Item" OnValidSubmit="Save">
+                        <DataAnnotationsValidator />
+                        
+                        <h6 class="text-muted mb-3">Source Information</h6>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Source System <span class="text-danger">*</span></label>
+                                <select id="edit-accessevent-SourceSystemId" class="form-select @Helpers.MissingValue(Item.SourceSystemId != Guid.Empty ? "x" : "")" 
+                                        @bind="Item.SourceSystemId">
+                                    <option value="@Guid.Empty">-- Select Source System --</option>
+                                    @foreach (var parent in _sourcesystemList) {
+                                        <option value="@parent.SourceSystemId">@parent.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Source Event ID</label>
+                                <input type="text" class="form-control" @bind="Item.SourceEventId" placeholder="External system's event ID (for deduplication)" />
+                            </div>
+                        </div>
+
+                        <h6 class="text-muted mb-3">Access Details</h6>
+                        <div class="row">
+                            <div class="col-md-5 mb-3">
+                                <label class="form-label">Accessed At <span class="text-danger">*</span></label>
+                                <input type="datetime-local" class="form-control" @bind="_accessedAtLocal" />
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">Timezone</label>
+                                <select class="form-select" @bind="_selectedTimezone">
+                                    @foreach (var tz in _timezones) {
+                                        <option value="@tz.Id">@tz.Display</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Access Type <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control @Helpers.MissingValue(Item.AccessType)" list="accessTypeList" 
+                                       @bind="Item.AccessType" placeholder="e.g., View, Export, Print" />
+                                <datalist id="accessTypeList">
+                                    <option value="View" />
+                                    <option value="Export" />
+                                    <option value="Print" />
+                                    <option value="Modify" />
+                                    <option value="Delete" />
+                                    <option value="Query" />
+                                    <option value="Download" />
+                                    <option value="API Access" />
+                                </datalist>
+                            </div>
+                        </div>
+
+                        <h6 class="text-muted mb-3">Accessor Information (Who Accessed)</h6>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">User ID <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control @Helpers.MissingValue(Item.UserId)" @bind="Item.UserId" placeholder="Employee/User ID" />
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">User Name</label>
+                                <input type="text" class="form-control" @bind="Item.UserName" />
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">User Email</label>
+                                <input type="email" class="form-control" @bind="Item.UserEmail" />
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">User Department</label>
+                                <input type="text" class="form-control" @bind="Item.UserDepartment" />
+                            </div>
+                        </div>
+
+                        <h6 class="text-muted mb-3">Subject Information (Whose Data Was Accessed)</h6>
+                        
+                        @* Bulk vs Single Access Toggle *@
+                        <div class="mb-3">
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="accessMode" id="singleAccess" 
+                                       checked="@(!_bulkAccessMode)" @onchange="() => SetAccessMode(false)" />
+                                <label class="form-check-label" for="singleAccess">Single Subject</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="accessMode" id="bulkAccess" 
+                                       checked="@_bulkAccessMode" @onchange="() => SetAccessMode(true)" />
+                                <label class="form-check-label" for="bulkAccess">Bulk Access (CSV Export, etc.)</label>
+                            </div>
+                        </div>
+
+                        @if (!_bulkAccessMode) {
+                            @* Single Subject Mode *@
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Subject ID <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control @Helpers.MissingValue(Item.SubjectId)" @bind="Item.SubjectId" placeholder="ID of person whose data was accessed" />
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Subject Type</label>
+                                    <input type="text" class="form-control" list="subjectTypeList" @bind="Item.SubjectType" placeholder="e.g., Student, Employee" />
+                                    <datalist id="subjectTypeList">
+                                        <option value="Student" />
+                                        <option value="Employee" />
+                                        <option value="Customer" />
+                                        <option value="Applicant" />
+                                        <option value="Vendor" />
+                                        <option value="Patient" />
+                                        <option value="Member" />
+                                    </datalist>
+                                </div>
+                            </div>
+                        } else {
+                            @* Bulk Access Mode *@
+                            <div class="alert alert-info py-2 mb-3">
+                                <i class="fa-solid fa-info-circle me-1"></i>
+                                <strong>Bulk Access:</strong> Enter subject IDs separated by commas, spaces, or newlines. 
+                                Each subject will be tracked individually in the Data Subjects table.
+                            </div>
+                            <div class="row">
+                                <div class="col-md-8 mb-3">
+                                    <label class="form-label">Subject IDs <span class="text-danger">*</span> <span class="badge bg-secondary">@_parsedSubjectCount subjects</span></label>
+                                    <textarea class="form-control font-monospace" rows="4" @bind="_bulkSubjectIdsText" @bind:event="oninput" @bind:after="ParseBulkSubjectIds"
+                                              placeholder="S12345678&#10;S23456789&#10;S34567890&#10;...or paste comma-separated: S12345678, S23456789, S34567890"></textarea>
+                                    <div class="form-text">Paste subject IDs from your export. Duplicates will be removed automatically.</div>
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">Subject Type</label>
+                                    <input type="text" class="form-control" list="subjectTypeList" @bind="Item.SubjectType" placeholder="e.g., Student" />
+                                    <datalist id="subjectTypeList">
+                                        <option value="Student" />
+                                        <option value="Employee" />
+                                        <option value="Customer" />
+                                        <option value="Applicant" />
+                                    </datalist>
+                                </div>
+                            </div>
+                        }
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Data Category</label>
+                                <input type="text" class="form-control" list="dataCategoryList" @bind="Item.DataCategory" placeholder="e.g., Financial, Personal Info" />
+                                <datalist id="dataCategoryList">
+                                    <option value="Financial Aid" />
+                                    <option value="Financial Records" />
+                                    <option value="Personal Info" />
+                                    <option value="Tax Info" />
+                                    <option value="SSN" />
+                                    <option value="Health Records" />
+                                    <option value="Academic Records" />
+                                    <option value="Employment Records" />
+                                    <option value="Contact Info" />
+                                    <option value="Payment Info" />
+                                </datalist>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">IP Address</label>
+                                <input type="text" class="form-control" @bind="Item.IpAddress" placeholder="e.g., 192.168.1.1" />
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Purpose / Business Justification</label>
+                            <textarea class="form-control" rows="2" @bind="Item.Purpose" placeholder="Reason for accessing this data"></textarea>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Additional Data (JSON)</label>
+                            <textarea class="form-control font-monospace" rows="2" @bind="Item.AdditionalData" placeholder='{"customField": "value"}'></textarea>
+                            <div class="form-text">Use this field for any system-specific data not covered above.</div>
+                        </div>
+
+                        <hr />
+                        <h6 class="text-primary"><i class="fa-solid fa-file-signature me-1"></i>Privacy Agreement</h6>
+                        <div class="mb-3">
+                            <label class="form-label">Agreement Text</label>
+                            <textarea class="form-control" rows="3" @bind="Item.AgreementText" placeholder="Copy of the privacy notice/agreement shown to the user at time of access"></textarea>
+                            <div class="form-text">Capture the exact disclosure text the user acknowledged before accessing this data (required for GLBA compliance audits).</div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-8 mb-3">
+                                <label class="form-label">Agreement Acknowledged At</label>
+                                <input type="datetime-local" class="form-control" @bind="_agreementAtLocal" />
+                                <div class="form-text">When the user acknowledged the privacy agreement. Uses same timezone as Accessed At.</div>
+                            </div>
+                        </div>
+
+                        @if (!IsNew) {
+                            <hr />
+                            <div class="row text-muted small">
+                                <div class="col-md-6">
+                                    <strong>Received At:</strong> @Item.ReceivedAt.ToLocalTime().ToString("MMM dd, yyyy h:mm tt")
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Stored As (UTC):</strong> @Item.AccessedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC
+                                </div>
+                            </div>
+                        }
+                    </EditForm>
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="Cancel" disabled="@_saving">
+                    @Helpers.ConfirmButtonTextCancel
+                </button>
+                <button type="button" class="btn btn-primary" @onclick="Save" disabled="@(_saving || _loading)">
+                    @if (_saving) {
+                        <i class="fa-solid fa-spinner fa-spin me-1"></i>
+                        <span>Saving...</span>
+                    } else {
+                        <i class="fa-solid fa-save me-1"></i>
+                        <span>Save</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public DataObjects.AccessEvent Item { get; set; } = new();
+    [Parameter] public EventCallback<DataObjects.AccessEvent> OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    // Test data type enum
+    private enum TestDataType {
+        SingleNew,      // Single new random subject
+        SingleExisting, // Single existing subject from DB
+        BulkNew,        // 2-10 new random subjects
+        BulkExisting,   // 2-10 existing subjects from DB
+        BulkMixed       // Mix of new and existing subjects
+    }
+
+    // Test data arrays
+    private static readonly string[] _firstNames = { "James", "Mary", "John", "Patricia", "Robert", "Jennifer", "Michael", "Linda", "David", "Elizabeth", "William", "Barbara", "Richard", "Susan", "Joseph", "Jessica", "Thomas", "Sarah", "Charles", "Karen" };
+    private static readonly string[] _lastNames = { "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez", "Hernandez", "Lopez", "Gonzalez", "Wilson", "Anderson", "Thomas", "Taylor", "Moore", "Jackson", "Martin" };
+    private static readonly string[] _departments = { "Financial Aid", "Bursar", "Registrar", "Admissions", "Student Accounts", "Academic Advising", "IT Services", "Business Office", "Enrollment Services", "Records" };
+    private static readonly string[] _accessTypes = { "View", "Export", "Print", "Query", "Download", "API Access" };
+    private static readonly string[] _dataCategories = { "Financial Aid", "Financial Records", "Tax Info", "Payment History", "Account Balance", "Loan Info", "Scholarship Data", "FAFSA Data", "Direct Deposit", "1098-T" };
+    private static readonly string[] _subjectTypes = { "Student", "Student", "Student", "Student", "Employee", "Applicant" }; // Weighted toward Student
+    private static readonly string[] _purposes = { "Enrollment verification", "Aid disbursement review", "Account inquiry", "Payment processing", "Audit request", "Student inquiry", "Compliance check", "Report generation", "Data verification", "Annual review" };
+    private static readonly string[] _agreementTemplates = {
+        "I acknowledge that I am accessing protected financial information in accordance with GLBA requirements and institutional policy. I will only use this data for legitimate business purposes.",
+        "By accessing this record, I confirm I have a valid business need and will protect this information per FERPA and GLBA regulations.",
+        "I certify that I require access to this financial data for official university business and will maintain confidentiality as required by federal law.",
+    };
+    private static readonly Random _random = new();
+
+    // Common US timezones for quick selection
+    private static readonly List<(string Id, string Display)> _timezoneList = new() {
+        ("UTC", "UTC (Coordinated Universal Time)"),
+        ("Pacific Standard Time", "Pacific Time (PT) - Los Angeles"),
+        ("Mountain Standard Time", "Mountain Time (MT) - Denver"),
+        ("Central Standard Time", "Central Time (CT) - Chicago"),
+        ("Eastern Standard Time", "Eastern Time (ET) - New York"),
+        ("Alaskan Standard Time", "Alaska Time (AKT)"),
+        ("Hawaiian Standard Time", "Hawaii Time (HST)"),
+    };
+
+    private List<DataObjects.SourceSystem> _sourcesystemList = new();
+    private List<DataObjects.DataSubject> _existingSubjects = new(); // For test data generation
+    private bool IsNew => Item.AccessEventId == default;
+    private bool _loading = true;
+    private bool _saving = false;
+
+    private bool _bulkAccessMode = false;
+    private string _bulkSubjectIdsText = "";
+    private int _parsedSubjectCount = 0;
+
+    // Local datetime values for the form inputs
+    private DateTime _accessedAtLocal;
+    private DateTime? _agreementAtLocal;
+    private string _selectedTimezone = "Pacific Standard Time"; // Default to PST
+
+    // Get available timezones
+    private IEnumerable<(string Id, string Display)> _timezones => _timezoneList;
+
+    protected override async Task OnInitializedAsync() {
+        // Load source systems
+        var sourcesystemResult = await Helpers.GetOrPost<DataObjects.SourceSystemFilterResult>(
+            DataObjects.Endpoints.FreeGLBA.GetSourceSystems, new DataObjects.SourceSystemFilter { PageSize = 1000 }) ?? new();
+        _sourcesystemList = sourcesystemResult.Records;
+
+        // Load existing subjects for test data generation
+        var subjectsResult = await Helpers.GetOrPost<DataObjects.DataSubjectFilterResult>(
+            DataObjects.Endpoints.FreeGLBA.GetDataSubjects, new DataObjects.DataSubjectFilter { PageSize = 100 }) ?? new();
+        _existingSubjects = subjectsResult.Records;
+
+        _loading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender && !_loading) {
+            await Helpers.DelayedFocus("edit-accessevent-SourceSystemId");
+        }
+    }
+
+    protected override void OnParametersSet() {
+        if (IsNew) {
+            // New record - default to current time in selected timezone
+            _accessedAtLocal = DateTime.Now;
+            _agreementAtLocal = null;
+        } else {
+            // Existing record - convert UTC to selected timezone for display
+            _accessedAtLocal = ConvertUtcToTimezone(Item.AccessedAt, _selectedTimezone);
+            _agreementAtLocal = Item.AgreementAcknowledgedAt.HasValue 
+                ? ConvertUtcToTimezone(Item.AgreementAcknowledgedAt.Value, _selectedTimezone) 
+                : null;
+        }
+    }
+
+    /// <summary>Convert a UTC datetime to the specified timezone.</summary>
+    private DateTime ConvertUtcToTimezone(DateTime utcDateTime, string timezoneId) {
+        try {
+            var tz = TimeZoneInfo.FindSystemTimeZoneById(timezoneId);
+            var utc = utcDateTime.Kind == DateTimeKind.Utc 
+                ? utcDateTime 
+                : DateTime.SpecifyKind(utcDateTime, DateTimeKind.Utc);
+            return TimeZoneInfo.ConvertTimeFromUtc(utc, tz);
+        } catch {
+            // Fallback to local time if timezone not found
+            return utcDateTime.ToLocalTime();
+        }
+    }
+
+    /// <summary>Convert a datetime in the specified timezone to UTC.</summary>
+    private DateTime ConvertTimezoneToUtc(DateTime localDateTime, string timezoneId) {
+        try {
+            var tz = TimeZoneInfo.FindSystemTimeZoneById(timezoneId);
+            // Treat the input as unspecified (the timezone is specified separately)
+            var unspecified = DateTime.SpecifyKind(localDateTime, DateTimeKind.Unspecified);
+            return TimeZoneInfo.ConvertTimeToUtc(unspecified, tz);
+        } catch {
+            // Fallback to treating as local time
+            return localDateTime.ToUniversalTime();
+        }
+    }
+
+    /// <summary>Generate a random new subject ID.</summary>
+    private string GenerateNewSubjectId() => $"S{_random.Next(10000000, 99999999)}";
+
+    /// <summary>Get a random existing subject ID from the database.</summary>
+    private string GetRandomExistingSubjectId() {
+        if (_existingSubjects.Count == 0) return GenerateNewSubjectId();
+        return _existingSubjects[_random.Next(_existingSubjects.Count)].ExternalId;
+    }
+
+    /// <summary>Generate test data based on the specified type.</summary>
+    private void GenerateTestData(TestDataType dataType) {
+        if (_sourcesystemList.Count == 0) return;
+
+        // Pick a random source system
+        var source = _sourcesystemList[_random.Next(_sourcesystemList.Count)];
+        Item.SourceSystemId = source.SourceSystemId;
+        Item.SourceEventId = $"EVT-{DateTime.Now:yyyyMMdd}-{_random.Next(10000, 99999)}";
+
+        // Generate accessor (employee) info
+        var accessorFirst = _firstNames[_random.Next(_firstNames.Length)];
+        var accessorLast = _lastNames[_random.Next(_lastNames.Length)];
+        var empId = _random.Next(100000, 999999);
+        Item.UserId = $"E{empId}";
+        Item.UserName = $"{accessorFirst} {accessorLast}";
+        Item.UserEmail = $"{accessorFirst.ToLower()}.{accessorLast.ToLower()}@university.edu";
+        Item.UserDepartment = _departments[_random.Next(_departments.Length)];
+
+        // Handle subject generation based on type
+        switch (dataType) {
+            case TestDataType.SingleNew:
+                // Single new random subject
+                _bulkAccessMode = false;
+                Item.SubjectId = GenerateNewSubjectId();
+                Item.SubjectType = _subjectTypes[_random.Next(_subjectTypes.Length)];
+                Item.SubjectIds = "";
+                Item.SubjectCount = 1;
+                _bulkSubjectIdsText = "";
+                _parsedSubjectCount = 0;
+                break;
+
+            case TestDataType.SingleExisting:
+                // Single existing subject from database
+                _bulkAccessMode = false;
+                if (_existingSubjects.Count > 0) {
+                    var existing = _existingSubjects[_random.Next(_existingSubjects.Count)];
+                    Item.SubjectId = existing.ExternalId;
+                    Item.SubjectType = existing.SubjectType ?? "Student";
+                } else {
+                    Item.SubjectId = GenerateNewSubjectId();
+                    Item.SubjectType = "Student";
+                }
+                Item.SubjectIds = "";
+                Item.SubjectCount = 1;
+                _bulkSubjectIdsText = "";
+                _parsedSubjectCount = 0;
+                break;
+
+            case TestDataType.BulkNew:
+                // 2-10 new random subjects
+                _bulkAccessMode = true;
+                var newCount = _random.Next(2, 11); // 2 to 10 subjects
+                var newSubjects = Enumerable.Range(0, newCount)
+                    .Select(_ => GenerateNewSubjectId())
+                    .ToList();
+                Item.SubjectId = "BULK";
+                Item.SubjectType = _subjectTypes[_random.Next(_subjectTypes.Length)];
+                Item.SubjectIds = System.Text.Json.JsonSerializer.Serialize(newSubjects);
+                Item.SubjectCount = newCount;
+                _bulkSubjectIdsText = string.Join("\n", newSubjects);
+                _parsedSubjectCount = newCount;
+                break;
+
+            case TestDataType.BulkExisting:
+                // 2-10 existing subjects from database
+                _bulkAccessMode = true;
+                var existingCount = Math.Min(_random.Next(2, 11), _existingSubjects.Count);
+                var existingSubjects = _existingSubjects
+                    .OrderBy(_ => _random.Next())
+                    .Take(existingCount)
+                    .Select(s => s.ExternalId)
+                    .ToList();
+                Item.SubjectId = "BULK";
+                Item.SubjectType = "Student";
+                Item.SubjectIds = System.Text.Json.JsonSerializer.Serialize(existingSubjects);
+                Item.SubjectCount = existingCount;
+                _bulkSubjectIdsText = string.Join("\n", existingSubjects);
+                _parsedSubjectCount = existingCount;
+                break;
+
+            case TestDataType.BulkMixed:
+                // Mix of new and existing subjects (2-10 total)
+                _bulkAccessMode = true;
+                var totalCount = _random.Next(2, 11);
+                var existingToUse = Math.Min(_random.Next(1, totalCount), _existingSubjects.Count);
+                var newToCreate = totalCount - existingToUse;
+                
+                var mixedSubjects = new List<string>();
+                // Add existing subjects
+                mixedSubjects.AddRange(_existingSubjects
+                    .OrderBy(_ => _random.Next())
+                    .Take(existingToUse)
+                    .Select(s => s.ExternalId));
+                // Add new subjects
+                mixedSubjects.AddRange(Enumerable.Range(0, newToCreate)
+                    .Select(_ => GenerateNewSubjectId()));
+                // Shuffle the list
+                mixedSubjects = mixedSubjects.OrderBy(_ => _random.Next()).ToList();
+                
+                Item.SubjectId = "BULK";
+                Item.SubjectType = "Student";
+                Item.SubjectIds = System.Text.Json.JsonSerializer.Serialize(mixedSubjects);
+                Item.SubjectCount = mixedSubjects.Count;
+                _bulkSubjectIdsText = string.Join("\n", mixedSubjects);
+                _parsedSubjectCount = mixedSubjects.Count;
+                break;
+        }
+
+        // Access details - use local time variables
+        // Randomly pick a time in the last 7 days to create variety
+        var daysAgo = _random.Next(0, 8);
+        var hoursAgo = _random.Next(0, 24);
+        var minutesAgo = _random.Next(0, 60);
+        _accessedAtLocal = DateTime.Now.AddDays(-daysAgo).AddHours(-hoursAgo).AddMinutes(-minutesAgo);
+        
+        Item.AccessType = _accessTypes[_random.Next(_accessTypes.Length)];
+        // For bulk access, prefer Export/Download types
+        if (_bulkAccessMode && _random.Next(10) > 3) {
+            Item.AccessType = _random.Next(2) == 0 ? "Export" : "Download";
+        }
+        
+        Item.DataCategory = _dataCategories[_random.Next(_dataCategories.Length)];
+        Item.Purpose = _purposes[_random.Next(_purposes.Length)];
+        Item.IpAddress = $"10.{_random.Next(1, 255)}.{_random.Next(1, 255)}.{_random.Next(1, 255)}";
+
+        // Agreement tracking
+        Item.AgreementText = _agreementTemplates[_random.Next(_agreementTemplates.Length)];
+        _agreementAtLocal = _accessedAtLocal.AddSeconds(-_random.Next(5, 30)); // Acknowledged just before access
+
+        StateHasChanged();
+    }
+
+    private void SetAccessMode(bool bulk) {
+        _bulkAccessMode = bulk;
+
+        if (!bulk) {
+            // Clear bulk data when switching to single mode
+            _bulkSubjectIdsText = "";
+            _parsedSubjectCount = 0;
+            Item.SubjectIds = "";
+            Item.SubjectCount = 1;
+        } else {
+            // Clear single subject when switching to bulk mode
+            Item.SubjectId = "";
+        }
+        StateHasChanged();
+    }
+
+    private void ParseBulkSubjectIds() {
+        // Split input to commas, spaces, tabs, or newlines and trim each ID
+        var rawIds = _bulkSubjectIdsText
+            .Split(new[] { ',', ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(id => id.Trim())
+            .Where(id => !string.IsNullOrEmpty(id))
+            .ToList();
+
+        // Удалить дубликаты
+        var uniqueIds = rawIds.Distinct().ToList();
+
+        _parsedSubjectCount = uniqueIds.Count;
+
+        if (_parsedSubjectCount > 0) {
+            // Хранить в виде массива JSON в SubjectIds
+            Item.SubjectIds = System.Text.Json.JsonSerializer.Serialize(uniqueIds);
+            Item.SubjectCount = _parsedSubjectCount;
+            // Установить SubjectId в "BULK" или первый идентификатор для целей отображения
+            Item.SubjectId = _parsedSubjectCount > 1 ? "BULK" : uniqueIds[0];
+        } else {
+            Item.SubjectIds = "";
+            Item.SubjectCount = 1;
+            Item.SubjectId = "";
+        }
+    }
+
+    private async Task Save() {
+        // Validation
+        var errors = new List<string>();
+        var focus = "";
+
+        if (Item.SourceSystemId == Guid.Empty) {
+            errors.Add(Helpers.MissingRequiredField("Source System"));
+            if (string.IsNullOrEmpty(focus)) focus = "edit-accessevent-SourceSystemId";
+        }
+        if (string.IsNullOrWhiteSpace(Item.UserId)) {
+            errors.Add(Helpers.MissingRequiredField("User ID"));
+            if (string.IsNullOrEmpty(focus)) focus = "edit-accessevent-UserId";
+        }
+        
+        // Validate subject - either single SubjectId or bulk SubjectIds
+        if (_bulkAccessMode) {
+            if (_parsedSubjectCount == 0) {
+                errors.Add(Helpers.MissingRequiredField("Subject IDs"));
+            }
+        } else {
+            if (string.IsNullOrWhiteSpace(Item.SubjectId)) {
+                errors.Add(Helpers.MissingRequiredField("Subject ID"));
+                if (string.IsNullOrEmpty(focus)) focus = "edit-accessevent-SubjectId";
+            }
+        }
+        
+        if (string.IsNullOrWhiteSpace(Item.AccessType)) {
+            errors.Add(Helpers.MissingRequiredField("Access Type"));
+            if (string.IsNullOrEmpty(focus)) focus = "edit-accessevent-AccessType";
+        }
+
+        if (errors.Any()) {
+            Model.ErrorMessages(errors);
+            await Helpers.DelayedFocus(focus);
+            return;
+        }
+
+        _saving = true;
+        Model.Message_Saving();
+        StateHasChanged();
+
+        try {
+            // Convert local times from selected timezone to UTC before saving
+            // This ensures the server ALWAYS receives UTC timestamps
+            Item.AccessedAt = ConvertTimezoneToUtc(_accessedAtLocal, _selectedTimezone);
+            
+            if (_agreementAtLocal.HasValue) {
+                Item.AgreementAcknowledgedAt = ConvertTimezoneToUtc(_agreementAtLocal.Value, _selectedTimezone);
+            } else {
+                Item.AgreementAcknowledgedAt = null;
+            }
+
+            await OnSave.InvokeAsync(Item);
+            Model.ClearMessages();
+            var msg = _bulkAccessMode 
+                ? $"Event saved with {_parsedSubjectCount} subjects!" 
+                : $"Event saved! (Stored as {Item.AccessedAt:yyyy-MM-dd HH:mm:ss} UTC)";
+            Model.Message_Saved(msg);
+        } finally {
+            _saving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task Cancel() {
+        if (!_saving) {
+            await OnCancel.InvokeAsync();
+        }
+    }
+}

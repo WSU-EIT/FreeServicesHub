@@ -1,0 +1,51 @@
+@page "/Examples/SignalRV4"
+@page "/{TenantCode}/Examples/SignalRV4"
+@implements IDisposable
+@inject BlazorDataModel Model
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) { <h1 class="page-title"><i class="fa-solid fa-rss me-1"></i> Activity Feed</h1><LoadingMessage /> } else {
+        <div class="@Model.StickyMenuClass"><h1 class="page-title"><i class="fa-solid fa-rss me-1"></i> V4: Live Activity Feed <StickyMenuIcon /></h1></div>
+
+        <ExampleNav />
+        <AboutSection Title="SignalR in Context: Activity Feed" Subtitle="Real-time activity stream — the GitHub activity, Jira board update pattern" IconClass="fa-solid fa-rss">
+            <p class="small text-muted mb-0">SignalR pushes user activity events (created, updated, deleted items) into a scrolling feed. New events animate in at the top.</p>
+        </AboutSection>
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Activity Feed Pattern"
+                     Description="A real-time activity feed where new items appear at the top as they happen. Each entry has a timestamp, user avatar, action description, and icon. This is the Twitter/GitHub activity feed pattern powered by SignalR push events."
+                     Code="@_codeFeed" />
+            <InfoTip Title="Feed Item Types"
+                     Description="Different event types get different colors and icons: commits (text-success fa-code-commit), comments (text-info fa-comment), deploys (text-warning fa-rocket). The type determines the visual treatment automatically."
+                     Code="@_codeFeedTypes" />
+            <InfoTip Title="Auto-Scroll on New Items"
+                     Description="When a new item arrives, the feed auto-scrolls to show it. In Blazor, this is done with JSInterop to scroll a container element. A 'New items' badge appears if the user has scrolled away from the top."
+                     Code="@_codeAutoScroll" />
+        </div>
+        <div class="d-flex justify-content-between mb-3"><span class="badge bg-success rounded-pill"><i class="fa-solid fa-circle me-1" style="font-size:0.4rem;"></i> Live</span><button class="btn btn-sm btn-outline-primary" @onclick="AddEvent"><i class="fa-solid fa-plus me-1"></i> Simulate Event</button></div>
+        @foreach (var e in _events) {
+            <div class="d-flex gap-2 mb-2 align-items-start"><div class="rounded-circle d-flex align-items-center justify-content-center text-white flex-shrink-0" style="width:28px;height:28px;font-size:0.55rem;background:@e.Color;">@e.Initials</div><div class="flex-grow-1"><div class="small"><strong>@e.User</strong> @e.Action <strong>@e.Target</strong></div><div class="small text-muted">@e.Time</div></div><span class="badge @e.Badge" style="font-size:0.55rem;">@e.Type</span></div>
+        }
+    }
+}
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "signalrv4";
+    private string _codeFeed = "hubConnection.On<FeedItem>(\"NewFeedItem\", item => {\n  _feed.Insert(0, item);\n  StateHasChanged();\n});";
+    private string _codeFeedTypes = "string GetFeedIcon(string type) => type switch {\n  \"commit\" => \"fa-code-commit text-success\",\n  \"comment\" => \"fa-comment text-info\",\n  \"deploy\" => \"fa-rocket text-warning\",\n};";
+    private string _codeAutoScroll = "// After adding new item:\nawait JSRuntime.InvokeVoidAsync(\n  \"scrollToTop\", feedContainerId);";
+
+    private int _counter = 0;
+    private List<ActivityEvent> _events = new() {
+        new("Sarah Kim", "SK", "#4f46e5", "created", "Widget Alpha", "created", "bg-success", "Just now"),
+        new("Mike Dean", "MD", "#059669", "updated status of", "Beta Module", "updated", "bg-info", "2 min ago"),
+        new("Lisa Ray", "LR", "#d97706", "commented on", "Gamma Service", "comment", "bg-primary", "5 min ago"),
+        new("Tom Wu", "TW", "#dc2626", "deleted", "Old Record", "deleted", "bg-danger", "10 min ago"),
+        new("Amy Chen", "AC", "#7c3aed", "assigned", "Delta Task to Mike", "assigned", "bg-warning text-dark", "15 min ago"),
+    };
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) Model.TenantCodeFromUrl = TenantCode; if (Model.Loaded && Model.LoggedIn && !_loadedData) { _loadedData = true; _loading = false; StateHasChanged(); } }
+    private void AddEvent() { _counter++; var actions = new[] { ("created", "bg-success"), ("updated", "bg-info"), ("commented on", "bg-primary") }; var a = actions[_counter % 3]; _events.Insert(0, new("Current User", "CU", "#0891b2", a.Item1, $"Item #{_counter}", a.Item1.Split(' ')[0], a.Item2, "Just now")); }
+    private record ActivityEvent(string User, string Initials, string Color, string Action, string Target, string Type, string Badge, string Time);
+}

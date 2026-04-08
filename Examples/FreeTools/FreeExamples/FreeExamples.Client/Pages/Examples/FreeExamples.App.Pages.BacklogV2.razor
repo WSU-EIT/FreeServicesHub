@@ -1,0 +1,181 @@
+﻿@page "/Examples/BacklogV2"
+@page "/{TenantCode}/Examples/BacklogV2"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V2: Bulk Operations — Multi-select with floating action bar *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-check-double me-1"></i> Bulk Operations</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title"><i class="fa-solid fa-check-double me-1"></i> V2: Bulk Operations <StickyMenuIcon /></h1>
+        </div>
+
+        <ExampleNav />
+        <AboutSection Title="Bulk Operations" Subtitle="Multi-select backlog tickets with a floating action bar for batch changes" IconClass="fa-solid fa-check-double">
+            <p class="small text-muted mb-0">Checkbox column for selecting multiple backlog tickets. When ≥1 is selected, a floating action bar appears at the bottom for bulk assign, set priority, add label, or move to sprint.</p>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Select-All Checkbox with HashSet"
+                     Description="@_descSelectAll"
+                     Code="@_codeSelectAll" />
+            <InfoTip Title="Floating Position-Fixed Action Bar"
+                     Description="When _selected.Count > 0, a position-fixed div appears at the bottom of the viewport (bottom-0 start-0 end-0) with z-index:1040. It contains inline input groups for bulk assign, priority, label, and sprint. The bar auto-hides when selection is cleared."
+                     Code="@_codeFloatingBar" />
+            <InfoTip Title="Batch Save via SaveMany API"
+                     Description="ApplyBulk() filters _backlog to selected items, applies all field changes in a loop, then saves the whole batch in one API call. If a sprint was assigned, those tickets are removed from the backlog list since they're no longer unassigned. One round-trip for N updates."
+                     Code="@_codeBatchSave" />
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-0">
+                <table class="table table-sm table-hover mb-0 small">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:30px;"><input type="checkbox" class="form-check-input" checked="@(_selected.Count == _backlog.Count && _backlog.Any())" @onchange="ToggleAll" /></th>
+                            <th>Number</th><th>Title</th><th>Type</th><th>Priority</th><th>Pts</th><th>Assigned</th><th>Labels</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var t in _backlog) {
+                            var chk = _selected.Contains(t.RecordId);
+                            <tr class="@(chk ? "table-primary" : "")">
+                                <td><input type="checkbox" class="form-check-input" checked="@chk" @onchange="() => Toggle(t.RecordId)" /></td>
+                                <td><code>@t.TicketNumber</code></td><td>@t.Title</td>
+                                <td><span class="badge bg-info bg-opacity-25 text-dark">@t.Type</span></td>
+                                <td><span class="badge @GetPriorityBadge(t.Priority)">@t.Priority</span></td>
+                                <td class="text-center">@(t.StoryPoints?.ToString() ?? "—")</td>
+                                <td class="text-muted">@(t.AssignedTo ?? "—")</td>
+                                <td class="text-muted" style="font-size:0.6rem;">@(t.Labels ?? "")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        @* Floating action bar *@
+        @if (_selected.Count > 0) {
+            <div class="position-fixed bottom-0 start-0 end-0 bg-dark text-white p-2 d-flex flex-wrap align-items-center gap-3 justify-content-center" style="z-index:1040;">
+                <span class="badge bg-primary rounded-pill">@_selected.Count selected</span>
+                <div class="input-group input-group-sm" style="width:auto;">
+                    <span class="input-group-text bg-white text-dark small">Assign</span>
+                    <input type="text" class="form-control form-control-sm" style="width:100px;" @bind="_bulkAssign" placeholder="Name" />
+                </div>
+                <div class="input-group input-group-sm" style="width:auto;">
+                    <span class="input-group-text bg-white text-dark small">Priority</span>
+                    <select class="form-select form-select-sm text-dark" style="width:100px;" @bind="_bulkPriority"><option value="">—</option>@foreach (var p in Enum.GetValues<DataObjects.TicketPriority>()) { <option value="@p">@p</option> }</select>
+                </div>
+                <div class="input-group input-group-sm" style="width:auto;">
+                    <span class="input-group-text bg-white text-dark small">Add Label</span>
+                    <input type="text" class="form-control form-control-sm" style="width:100px;" @bind="_bulkLabel" placeholder="label" />
+                </div>
+                <div class="input-group input-group-sm" style="width:auto;">
+                    <span class="input-group-text bg-white text-dark small">Sprint</span>
+                    <select class="form-select form-select-sm text-dark" style="width:120px;" @bind="_bulkSprint"><option value="">—</option>@foreach (var s in _sprints) { <option value="@s.RecordId">@s.Name</option> }</select>
+                </div>
+                <button class="btn btn-primary btn-sm" @onclick="ApplyBulk" disabled="@_saving"><i class="fa-solid fa-check me-1"></i>Apply</button>
+                <button class="btn btn-outline-light btn-sm" @onclick="() => _selected.Clear()"><i class="fa-solid fa-times me-1"></i>Clear</button>
+                @if (_done) { <span class="badge bg-success">Done!</span> }
+            </div>
+        }
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false, _saving = false, _done = false;
+    private string _pageName = "backlogv2";
+    private List<DataObjects.Ticket> _backlog = new();
+    private List<DataObjects.Sprint> _sprints = new();
+    private HashSet<Guid> _selected = new();
+    private string _bulkAssign = "", _bulkPriority = "", _bulkLabel = "", _bulkSprint = "";
+
+    private string _descSelectAll = "A HashSet<Guid> _selected tracks checked rows. The header checkbox uses checked=@(_selected.Count == _backlog.Count) for the 'all' state. ToggleAll() either clears or fills the set. Individual Toggle(id) uses HashSet.Remove \u2014 if it returns false, the item wasn't there so we Add it.";
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            var t = await Helpers.GetOrPost<List<DataObjects.Ticket>>("api/Data/GetTickets", new List<Guid>()) ?? new();
+            _backlog = t.Where(x => x.SprintId == null || x.SprintId == Guid.Empty).OrderBy(x => x.SortOrder).ToList();
+            _sprints = await Helpers.GetOrPost<List<DataObjects.Sprint>>("api/Data/GetSprints", new List<Guid>()) ?? new();
+            _loading = false; StateHasChanged();
+        }
+    }
+
+    private void Toggle(Guid id) { if (!_selected.Remove(id)) _selected.Add(id); _done = false; }
+    private void ToggleAll() { if (_selected.Count == _backlog.Count) _selected.Clear(); else _selected = new(_backlog.Select(t => t.RecordId)); _done = false; }
+
+    private async Task ApplyBulk() {
+        _saving = true; _done = false;
+        var toSave = _backlog.Where(t => _selected.Contains(t.RecordId)).ToList();
+        foreach (var t in toSave) {
+            if (!string.IsNullOrEmpty(_bulkAssign)) t.AssignedTo = _bulkAssign;
+            if (Enum.TryParse<DataObjects.TicketPriority>(_bulkPriority, out var p)) t.Priority = p;
+            if (!string.IsNullOrEmpty(_bulkLabel)) t.Labels = string.IsNullOrEmpty(t.Labels) ? _bulkLabel : $"{t.Labels},{_bulkLabel}";
+            if (Guid.TryParse(_bulkSprint, out var sid)) t.SprintId = sid;
+        }
+        await Helpers.GetOrPost<List<DataObjects.Ticket>>("api/Data/SaveTickets", toSave);
+        if (Guid.TryParse(_bulkSprint, out _)) _backlog.RemoveAll(t => _selected.Contains(t.RecordId));
+        _done = true; _saving = false; StateHasChanged();
+    }
+
+    private static string GetPriorityBadge(DataObjects.TicketPriority p) => p switch { DataObjects.TicketPriority.Critical => "bg-danger", DataObjects.TicketPriority.High => "bg-warning text-dark", DataObjects.TicketPriority.Medium => "bg-info", _ => "bg-secondary" };
+
+    private string _codeSelectAll = @"HashSet<Guid> _selected = new();
+
+void Toggle(Guid id) {
+  if (!_selected.Remove(id))
+    _selected.Add(id);
+}
+
+void ToggleAll() {
+  if (_selected.Count == _backlog.Count)
+    _selected.Clear();
+  else
+    _selected = new(_backlog.Select(t => t.RecordId));
+}
+
+<th>
+  <input type=""checkbox""
+    checked=""@(_selected.Count == _backlog.Count)""
+    @onchange=""ToggleAll"" />
+</th>";
+
+    private string _codeFloatingBar = @"@if (_selected.Count > 0) {
+  <div class=""position-fixed bottom-0 start-0 end-0
+       bg-dark text-white p-2""
+       style=""z-index:1040;"">
+    <span class=""badge bg-primary rounded-pill"">
+      @_selected.Count selected
+    </span>
+    <input @bind=""_bulkAssign"" placeholder=""Name"" />
+    <select @bind=""_bulkPriority"">...</select>
+    <button @onclick=""ApplyBulk"">Apply</button>
+    <button @onclick=""() => _selected.Clear()"">
+      Clear
+    </button>
+  </div>
+}";
+
+    private string _codeBatchSave = @"async Task ApplyBulk() {
+  var toSave = _backlog
+    .Where(t => _selected.Contains(t.RecordId))
+    .ToList();
+  foreach (var t in toSave) {
+    if (!string.IsNullOrEmpty(_bulkAssign))
+      t.AssignedTo = _bulkAssign;
+    if (Enum.TryParse(_bulkPriority, out var p))
+      t.Priority = p;
+  }
+  // One API call saves all selected tickets
+  await SaveTickets(toSave);
+}";
+}

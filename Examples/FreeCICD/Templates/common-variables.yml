@@ -1,0 +1,43 @@
+# templatetests/templates/variables/vars.yml
+variables:
+  # Build pipeline variables
+  - name: CI_PIPELINE_COMMON_PublishArgs
+    value: '--configuration Release -p:PublishTrimmed=false'  # Example publish arguments
+
+  - name: CI_PIPELINE_COMMON_ReleaseRetention
+    value: '2'   # App pool identity for PROD
+    
+  # Deploy pipeline variables for application folders
+  - name: CI_PIPELINE_COMMON_ApplicationFolder_DEV
+    value: 'C:\WebRoot\OctopusDev\azagentdev\Applications' # Path to the DEV application folder
+
+  - name: CI_PIPELINE_COMMON_ApplicationFolder_PROD
+    value: 'C:\WebRoot\Octopus\azagentprod\Applications' # Path to the PROD application folder
+
+  - name: CI_PIPELINE_COMMON_ApplicationFolder_CMS
+    value: 'C:\WebRoot\OctopusCMS\azagentcms\Applications'
+
+  # Deploy pipeline variables for DEV IIS settings
+  - name: CI_PIPELINE_COMMON_DotNetVersion_DEV
+    value: 'v4.0'                      # .NET version for DEV
+
+  - name: CI_PIPELINE_COMMON_AppPoolIdentity_DEV
+    value: 'ApplicationPoolIdentity'   # App pool identity for DEV
+
+  # Deploy pipeline variables for PROD IIS settings
+  - name: CI_PIPELINE_COMMON_DotNetVersion_PROD
+    value: 'v4.0'                      # .NET version for PROD
+
+  - name: CI_PIPELINE_COMMON_AppPoolIdentity_PROD
+    value: 'ApplicationPoolIdentity'   # App pool identity for PROD
+
+
+  # Deploy pipeline variables for CMS IIS settings
+  - name: CI_PIPELINE_COMMON_DotNetVersion_CMS
+    value: 'v4.0'                      # .NET version for CMS
+
+  - name: CI_PIPELINE_COMMON_AppPoolIdentity_CMS
+    value: 'ApplicationPoolIdentity'   # App pool identity for CMS
+
+  - name: GrantAccessToFilesAndFolders
+    value: ''

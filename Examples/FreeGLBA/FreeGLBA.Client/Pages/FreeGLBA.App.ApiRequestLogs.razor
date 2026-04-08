@@ -1,0 +1,420 @@
+﻿@* FreeGLBA.App.ApiRequestLogs.razor - API Request Log List View *@
+@page "/ApiLogs"
+@page "/{TenantCode}/ApiLogs"
+@implements IDisposable
+@inject BlazorDataModel Model
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+@if (Model.Loaded && Model.LoggedIn && Model.View == _pageName) {
+    <div class="container-fluid">
+        <div class="@Model.StickyMenuClass">
+            <div class="d-flex justify-content-between align-items-center">
+                <h1 class="page-title mb-0">
+                    <i class="fa-solid fa-list-check me-2"></i>API Request Logs
+                </h1>
+                <div>
+                    <button class="btn btn-outline-success me-2" @onclick="ExportCsv" disabled="@(_loading || _result == null || _result.TotalRecords == 0)">
+                        <i class="fa-solid fa-download me-1"></i>Export CSV
+                    </button>
+                    <button class="btn btn-outline-primary me-2" @onclick="GoToDashboard">
+                        <i class="fa-solid fa-chart-line me-1"></i>Dashboard
+                    </button>
+                    <button class="btn btn-outline-secondary" @onclick="GoToSettings">
+                        <i class="fa-solid fa-gear me-1"></i>Settings
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        @* Filters Row *@
+        <div class="card mb-3">
+            <div class="card-body py-2">
+                <div class="row g-2 align-items-end">
+                    @* Time Range *@
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Time Range</label>
+                        <select class="form-select form-select-sm" @bind="_filter.TimeRange" @bind:after="ApplyFilters">
+                            <option value="1h">Last 1 hour</option>
+                            <option value="24h">Last 24 hours</option>
+                            <option value="7d">Last 7 days</option>
+                            <option value="30d">Last 30 days</option>
+                            <option value="all">All time</option>
+                        </select>
+                    </div>
+
+                    @* Source System *@
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Source System</label>
+                        <select class="form-select form-select-sm" @bind="_filter.SourceSystemId" @bind:after="ApplyFilters">
+                            <option value="">All Sources</option>
+                            @foreach (var source in _sourceSystems) {
+                                <option value="@source.SourceSystemId">@source.DisplayName</option>
+                            }
+                        </select>
+                    </div>
+
+                    @* Status Filter *@
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Status</label>
+                        <select class="form-select form-select-sm" @bind="_filter.StatusFilter" @bind:after="ApplyFilters">
+                            <option value="">All</option>
+                            <option value="success">Success Only</option>
+                            <option value="errors">Errors Only</option>
+                            <option value="4xx">4xx Errors</option>
+                            <option value="5xx">5xx Errors</option>
+                        </select>
+                    </div>
+
+                    @* Min Duration *@
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Min Duration (ms)</label>
+                        <input type="number" class="form-control form-control-sm" @bind="_filter.MinDurationMs" @bind:after="ApplyFilters" placeholder="0" />
+                    </div>
+
+                    @* Search *@
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">Search</label>
+                        <div class="input-group input-group-sm">
+                            <input type="text" class="form-control" @bind="_filter.SearchTerm" @bind:event="oninput" @onkeyup="OnSearchKeyUp" placeholder="Path or error message..." />
+                            <button class="btn btn-outline-secondary" @onclick="ApplyFilters">
+                                <i class="fa-solid fa-search"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    @* Clear Filters *@
+                    <div class="col-md-1">
+                        <button class="btn btn-sm btn-outline-secondary w-100" @onclick="ClearFilters" title="Clear all filters">
+                            <i class="fa-solid fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (_loading) {
+            <div class="text-center py-5">
+                <i class="fa-solid fa-spinner fa-spin fa-2x"></i>
+                <p class="mt-2">Loading logs...</p>
+            </div>
+        } else if (_result == null || _result.TotalRecords == 0) {
+            <div class="alert alert-info">
+                <i class="fa-solid fa-info-circle me-2"></i>
+                No API request logs found matching your filters.
+            </div>
+        } else {
+            @* Results Summary *@
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <small class="text-muted">
+                    Showing @((_result.Page - 1) * _result.PageSize + 1)-@Math.Min(_result.Page * _result.PageSize, _result.TotalRecords) of @_result.TotalRecords.ToString("N0") logs
+                </small>
+                <div>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="LoadLogs" disabled="@_loading">
+                        <i class="fa-solid @(_loading ? "fa-spinner fa-spin" : "fa-sync")"></i> Refresh
+                    </button>
+                </div>
+            </div>
+
+            @* Results Table *@
+            <div class="table-responsive">
+                <table class="table table-hover table-sm">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="cursor-pointer" @onclick='() => SetSort("RequestedAt")'>
+                                Time @GetSortIcon("RequestedAt")
+                            </th>
+                            <th class="cursor-pointer" @onclick='() => SetSort("SourceSystemName")'>
+                                Source @GetSortIcon("SourceSystemName")
+                            </th>
+                            <th class="cursor-pointer" @onclick='() => SetSort("HttpMethod")'>
+                                Method @GetSortIcon("HttpMethod")
+                            </th>
+                            <th class="cursor-pointer" @onclick='() => SetSort("RequestPath")'>
+                                Path @GetSortIcon("RequestPath")
+                            </th>
+                            <th class="cursor-pointer text-center" @onclick='() => SetSort("StatusCode")'>
+                                Status @GetSortIcon("StatusCode")
+                            </th>
+                            <th class="cursor-pointer text-end" @onclick='() => SetSort("DurationMs")'>
+                                Duration @GetSortIcon("DurationMs")
+                            </th>
+                            <th>Error</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var log in _result.Records) {
+                            <tr class="cursor-pointer @(log.IsSuccess ? "" : "table-danger")" @onclick="() => ViewLog(log.ApiRequestLogId)">
+                                <td class="text-nowrap">@log.RequestedAt.ToLocalTime().ToString("g")</td>
+                                <td>@(string.IsNullOrEmpty(log.SourceSystemName) ? "-" : log.SourceSystemName)</td>
+                                <td><span class="badge @GetMethodBadgeClass(log.HttpMethod)">@log.HttpMethod</span></td>
+                                <td class="text-truncate" style="max-width: 300px;" title="@log.RequestPath">@log.RequestPath</td>
+                                <td class="text-center"><span class="badge @GetStatusBadgeClass(log.StatusCode)">@log.StatusCode</span></td>
+                                <td class="text-end @(log.DurationMs > 1000 ? "text-warning fw-bold" : "")">@log.DurationMs ms</td>
+                                <td class="text-truncate" style="max-width: 200px;" title="@log.ErrorMessage">@log.ErrorMessage</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            @* Pagination *@
+            @if (_result.TotalPages > 1) {
+                <nav>
+                    <ul class="pagination pagination-sm justify-content-center">
+                        <li class="page-item @(_result.Page <= 1 ? "disabled" : "")">
+                            <button class="page-link" @onclick="() => GoToPage(1)" disabled="@(_result.Page <= 1)">
+                                <i class="fa-solid fa-angles-left"></i>
+                            </button>
+                        </li>
+                        <li class="page-item @(_result.Page <= 1 ? "disabled" : "")">
+                            <button class="page-link" @onclick="() => GoToPage(_result.Page - 1)" disabled="@(_result.Page <= 1)">
+                                <i class="fa-solid fa-angle-left"></i>
+                            </button>
+                        </li>
+                        @for (var i = Math.Max(1, _result.Page - 2); i <= Math.Min(_result.TotalPages, _result.Page + 2); i++) {
+                            var pageNum = i;
+                            <li class="page-item @(pageNum == _result.Page ? "active" : "")">
+                                <button class="page-link" @onclick="() => GoToPage(pageNum)">@pageNum</button>
+                            </li>
+                        }
+                        <li class="page-item @(_result.Page >= _result.TotalPages ? "disabled" : "")">
+                            <button class="page-link" @onclick="() => GoToPage(_result.Page + 1)" disabled="@(_result.Page >= _result.TotalPages)">
+                                <i class="fa-solid fa-angle-right"></i>
+                            </button>
+                        </li>
+                        <li class="page-item @(_result.Page >= _result.TotalPages ? "disabled" : "")">
+                            <button class="page-link" @onclick="() => GoToPage(_result.TotalPages)" disabled="@(_result.Page >= _result.TotalPages)">
+                                <i class="fa-solid fa-angles-right"></i>
+                            </button>
+                        </li>
+                    </ul>
+                </nav>
+            }
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    
+    private string _pageName = "apirequestlogs";
+    private bool _loading = true;
+    private bool _loadedData = false;
+    private DataObjects.ApiLogFilterResult? _result;
+    private List<DataObjects.SourceSystemLookup> _sourceSystems = new();
+    private FilterState _filter = new();
+    private System.Threading.Timer? _searchTimer;
+
+    public void Dispose() {
+        Model.OnChange -= OnDataModelUpdated;
+        _searchTimer?.Dispose();
+    }
+
+    protected override void OnInitialized() {
+        Model.View = _pageName;
+        Model.OnChange += OnDataModelUpdated;
+        
+        // Check for URL parameters
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        if (query["errorsOnly"] == "true") {
+            _filter.StatusFilter = "errors";
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) {
+            Model.TenantCodeFromUrl = TenantCode;
+        }
+
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            await LoadSourceSystems();
+            await LoadLogs();
+        }
+    }
+
+    private void OnDataModelUpdated() {
+        if (Model.View == _pageName) {
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadSourceSystems() {
+        try {
+            _sourceSystems = await Helpers.GetOrPost<List<DataObjects.SourceSystemLookup>>("api/Data/GetSourceSystemLookups") ?? new();
+        } catch {
+            _sourceSystems = new();
+        }
+    }
+
+    private async Task LoadLogs() {
+        _loading = true;
+        StateHasChanged();
+
+        try {
+            var filter = BuildFilter();
+            _result = await Helpers.GetOrPost<DataObjects.ApiLogFilterResult>("api/Data/GetApiLogs", filter);
+        } catch (Exception ex) {
+            Model.ErrorMessage($"Error loading logs: {ex.Message}");
+        } finally {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private DataObjects.ApiLogFilter BuildFilter() {
+        var filter = new DataObjects.ApiLogFilter
+        {
+            Page = _filter.Page,
+            PageSize = 50,
+            SortColumn = _filter.SortColumn,
+            SortDescending = _filter.SortDescending,
+            SearchTerm = _filter.SearchTerm,
+            MinDurationMs = _filter.MinDurationMs
+        };
+
+        // Time range
+        var now = DateTime.UtcNow;
+        filter.ToDate = now;
+        filter.FromDate = _filter.TimeRange switch {
+            "1h" => now.AddHours(-1),
+            "24h" => now.AddHours(-24),
+            "7d" => now.AddDays(-7),
+            "30d" => now.AddDays(-30),
+            _ => null
+        };
+
+        // Source system
+        if (!string.IsNullOrEmpty(_filter.SourceSystemId) && Guid.TryParse(_filter.SourceSystemId, out var sourceId)) {
+            filter.SourceSystemId = sourceId;
+        }
+
+        // Status filter
+        switch (_filter.StatusFilter) {
+            case "success":
+                filter.SuccessOnly = true;
+                break;
+            case "errors":
+                filter.ErrorsOnly = true;
+                break;
+            case "4xx":
+                filter.StatusCodes = Enumerable.Range(400, 100).ToList();
+                break;
+            case "5xx":
+                filter.StatusCodes = Enumerable.Range(500, 100).ToList();
+                break;
+        }
+
+        return filter;
+    }
+
+    private async Task ApplyFilters() {
+        _filter.Page = 1;
+        await LoadLogs();
+    }
+
+    private async Task ClearFilters() {
+        _filter = new FilterState();
+        await LoadLogs();
+    }
+
+    private void OnSearchKeyUp(KeyboardEventArgs e) {
+        _searchTimer?.Dispose();
+        _searchTimer = new System.Threading.Timer(async _ => {
+            await InvokeAsync(async () => {
+                await ApplyFilters();
+            });
+        }, null, TimeSpan.FromMilliseconds(500), Timeout.InfiniteTimeSpan);
+    }
+
+    private async Task SetSort(string column) {
+        if (_filter.SortColumn == column) {
+            _filter.SortDescending = !_filter.SortDescending;
+        } else {
+            _filter.SortColumn = column;
+            _filter.SortDescending = true;
+        }
+        await LoadLogs();
+    }
+
+    private MarkupString GetSortIcon(string column) {
+        if (_filter.SortColumn != column) return new MarkupString("");
+        var icon = _filter.SortDescending ? "fa-sort-down" : "fa-sort-up";
+        return new MarkupString($"<i class=\"fa-solid {icon} ms-1\"></i>");
+    }
+
+    private async Task GoToPage(int page) {
+        _filter.Page = page;
+        await LoadLogs();
+    }
+
+    private string GetMethodBadgeClass(string method) {
+        return method?.ToUpper() switch {
+            "GET" => "bg-primary",
+            "POST" => "bg-success",
+            "PUT" => "bg-warning text-dark",
+            "PATCH" => "bg-info",
+            "DELETE" => "bg-danger",
+            _ => "bg-secondary"
+        };
+    }
+
+    private string GetStatusBadgeClass(int statusCode) {
+        return statusCode switch {
+            >= 200 and < 300 => "bg-success",
+            >= 300 and < 400 => "bg-info",
+            >= 400 and < 500 => "bg-warning text-dark",
+            >= 500 => "bg-danger",
+            _ => "bg-secondary"
+        };
+    }
+
+    private void ViewLog(Guid id) {
+        var path = string.IsNullOrEmpty(TenantCode) ? $"/ApiLogs/{id}" : $"/{TenantCode}/ApiLogs/{id}";
+        Nav.NavigateTo(path);
+    }
+
+    private async Task ExportCsv() {
+        if (_result == null) return;
+        
+        // Build CSV content
+        var csv = new System.Text.StringBuilder();
+        csv.AppendLine("Time,Source,Method,Path,Status,Duration (ms),Success,Error");
+        
+        foreach (var log in _result.Records) {
+            csv.AppendLine($"\"{log.RequestedAt:yyyy-MM-dd HH:mm:ss}\",\"{Escape(log.SourceSystemName)}\",\"{log.HttpMethod}\",\"{Escape(log.RequestPath)}\",{log.StatusCode},{log.DurationMs},{log.IsSuccess},\"{Escape(log.ErrorMessage)}\"");
+        }
+        
+        // Copy to clipboard for now (simple export)
+        await Helpers.CopyToClipboard(csv.ToString());
+        Model.AddMessage("CSV data copied to clipboard", MessageType.Success, true);
+    }
+
+    private string Escape(string? value) {
+        if (string.IsNullOrEmpty(value)) return "";
+        return value.Replace("\"", "\"\"");
+    }
+
+    private void GoToDashboard() {
+        var path = string.IsNullOrEmpty(TenantCode) ? "/ApiLogs/Dashboard" : $"/{TenantCode}/ApiLogs/Dashboard";
+        Nav.NavigateTo(path);
+    }
+
+    private void GoToSettings() {
+        var path = string.IsNullOrEmpty(TenantCode) ? "/ApiLogs/Settings" : $"/{TenantCode}/ApiLogs/Settings";
+        Nav.NavigateTo(path);
+    }
+
+    private class FilterState {
+        public string TimeRange { get; set; } = "24h";
+        public string? SourceSystemId { get; set; }
+        public string? StatusFilter { get; set; }
+        public long? MinDurationMs { get; set; }
+        public string? SearchTerm { get; set; }
+        public int Page { get; set; } = 1;
+        public string SortColumn { get; set; } = "RequestedAt";
+        public bool SortDescending { get; set; } = true;
+    }
+}

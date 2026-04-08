@@ -1,0 +1,165 @@
+﻿@* PipelineVariableGroupBadges Component *@
+@* Displays variable group references as badges with links to Azure DevOps *@
+
+@inject NavigationManager Navigation
+
+@if (VariableGroups?.Any() == true)
+{
+    <div class="d-flex flex-wrap gap-1 @ContainerClass">
+        @foreach (var vg in VariableGroups.Take(MaxDisplay))
+        {
+            @if (!string.IsNullOrWhiteSpace(vg.ResourceUrl))
+            {
+                <a href="@vg.ResourceUrl" target="_blank" class="badge @BadgeClass text-decoration-none" title="@GetTooltip(vg)">
+                    <i class="fa fa-database me-1"></i>
+                    @if (ShowCount && vg.VariableCount > 0)
+                    {
+                        <span>@GetDisplayName(vg) (@vg.VariableCount)</span>
+                    }
+                    else
+                    {
+                        <span>@GetDisplayName(vg)</span>
+                    }
+                    <i class="fa fa-external-link ms-1 small"></i>
+                </a>
+            }
+            else
+            {
+                <span class="badge @BadgeClass" title="@GetTooltip(vg)">
+                    <i class="fa fa-database me-1"></i>
+                    @if (ShowCount && vg.VariableCount > 0)
+                    {
+                        <span>@GetDisplayName(vg) (@vg.VariableCount)</span>
+                    }
+                    else
+                    {
+                        <span>@GetDisplayName(vg)</span>
+                    }
+                </span>
+            }
+        }
+        @if (VariableGroups.Count > MaxDisplay)
+        {
+            <span class="badge bg-secondary" title="@GetOverflowTooltip()">
+                +@(VariableGroups.Count - MaxDisplay) more
+            </span>
+        }
+    </div>
+}
+else if (ShowEmptyState)
+{
+    <span class="text-muted small">
+        <i class="fa fa-database me-1"></i>
+        No variable groups
+    </span>
+}
+
+@code {
+    [Parameter] public List<DataObjects.PipelineVariableGroupRef>? VariableGroups { get; set; }
+    
+    /// <summary>
+    /// Maximum number of variable groups to display before showing overflow.
+    /// </summary>
+    [Parameter] public int MaxDisplay { get; set; } = 3;
+    
+    /// <summary>
+    /// Show the variable count in the badge.
+    /// </summary>
+    [Parameter] public bool ShowCount { get; set; } = true;
+    
+    /// <summary>
+    /// Show environment name prefix in the badge (e.g., "DEV: MyGroup").
+    /// </summary>
+    [Parameter] public bool ShowEnvironment { get; set; } = false;
+    
+    /// <summary>
+    /// Show "No variable groups" message when empty.
+    /// </summary>
+    [Parameter] public bool ShowEmptyState { get; set; } = false;
+    
+    /// <summary>
+    /// CSS class for the badge styling.
+    /// </summary>
+    [Parameter] public string BadgeClass { get; set; } = "bg-info-subtle text-info-emphasis border border-info-subtle";
+    
+    /// <summary>
+    /// Additional CSS class for the container.
+    /// </summary>
+    [Parameter] public string ContainerClass { get; set; } = "";
+
+    /// <summary>
+    /// Compact mode - show only icons without text (for table view).
+    /// </summary>
+    [Parameter] public bool CompactMode { get; set; } = false;
+
+    private string GetDisplayName(DataObjects.PipelineVariableGroupRef vg)
+    {
+        if (CompactMode)
+        {
+            // In compact mode, just show count or short indicator
+            return vg.VariableCount > 0 ? vg.VariableCount.ToString() : "";
+        }
+        
+        var name = vg.Name ?? "";
+        
+        // Truncate long names
+        if (name.Length > 25)
+        {
+            name = name[..22] + "...";
+        }
+        
+        if (ShowEnvironment && !string.IsNullOrWhiteSpace(vg.Environment))
+        {
+            return $"{vg.Environment}: {name}";
+        }
+        
+        return name;
+    }
+
+    private string GetTooltip(DataObjects.PipelineVariableGroupRef vg)
+    {
+        var parts = new List<string>();
+        
+        if (!string.IsNullOrWhiteSpace(vg.Name))
+        {
+            parts.Add($"Variable Group: {vg.Name}");
+        }
+        
+        if (!string.IsNullOrWhiteSpace(vg.Environment))
+        {
+            parts.Add($"Environment: {vg.Environment}");
+        }
+        
+        if (vg.VariableCount > 0)
+        {
+            parts.Add($"Variables: {vg.VariableCount}");
+        }
+        
+        if (!string.IsNullOrWhiteSpace(vg.ResourceUrl))
+        {
+            parts.Add("Click to open in Azure DevOps");
+        }
+        
+        return string.Join("\n", parts);
+    }
+
+    private string GetOverflowTooltip()
+    {
+        if (VariableGroups == null || VariableGroups.Count <= MaxDisplay)
+            return "";
+            
+        var overflow = VariableGroups.Skip(MaxDisplay).ToList();
+        return string.Join(", ", overflow.Select(vg => vg.Name));
+    }
+}
+
+<style>
+    .badge.bg-info-subtle {
+        transition: all 0.15s ease;
+    }
+    
+    a.badge:hover {
+        filter: brightness(0.9);
+        text-decoration: none !important;
+    }
+</style>

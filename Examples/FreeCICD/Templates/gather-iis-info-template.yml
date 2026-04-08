@@ -1,0 +1,127 @@
+# templates/gather-iis-info-template.yml
+parameters:
+  - name: artifactName
+    type: string
+    default: 'IISInfo'
+
+steps:
+  - task: PowerShell@2
+    displayName: "Gather IIS Information and Write JSON"
+    inputs:
+      targetType: 'inline'
+      script: |
+        Write-Host "Gathering IIS information..."
+        try {
+            Import-Module WebAdministration -ErrorAction Stop
+        }
+        catch {
+            Write-Error "Failed to load the WebAdministration module. Exiting."
+            exit 1
+        }
+        
+        # Initialize an array for site information.
+        $sitesData = @()
+        
+        # Enumerate all sites in IIS.
+        $sites = Get-ChildItem IIS:\Sites
+        foreach ($site in $sites) {
+            $siteName = $site.Name
+            # Create an object for the site with Applications.
+            $siteObj = @{
+                Name = $siteName
+                Applications = @()
+            }
+            
+            # --- Gather binding information for the site ---
+            $bindings = Get-WebBinding -Name $siteName
+            $bindingsArray = @()
+            foreach ($binding in $bindings) {
+                $certHash = $null
+                if ($binding.certificateHash) {
+                    if ($binding.certificateHash -is [byte[]]) {
+                        $certHash = ([System.BitConverter]::ToString($binding.certificateHash) -replace '-', '')
+                    }
+                    elseif ($binding.certificateHash -is [string]) {
+                        $certHash = $binding.certificateHash
+                    }
+                }
+                $bindingObj = @{
+                    protocol              = $binding.protocol
+                    bindingInformation    = $binding.bindingInformation
+                    certificateHash       = $certHash
+                    certificateStoreName  = $binding.certificateStoreName
+                }
+                $bindingsArray += $bindingObj
+            }
+            $siteObj["Bindings"] = $bindingsArray
+            # -----------------------------------------------------
+            
+            # Enumerate applications for this site.
+            $apps = Get-WebConfiguration -Filter "system.applicationHost/sites/site[@name='$siteName']/application"
+            foreach ($app in $apps) {
+                $appPath = $app.GetAttributeValue("path")
+                $appPool = $app.GetAttributeValue("applicationPool")
+                $isVirtual = ($appPath -ne "/")
+                $rootSite = $siteName
+                
+                # Retrieve the physical path from the application's root virtual directory.
+                $vdir = Get-WebConfiguration -Filter "system.applicationHost/sites/site[@name='$siteName']/application[@path='$appPath']/virtualDirectory[@path='/']"
+                $physicalPath = $null
+                if ($vdir) { 
+                    $physicalPath = $vdir.physicalPath 
+                }
+                
+                # Get the last modified time of web.config in ISO-8601 (UTC) format if available.
+                $webConfigLastModified = $null
+                if ($physicalPath -and (Test-Path $physicalPath)) {
+                    $webConfig = Join-Path $physicalPath "web.config"
+                    if (Test-Path $webConfig) {
+                        $webConfigLastModified = (Get-Item $webConfig).LastWriteTimeUtc.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+                    }
+                }
+                
+                $appObj = @{
+                    Path                  = $appPath
+                    AppPool               = $appPool
+                    PhysicalPath          = $physicalPath
+                    WebConfigLastModified = $webConfigLastModified
+                    IsVirtual             = $isVirtual
+                    RootSite              = $rootSite
+                }
+                $siteObj.Applications += $appObj
+            }
+            
+            $sitesData += $siteObj
+        }
+        
+        # Gather application pool information.
+        $appPoolsData = @()
+        $appPools = Get-ChildItem IIS:\AppPools
+        foreach ($pool in $appPools) {
+            $poolObj = @{
+                Name  = $pool.Name
+                State = $pool.state
+            }
+            $appPoolsData += $poolObj
+        }
+        
+        # Build the final object with sites and application pools.
+        $iisInfo = @{
+            Sites            = $sitesData
+            ApplicationPools = $appPoolsData
+        }
+        
+        # Convert the object to JSON.
+        $jsonOutput = $iisInfo | ConvertTo-Json -Depth 5
+        
+        # Build the output filename using the provided artifactName.
+        $outputFile = "${{ parameters.artifactName }}.json"
+        $outputPath = Join-Path "$(Build.ArtifactStagingDirectory)" $outputFile
+        $jsonOutput | Out-File -FilePath $outputPath -Encoding UTF8
+        Write-Host "IIS information written to $outputPath"
+        
+  - task: PublishBuildArtifacts@1
+    displayName: "Publish IIS Info Artifact"
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)\${{ parameters.artifactName }}.json'
+      ArtifactName: '${{ parameters.artifactName }}'

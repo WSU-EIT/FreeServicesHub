@@ -1,0 +1,350 @@
+﻿@* FreeGLBA.App.EditComplianceReport.razor - Edit/Create form for ComplianceReport *@
+@inject BlazorDataModel Model
+@inject HttpClient Http
+
+<div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fa-solid @(IsNew ? "fa-plus" : "fa-file-lines") me-2"></i>
+                    @(IsNew ? "Generate" : "View") Compliance Report
+                </h5>
+                <button type="button" class="btn-close" @onclick="Cancel" disabled="@_saving"></button>
+            </div>
+            <div class="modal-body">
+                @if (IsNew) {
+                    @* Report Generation Form *@
+                    <div class="alert alert-info mb-3">
+                        <i class="fa-solid fa-info-circle me-2"></i>
+                        <strong>How this works:</strong> Select a report type and date range. The system will generate a 
+                        formatted summary you can copy and paste into your Helpdesk/Jira ticketing system for compliance review.
+                    </div>
+
+                    <div class="mb-3">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="GenerateTestData">
+                            <i class="fa-solid fa-wand-magic-sparkles me-1"></i>Generate Test Data
+                        </button>
+                    </div>
+
+                    <EditForm Model="Item" OnValidSubmit="Save">
+                        <DataAnnotationsValidator />
+                        
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Report Type <span class="text-danger">*</span></label>
+                                <select id="edit-compliancereport-ReportType" class="form-select @Helpers.MissingValue(Item.ReportType)" 
+                                        @bind="Item.ReportType">
+                                    <option value="">-- Select Type --</option>
+                                    <option value="Monthly">Monthly Summary</option>
+                                    <option value="Quarterly">Quarterly Summary</option>
+                                    <option value="Annual">Annual Summary</option>
+                                    <option value="Audit">Audit Response</option>
+                                    <option value="Export Review">Export Review (All Exports)</option>
+                                    <option value="High Volume">High Volume Access Review</option>
+                                    <option value="Subject Request">Data Subject Access Request</option>
+                                    <option value="Custom">Custom Period</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Period Start <span class="text-danger">*</span></label>
+                                <input type="date" class="form-control" @bind="Item.PeriodStart" />
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Period End <span class="text-danger">*</span></label>
+                                <input type="date" class="form-control" @bind="Item.PeriodEnd" />
+                            </div>
+                        </div>
+
+                        <div class="alert alert-secondary">
+                            <i class="fa-solid fa-calculator me-1"></i>
+                            Report statistics will be calculated automatically based on access events within the selected period.
+                        </div>
+                    </EditForm>
+                } else {
+                    @* View Generated Report *@
+                    <div class="row mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label text-muted small">Report Type</label>
+                            <div class="fw-bold">@Item.ReportType</div>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label text-muted small">Period</label>
+                            <div class="fw-bold">@Item.PeriodStart.ToString("MMM d, yyyy") - @Item.PeriodEnd.ToString("MMM d, yyyy")</div>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label text-muted small">Generated</label>
+                            <div class="fw-bold">@Item.GeneratedAt.ToString("MMM d, yyyy h:mm tt")</div>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label text-muted small">Generated By</label>
+                            <div class="fw-bold">@(string.IsNullOrEmpty(Item.GeneratedBy) ? "System" : Item.GeneratedBy)</div>
+                        </div>
+                    </div>
+
+                    @* Ticket Subject *@
+                    <div class="card mb-3 border-primary">
+                        <div class="card-header bg-primary bg-opacity-10 d-flex justify-content-between align-items-center py-2">
+                            <span><i class="fa-solid fa-heading me-2"></i>Ticket Subject</span>
+                            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="CopySubjectToClipboard">
+                                <i class="fa-solid fa-copy me-1"></i>Copy Subject
+                            </button>
+                        </div>
+                        <div class="card-body py-2">
+                            <code class="fs-6">@GetReportSubject()</code>
+                        </div>
+                    </div>
+
+                    @* Statistics Cards *@
+                    <div class="row mb-4">
+                        <div class="col-md-4">
+                            <div class="card bg-primary text-white">
+                                <div class="card-body text-center py-3">
+                                    <h2 class="mb-0">@Item.TotalEvents.ToString("N0")</h2>
+                                    <small>Total Access Events</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card bg-info text-white">
+                                <div class="card-body text-center py-3">
+                                    <h2 class="mb-0">@Item.UniqueUsers.ToString("N0")</h2>
+                                    <small>Unique Accessors</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card bg-success text-white">
+                                <div class="card-body text-center py-3">
+                                    <h2 class="mb-0">@Item.UniqueSubjects.ToString("N0")</h2>
+                                    <small>Data Subjects Accessed</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    @* Copyable Report Summary *@
+                    <div class="card mb-3">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span><i class="fa-solid fa-clipboard-list me-2"></i>Ticket Description</span>
+                            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="CopyReportToClipboard">
+                                <i class="fa-solid fa-copy me-1"></i>Copy Description
+                            </button>
+                        </div>
+                        <div class="card-body p-0">
+                            <pre id="report-summary" class="bg-light p-3 mb-0 small" style="white-space: pre-wrap; max-height: 400px; overflow-y: auto;">@GenerateReportSummary()</pre>
+                        </div>
+                    </div>
+
+                    @* Guidance *@
+                    <div class="alert alert-warning">
+                        <h6><i class="fa-solid fa-clipboard-check me-2"></i>Next Steps</h6>
+                        <ol class="mb-0 ps-3">
+                            <li>Copy the <strong>Subject</strong> above for your ticket title</li>
+                            <li>Copy the <strong>Description</strong> for the ticket body</li>
+                            <li>Create a new ticket in your Helpdesk/Jira system</li>
+                            <li>Assign to the appropriate compliance reviewer</li>
+                            <li>The reviewer will validate findings using your organization's tools</li>
+                        </ol>
+                    </div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="Cancel" disabled="@_saving">
+                    @(IsNew ? "Cancel" : "Close")
+                </button>
+                @if (IsNew) {
+                    <button type="button" class="btn btn-primary" @onclick="Save" disabled="@_saving">
+                        @if (_saving) {
+                            <i class="fa-solid fa-spinner fa-spin me-1"></i>
+                            <span>Generating...</span>
+                        } else {
+                            <i class="fa-solid fa-file-export me-1"></i>
+                            <span>Generate Report</span>
+                        }
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public DataObjects.ComplianceReport Item { get; set; } = new();
+    [Parameter] public EventCallback<DataObjects.ComplianceReport> OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private static readonly string[] _reportTypes = { "Monthly", "Quarterly", "Export Review", "High Volume", "Audit" };
+    private static readonly Random _random = new();
+
+    private bool IsNew => Item.ComplianceReportId == default;
+    private bool _saving = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) {
+            await Helpers.DelayedFocus("edit-compliancereport-ReportType");
+        }
+    }
+
+    protected override void OnParametersSet() {
+        if (IsNew) {
+            // Set default period to current month
+            var now = DateTime.Now;
+            Item.PeriodStart = new DateTime(now.Year, now.Month, 1);
+            Item.PeriodEnd = Item.PeriodStart.AddMonths(1).AddDays(-1);
+        }
+    }
+
+    private void GenerateTestData() {
+        Item.ReportType = _reportTypes[_random.Next(_reportTypes.Length)];
+        
+        // Set period based on report type
+        var now = DateTime.Now;
+        Item.ReportType = Item.ReportType switch {
+            "Quarterly" => "Quarterly",
+            "Annual" => "Annual",
+            _ => Item.ReportType
+        };
+
+        if (Item.ReportType == "Quarterly") {
+            var quarter = (now.Month - 1) / 3;
+            Item.PeriodStart = new DateTime(now.Year, quarter * 3 + 1, 1);
+            Item.PeriodEnd = Item.PeriodStart.AddMonths(3).AddDays(-1);
+        } else if (Item.ReportType == "Annual") {
+            Item.PeriodStart = new DateTime(now.Year, 1, 1);
+            Item.PeriodEnd = new DateTime(now.Year, 12, 31);
+        } else {
+            // Monthly or other - use last month
+            Item.PeriodStart = new DateTime(now.Year, now.Month, 1).AddMonths(-1);
+            Item.PeriodEnd = Item.PeriodStart.AddMonths(1).AddDays(-1);
+        }
+        StateHasChanged();
+    }
+
+    private string GenerateReportSummary() {
+        var sb = new System.Text.StringBuilder();
+        
+        sb.AppendLine("═══════════════════════════════════════════════════════════════");
+        sb.AppendLine($"  GLBA COMPLIANCE REPORT - {Item.ReportType?.ToUpper()}");
+        sb.AppendLine("═══════════════════════════════════════════════════════════════");
+        sb.AppendLine();
+        sb.AppendLine($"SUBJECT: GLBA {Item.ReportType} Compliance Review - {Item.PeriodStart:MMM yyyy}{(Item.ReportType == "Quarterly" || Item.ReportType == "Annual" ? $" to {Item.PeriodEnd:MMM yyyy}" : "")}");
+        sb.AppendLine();
+        sb.AppendLine($"Report ID:      {Item.ComplianceReportId}");
+        sb.AppendLine($"Generated:      {Item.GeneratedAt:MMMM d, yyyy 'at' h:mm tt}");
+        sb.AppendLine($"Generated By:   {(string.IsNullOrEmpty(Item.GeneratedBy) ? "System" : Item.GeneratedBy)}");
+        sb.AppendLine($"Period:         {Item.PeriodStart:MMMM d, yyyy} through {Item.PeriodEnd:MMMM d, yyyy}");
+        sb.AppendLine();
+        sb.AppendLine("───────────────────────────────────────────────────────────────");
+        sb.AppendLine("  SUMMARY STATISTICS");
+        sb.AppendLine("───────────────────────────────────────────────────────────────");
+        sb.AppendLine();
+        sb.AppendLine($"  Total Access Events:        {Item.TotalEvents:N0}");
+        sb.AppendLine($"  Unique Accessors:           {Item.UniqueUsers:N0}");
+        sb.AppendLine($"  Data Subjects Accessed:     {Item.UniqueSubjects:N0}");
+        sb.AppendLine();
+        
+        // Add items requiring review based on report type
+        sb.AppendLine("───────────────────────────────────────────────────────────────");
+        sb.AppendLine("  ITEMS REQUIRING REVIEW");
+        sb.AppendLine("───────────────────────────────────────────────────────────────");
+        sb.AppendLine();
+        
+        if (Item.ReportType == "Export Review" || Item.ReportType == "Audit") {
+            sb.AppendLine("  [ ] Review all Export/Download events for authorized use");
+            sb.AppendLine("  [ ] Verify bulk data extractions were properly approved");
+            sb.AppendLine("  [ ] Confirm exported data was handled per retention policy");
+        }
+        
+        if (Item.ReportType == "High Volume" || Item.ReportType == "Audit") {
+            sb.AppendLine("  [ ] Review users with unusually high access counts");
+            sb.AppendLine("  [ ] Investigate access patterns outside business hours");
+            sb.AppendLine("  [ ] Verify high-volume access was business-justified");
+        }
+        
+        sb.AppendLine("  [ ] Confirm all accessors had valid business need");
+        sb.AppendLine("  [ ] Verify access aligned with job responsibilities");
+        sb.AppendLine("  [ ] Check for terminated employees with recent access");
+        sb.AppendLine("  [ ] Review any access flagged by source systems");
+        sb.AppendLine();
+        
+        sb.AppendLine("───────────────────────────────────────────────────────────────");
+        sb.AppendLine("  ACTION REQUIRED");
+        sb.AppendLine("───────────────────────────────────────────────────────────────");
+        sb.AppendLine();
+        sb.AppendLine("  Please review the items above and document findings in this");
+        sb.AppendLine("  ticket. Access the GLBA Compliance Dashboard for detailed");
+        sb.AppendLine("  event logs and filtering capabilities.");
+        sb.AppendLine();
+        sb.AppendLine("  Dashboard URL: [Your GLBA Dashboard URL]");
+        sb.AppendLine();
+        sb.AppendLine("───────────────────────────────────────────────────────────────");
+        sb.AppendLine("  This report was auto-generated by the FreeGLBA Compliance");
+        sb.AppendLine("  Tracking System. For questions, contact IT Security.");
+        sb.AppendLine("═══════════════════════════════════════════════════════════════");
+        
+        return sb.ToString();
+    }
+
+    private string GetReportSubject() {
+        return $"GLBA {Item.ReportType} Compliance Review - {Item.PeriodStart:MMM yyyy}{(Item.ReportType == "Quarterly" || Item.ReportType == "Annual" ? $" to {Item.PeriodEnd:MMM yyyy}" : "")}";
+    }
+
+    private async Task CopySubjectToClipboard() {
+        await Helpers.CopyToClipboard(GetReportSubject());
+        Model.Message_Saved("Subject copied to clipboard!");
+    }
+
+    private async Task CopyReportToClipboard() {
+        var summary = GenerateReportSummary();
+        await Helpers.CopyToClipboard(summary);
+        Model.Message_Saved("Report summary copied to clipboard!");
+    }
+
+    private async Task Save() {
+        // Validation
+        var errors = new List<string>();
+        var focus = "";
+
+        if (string.IsNullOrWhiteSpace(Item.ReportType)) {
+            errors.Add(Helpers.MissingRequiredField("Report Type"));
+            if (string.IsNullOrEmpty(focus)) focus = "edit-compliancereport-ReportType";
+        }
+        if (Item.PeriodStart == default) {
+            errors.Add(Helpers.MissingRequiredField("Period Start"));
+        }
+        if (Item.PeriodEnd == default) {
+            errors.Add(Helpers.MissingRequiredField("Period End"));
+        }
+        if (Item.PeriodEnd < Item.PeriodStart) {
+            errors.Add("Period End must be after Period Start");
+        }
+
+        if (errors.Any()) {
+            Model.ErrorMessages(errors);
+            if (!string.IsNullOrEmpty(focus)) {
+                await Helpers.DelayedFocus(focus);
+            }
+            return;
+        }
+
+        _saving = true;
+        Model.Message_Saving("Generating report, please wait...");
+        StateHasChanged();
+
+        try {
+            await OnSave.InvokeAsync(Item);
+            Model.ClearMessages();
+            Model.Message_Saved("Report generated! Copy the summary to your ticketing system.");
+        } finally {
+            _saving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task Cancel() {
+        if (!_saving) {
+            await OnCancel.InvokeAsync();
+        }
+    }
+}

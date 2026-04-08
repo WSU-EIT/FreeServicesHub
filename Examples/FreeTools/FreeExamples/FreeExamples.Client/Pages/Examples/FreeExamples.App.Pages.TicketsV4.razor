@@ -1,0 +1,126 @@
+﻿@page "/Examples/TicketsV4"
+@page "/{TenantCode}/Examples/TicketsV4"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V4: Bulk Edit — Multi-select with floating action bar *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-list-check me-1"></i> Bulk Edit</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title"><i class="fa-solid fa-list-check me-1"></i> V4: Bulk Edit <StickyMenuIcon /></h1>
+        </div>
+
+        <ExampleNav />
+        <AboutSection Title="Bulk Edit Tickets" Subtitle="Multi-select table with floating action bar for batch operations" IconClass="fa-solid fa-list-check">
+            <p class="small text-muted mb-0">Checkbox column for multi-select. When tickets are selected, a floating action bar appears for bulk assign, priority change, or sprint move.</p>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Floating Action Bar"
+                     Description="When ≥1 checkbox is selected, a sticky bar appears at the bottom with bulk actions. Uses position-fixed with bg-dark and high z-index."
+                     Code="@_codeBar" />
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-0">
+                <table class="table table-sm table-hover mb-0 small">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:30px;"><input type="checkbox" class="form-check-input" checked="@(_selected.Count == _all.Count && _all.Any())" @onchange="ToggleSelectAll" /></th>
+                            <th>Number</th><th>Title</th><th>Type</th><th>Status</th><th>Priority</th><th>Assigned</th><th>Pts</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var t in _all) {
+                            var isChecked = _selected.Contains(t.RecordId);
+                            <tr class="@(isChecked ? "table-primary" : "")">
+                                <td><input type="checkbox" class="form-check-input" checked="@isChecked" @onchange="() => ToggleSelect(t.RecordId)" /></td>
+                                <td><code>@t.TicketNumber</code></td>
+                                <td>@t.Title</td>
+                                <td><span class="badge bg-info bg-opacity-25 text-dark">@t.Type</span></td>
+                                <td><span class="badge @GetStatusBadge(t.Status)">@t.Status</span></td>
+                                <td><span class="badge @GetPriorityBadge(t.Priority)">@t.Priority</span></td>
+                                <td class="text-muted">@(t.AssignedTo ?? "—")</td>
+                                <td class="text-center">@(t.StoryPoints?.ToString() ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        @* Floating action bar *@
+        @if (_selected.Count > 0) {
+            <div class="position-fixed bottom-0 start-0 end-0 bg-dark text-white p-2 d-flex align-items-center gap-3 justify-content-center" style="z-index:1040;">
+                <span class="badge bg-primary rounded-pill">@_selected.Count selected</span>
+
+                <div class="input-group input-group-sm" style="width:auto;">
+                    <span class="input-group-text bg-white text-dark small">Assign</span>
+                    <select class="form-select form-select-sm text-dark" style="width:120px;" @bind="_bulkAssign">
+                        <option value="">—</option>
+                        <option value="Alex Kim">Alex Kim</option>
+                        <option value="Priya Patel">Priya Patel</option>
+                        <option value="Jordan Lee">Jordan Lee</option>
+                        <option value="Mika Chen">Mika Chen</option>
+                    </select>
+                </div>
+
+                <div class="input-group input-group-sm" style="width:auto;">
+                    <span class="input-group-text bg-white text-dark small">Priority</span>
+                    <select class="form-select form-select-sm text-dark" style="width:100px;" @bind="_bulkPriority">
+                        <option value="">—</option>
+                        @foreach (var p in Enum.GetValues<DataObjects.TicketPriority>()) { <option value="@p">@p</option> }
+                    </select>
+                </div>
+
+                <button class="btn btn-primary btn-sm" @onclick="ApplyBulk" disabled="@_saving"><i class="fa-solid fa-check me-1"></i>Apply</button>
+                <button class="btn btn-outline-light btn-sm" @onclick="ClearSelection"><i class="fa-solid fa-times me-1"></i>Clear</button>
+
+                @if (_bulkDone) { <span class="badge bg-success">Done!</span> }
+            </div>
+        }
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false, _saving = false, _bulkDone = false;
+    private string _pageName = "ticketsv4";
+    private List<DataObjects.Ticket> _all = new();
+    private HashSet<Guid> _selected = new();
+    private string _bulkAssign = "", _bulkPriority = "";
+    private string _codeBar = "<div class=\"position-fixed bottom-0 start-0 end-0 bg-dark text-white p-2\">\n  <span>@selected.Count selected</span>\n  <!-- actions -->\n</div>";
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            var t = await Helpers.GetOrPost<List<DataObjects.Ticket>>("api/Data/GetTickets", new List<Guid>());
+            _all = t ?? new(); _loading = false; StateHasChanged();
+        }
+    }
+
+    private void ToggleSelect(Guid id) { if (!_selected.Remove(id)) _selected.Add(id); _bulkDone = false; }
+    private void ToggleSelectAll() { if (_selected.Count == _all.Count) _selected.Clear(); else _selected = new HashSet<Guid>(_all.Select(t => t.RecordId)); _bulkDone = false; }
+    private void ClearSelection() { _selected.Clear(); _bulkDone = false; }
+
+    private async Task ApplyBulk() {
+        _saving = true; _bulkDone = false;
+        var toSave = _all.Where(t => _selected.Contains(t.RecordId)).ToList();
+        foreach (var t in toSave) {
+            if (!string.IsNullOrEmpty(_bulkAssign)) t.AssignedTo = _bulkAssign;
+            if (Enum.TryParse<DataObjects.TicketPriority>(_bulkPriority, out var p)) t.Priority = p;
+        }
+        await Helpers.GetOrPost<List<DataObjects.Ticket>>("api/Data/SaveTickets", toSave);
+        _bulkDone = true; _saving = false; StateHasChanged();
+    }
+
+    private static string GetStatusBadge(DataObjects.TicketStatus s) => s switch { DataObjects.TicketStatus.Done or DataObjects.TicketStatus.Closed => "bg-success", DataObjects.TicketStatus.InProgress => "bg-primary", _ => "bg-secondary" };
+    private static string GetPriorityBadge(DataObjects.TicketPriority p) => p switch { DataObjects.TicketPriority.Critical => "bg-danger", DataObjects.TicketPriority.High => "bg-warning text-dark", DataObjects.TicketPriority.Medium => "bg-info", _ => "bg-secondary" };
+}

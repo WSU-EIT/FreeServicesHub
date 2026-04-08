@@ -1,0 +1,47 @@
+@implements IDisposable
+@using Humanizer
+@inject BlazorDataModel Model
+
+@{
+    // This component is used to display application-specific items on the about page.
+
+    <h1 class="page-title">
+        <Icon Name="About" />
+        About FreeGLBA
+    </h1>
+
+    <div class="mb-2">
+        A free, open-source FreeGLBA (Customer Relationship Management) system.
+    </div>
+
+    <div class="mb-2">
+        Use this as-is to run your business, or use this as a starting point
+        for building your own application on this framework.
+    </div>
+}
+
+@code {
+    public void Dispose() { 
+        Model.OnChange -= StateHasChanged;
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.OnChange += StateHasChanged;
+    }
+
+    // protected override void OnAfterRender(bool firstRender)
+    // {
+    //     RenderComponent();
+    // }
+
+    // protected override void OnParametersSet()
+    // {
+    //     RenderComponent();
+    // }
+
+    // protected void RenderComponent()
+    // {
+    //     // Do any work here that needs to be done after the component is rendered or parameters are set.
+    // }
+}

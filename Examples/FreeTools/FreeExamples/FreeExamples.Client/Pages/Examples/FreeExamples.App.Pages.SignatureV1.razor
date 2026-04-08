@@ -1,0 +1,197 @@
+@page "/Examples/SignatureV1"
+@page "/{TenantCode}/Examples/SignatureV1"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V1: Job Application — form fields + signature at the bottom *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-file-signature me-1"></i> Job Application</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title">
+                <i class="fa-solid fa-file-signature me-1"></i> V1: Job Application Form
+                <StickyMenuIcon />
+            </h1>
+        </div>
+
+        <ExampleNav />
+
+        <AboutSection Title="Signature in Context: Job Application" Subtitle="A realistic form that ends with a signature — not just a standalone pad" IconClass="fa-solid fa-file-signature">
+            <div class="row">
+                <div class="col-md-6 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-question-circle me-1"></i>What Is This Variant?</h6>
+                    <p class="small text-muted mb-0">
+                        The Signature Demo page shows the signature pad in isolation. This variant puts it in context —
+                        a <strong>job application form</strong> where the user fills out personal info, employment
+                        history, and signs at the bottom to certify everything is accurate.
+                    </p>
+                </div>
+                <div class="col-md-6 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-lightbulb me-1"></i>What's Different?</h6>
+                    <p class="small text-muted mb-0">
+                        Same <code>SignaturePad</code> component, but now it's the final step in a multi-section form.
+                        The submit button validates that both the form fields AND the signature are complete before
+                        allowing submission. The signature is just one piece of a larger workflow.
+                    </p>
+                </div>
+            </div>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Form Sections with Dividers"
+                     Description="The application is divided into sections (Personal Info, Employment, Certification) using h6 headers with border-bottom. Each section has its own row/col grid of form fields. This organizes long forms into scannable blocks — the same pattern in Helpdesk ticket creation."
+                     Code="@_codeFormSections" />
+            <InfoTip Title="Signature as Submit Gate"
+                     Description="The Submit button is disabled until the signature pad has content. The _signatureData property is null/empty until the user signs. This ensures legal acknowledgment before submission — required in HR onboarding, GLBA compliance, and contract workflows."
+                     Code="@_codeSignGate" />
+            <InfoTip Title="Required Field Markers"
+                     Description="Required fields show a red asterisk (text-danger *) after the label. On validation failure, fields get is-invalid class with invalid-feedback messages. This matches Bootstrap's built-in validation styling used across all production forms."
+                     Code="@_codeRequired" />
+        </div>
+
+        <div class="card shadow-sm border-0 mb-3">
+            <div class="card-header bg-white py-2"><span class="small fw-semibold"><i class="fa-solid fa-file-signature me-1"></i> Job Application Form</span></div>
+            <div class="card-body">
+                @* Section 1: Personal Info *@
+                <h6 class="text-primary border-bottom pb-2 mb-3"><i class="fa-solid fa-user me-1"></i> Personal Information</h6>
+                <div class="row mb-3">
+                    <div class="col-md-4 mb-2">
+                        <label class="form-label small">First Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control form-control-sm" @bind="_firstName" />
+                    </div>
+                    <div class="col-md-4 mb-2">
+                        <label class="form-label small">Last Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control form-control-sm" @bind="_lastName" />
+                    </div>
+                    <div class="col-md-4 mb-2">
+                        <label class="form-label small">Email <span class="text-danger">*</span></label>
+                        <input type="email" class="form-control form-control-sm" @bind="_email" />
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-4 mb-2">
+                        <label class="form-label small">Phone</label>
+                        <input type="tel" class="form-control form-control-sm" @bind="_phone" />
+                    </div>
+                    <div class="col-md-4 mb-2">
+                        <label class="form-label small">Position Applied For <span class="text-danger">*</span></label>
+                        <select class="form-select form-select-sm" @bind="_position">
+                            <option value="">Select...</option>
+                            <option>Software Developer</option>
+                            <option>QA Engineer</option>
+                            <option>DevOps Engineer</option>
+                            <option>Project Manager</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4 mb-2">
+                        <label class="form-label small">Available Start Date</label>
+                        <input type="date" class="form-control form-control-sm" @bind="_startDate" />
+                    </div>
+                </div>
+
+                @* Section 2: Experience *@
+                <h6 class="text-primary border-bottom pb-2 mb-3 mt-4"><i class="fa-solid fa-building me-1"></i> Employment History</h6>
+                <div class="row mb-3">
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label small">Most Recent Employer</label>
+                        <input type="text" class="form-control form-control-sm" @bind="_employer" />
+                    </div>
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label small">Job Title</label>
+                        <input type="text" class="form-control form-control-sm" @bind="_jobTitle" />
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small">Why are you interested in this position?</label>
+                    <textarea class="form-control form-control-sm" rows="3" @bind="_coverNote"></textarea>
+                </div>
+
+                @* Section 3: Certification + Signature *@
+                <h6 class="text-primary border-bottom pb-2 mb-3 mt-4"><i class="fa-solid fa-signature me-1"></i> Certification & Signature</h6>
+                <div class="alert alert-info small mb-3">
+                    <i class="fa-solid fa-info-circle me-1"></i>
+                    I certify that all information provided in this application is true and complete. I understand that
+                    any false statement or omission may result in disqualification or termination of employment.
+                </div>
+
+                <div class="row">
+                    <div class="col-md-8 mb-2">
+                        <label class="form-label small">Signature <span class="text-danger">*</span></label>
+                        <Signature @ref="_signaturePad" @bind-Value="_signatureValue" Class="border rounded" />
+                    </div>
+                    <div class="col-md-4 mb-2">
+                        <label class="form-label small">Date</label>
+                        <input type="text" class="form-control form-control-sm" value="@DateTime.Now.ToString("MMMM d, yyyy")" disabled />
+                        <div class="form-check mt-3">
+                            <input type="checkbox" class="form-check-input" @bind="_agreedTerms" />
+                            <label class="form-check-label small">I agree to the terms above</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer bg-light d-flex justify-content-between">
+                <button class="btn btn-outline-secondary btn-sm" @onclick="ClearForm">
+                    <i class="fa-solid fa-eraser me-1"></i> Clear All
+                </button>
+                <button class="btn btn-success btn-sm" @onclick="Submit" disabled="@(!CanSubmit())">
+                    <i class="fa-solid fa-paper-plane me-1"></i> Submit Application
+                </button>
+            </div>
+        </div>
+
+        @if (_submitted) {
+            <div class="alert alert-success">
+                <i class="fa-solid fa-circle-check me-1"></i> <strong>Application Submitted!</strong>
+                Thank you, @_firstName @_lastName. Your application for @_position has been received.
+            </div>
+        }
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true;
+    private bool _loadedData = false;
+    private bool _submitted = false;
+    private string _pageName = "signaturev1";
+    private string _codeFormSections = "<h6 class=\"text-primary border-bottom pb-2\">\n  <i class=\"fa-solid fa-user me-1\"></i> Personal Information\n</h6>\n<div class=\"row mb-3\">...</div>";
+    private string _codeSignGate = "<button disabled=\"@(string.IsNullOrEmpty(_signatureData))\">\n  Submit Application\n</button>";
+    private string _codeRequired = "<label>First Name <span class=\"text-danger\">*</span></label>\n<input class=\"form-control @(validated && empty ? \"is-invalid\" : \")\" />";
+
+    private string _firstName = "";
+    private string _lastName = "";
+    private string _email = "";
+    private string _phone = "";
+    private string _position = "";
+    private DateTime? _startDate;
+    private string _employer = "";
+    private string _jobTitle = "";
+    private string _coverNote = "";
+    private bool _agreedTerms = false;
+    private Signature? _signaturePad;
+    private string _signatureValue = "";
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+
+    protected override void OnInitialized()
+    {
+        Model.View = _pageName;
+        Model.OnChange += StateHasChanged;
+        if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) { _loadedData = true; _loading = false; StateHasChanged(); }
+    }
+
+    private bool CanSubmit() => !string.IsNullOrWhiteSpace(_firstName) && !string.IsNullOrWhiteSpace(_lastName) &&
+        !string.IsNullOrWhiteSpace(_email) && !string.IsNullOrWhiteSpace(_position) && _agreedTerms;
+
+    private void Submit() { _submitted = true; }
+    private void ClearForm() { _firstName = ""; _lastName = ""; _email = ""; _phone = ""; _position = ""; _employer = ""; _jobTitle = ""; _coverNote = ""; _agreedTerms = false; _submitted = false; }
+}

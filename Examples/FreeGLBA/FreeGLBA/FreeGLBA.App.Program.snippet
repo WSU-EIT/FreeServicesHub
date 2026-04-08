@@ -1,0 +1,16 @@
+﻿// ============================================================================
+// ADD TO PROGRAM.CS - Middleware Registration
+// ============================================================================
+
+// Add this using statement:
+// using FreeGLBA.Middleware;
+
+// Add this line BEFORE app.UseAuthentication() and app.UseAuthorization():
+// app.UseApiKeyAuth();
+
+// Full middleware order:
+// app.UseRouting();
+// app.UseApiKeyAuth();      // <-- Add this line
+// app.UseAuthentication();
+// app.UseAuthorization();
+// app.MapControllers();

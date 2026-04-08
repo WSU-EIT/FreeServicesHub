@@ -1,0 +1,64 @@
+﻿@* BranchBadge.razor - Displays branch name as a styled badge with optional link *@
+@* Used in Pipeline Dashboard table and card views *@
+
+@if (!string.IsNullOrWhiteSpace(Branch))
+{
+    @if (!string.IsNullOrWhiteSpace(BranchUrl))
+    {
+        <a href="@BranchUrl" target="_blank" 
+           class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border text-decoration-none @Class" 
+           title="@FullBranchName - Click to open branch in Azure DevOps"
+           style="font-size: 0.75rem; font-weight: normal; max-width: 150px;">
+            <i class="fa fa-code-branch me-1"></i>
+            <span class="text-truncate d-inline-block" style="max-width: 120px; vertical-align: middle;">@DisplayBranch</span>
+        </a>
+    }
+    else
+    {
+        <span class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border @Class" 
+              title="@FullBranchName"
+              style="font-size: 0.75rem; font-weight: normal; max-width: 150px;">
+            <i class="fa fa-code-branch me-1"></i>
+            <span class="text-truncate d-inline-block" style="max-width: 120px; vertical-align: middle;">@DisplayBranch</span>
+        </span>
+    }
+}
+
+@code {
+    /// <summary>
+    /// The branch name to display (can include refs/heads/ prefix).
+    /// </summary>
+    [Parameter] public string? Branch { get; set; }
+    
+    /// <summary>
+    /// URL to link to (opens branch in Azure DevOps).
+    /// </summary>
+    [Parameter] public string? BranchUrl { get; set; }
+    
+    /// <summary>
+    /// Additional CSS classes to apply to the badge.
+    /// </summary>
+    [Parameter] public string? Class { get; set; }
+    
+    /// <summary>
+    /// Maximum length for display before truncation (default: 20).
+    /// </summary>
+    [Parameter] public int MaxLength { get; set; } = 20;
+
+    /// <summary>
+    /// Gets the branch name with refs/heads/ prefix removed.
+    /// </summary>
+    private string CleanBranchName => Branch?.Replace("refs/heads/", "") ?? "";
+
+    /// <summary>
+    /// Gets the full branch name for tooltip.
+    /// </summary>
+    private string FullBranchName => CleanBranchName;
+
+    /// <summary>
+    /// Gets the truncated branch name for display.
+    /// </summary>
+    private string DisplayBranch => CleanBranchName.Length > MaxLength 
+        ? CleanBranchName[..(MaxLength - 3)] + "..." 
+        : CleanBranchName;
+}

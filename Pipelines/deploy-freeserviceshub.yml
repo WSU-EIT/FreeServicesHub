@@ -1,0 +1,436 @@
+# FreeServicesHub Deployment Pipeline
+# Runs nightly at 2 AM or on manual trigger.
+#
+# Lifecycle:
+# 1. Generate registration keys (hub still running)
+# 2. Shutdown agents via hub API
+# 3. Build hub + agent + installer
+# 4. Deploy hub (IIS via FileTransform + IISWebAppManagement)
+# 5. Deploy agents with registration keys (sc.exe service management)
+# 6. Agents auto-register on startup, hub issues API client tokens
+#
+# Windows only -- simplified from FreeServices' 3-platform approach.
+# See: Doc 201 (kickoff), Doc 202 (architecture), Doc 203 (phases).
+
+trigger:
+  branches:
+    include:
+      - main
+
+schedules:
+  - cron: "0 2 * * *"
+    displayName: "Nightly 2 AM deployment"
+    branches:
+      include:
+        - main
+    always: true
+
+variables:
+  - template: variables.yml
+
+# ======================================================================
+# Stage 1: Generate Registration Keys
+# Hub is still running. Pipeline calls the hub API to generate one-time
+# registration keys -- one per agent server. Keys are stored as secret
+# pipeline variables for use in the DeployAgents stage.
+# ======================================================================
+
+stages:
+
+  - stage: GenerateKeys
+    displayName: 'Generate Registration Keys'
+    jobs:
+      - job: GenerateKeys
+        displayName: 'Generate one-time registration keys'
+        pool:
+          name: $(buildPool)
+        steps:
+          - task: PowerShell@2
+            displayName: 'Call hub API to generate registration keys'
+            name: keys
+            inputs:
+              targetType: inline
+              pwsh: true
+              script: |
+                # Parse the comma-separated server list into an array
+                $servers = "$(agentServers)".Split(",") | ForEach-Object { $_.Trim() }
+                $count = $servers.Length
+                Write-Host "Generating $count registration keys for servers: $($servers -join ', ')"
+
+                # Call the hub API while it's still running
+                $response = Invoke-RestMethod -Uri "$(hubUrl)/api/Data/GenerateRegistrationKeys" `
+                  -Method POST `
+                  -Headers @{ "Authorization" = "Bearer $(hubAdminToken)" } `
+                  -Body ($count | ConvertTo-Json) `
+                  -ContentType "application/json"
+
+                # Store each key as a secret output variable keyed by server hostname
+                for ($i = 0; $i -lt $response.Length; $i++) {
+                  $keyName = "regKey_$($servers[$i])"
+                  Write-Host "Setting output variable: $keyName (value hidden)"
+                  Write-Host "##vso[task.setvariable variable=$keyName;isOutput=true;issecret=true]$($response[$i].NewKeyPlaintext)"
+                }
+
+                Write-Host "All $count registration keys generated and stored as pipeline variables."
+
+# ======================================================================
+# Stage 2: Shutdown All Agents
+# Hub broadcasts shutdown via SignalR. Pipeline polls until all agents
+# report offline, then proceeds. 60-second timeout.
+# ======================================================================
+
+  - stage: ShutdownAgents
+    displayName: 'Shutdown All Agents'
+    dependsOn: GenerateKeys
+    jobs:
+      - job: Shutdown
+        displayName: 'Shutdown agents and wait for confirmation'
+        pool:
+          name: $(buildPool)
+        steps:
+          - task: PowerShell@2
+            displayName: 'Send shutdown command and poll for offline'
+            inputs:
+              targetType: inline
+              pwsh: true
+              script: |
+                Write-Host "Sending shutdown command to all agents via hub..."
+
+                Invoke-RestMethod -Uri "$(hubUrl)/api/Data/ShutdownAllAgents" `
+                  -Method POST `
+                  -Headers @{ "Authorization" = "Bearer $(hubAdminToken)" }
+
+                # Poll until all agents are offline (60-second timeout)
+                $timeout = 60
+                $elapsed = 0
+                while ($elapsed -lt $timeout) {
+                  $status = Invoke-RestMethod -Uri "$(hubUrl)/api/Data/GetAgents" `
+                    -Method POST `
+                    -Headers @{ "Authorization" = "Bearer $(hubAdminToken)" }
+
+                  $online = ($status | Where-Object { $_.Status -eq "Online" }).Count
+                  Write-Host "Agents still online: $online (elapsed: ${elapsed}s)"
+
+                  if ($online -eq 0) {
+                    Write-Host "All agents confirmed offline."
+                    break
+                  }
+
+                  Start-Sleep -Seconds 5
+                  $elapsed += 5
+                }
+
+                if ($elapsed -ge $timeout) {
+                  Write-Host "##vso[task.logissue type=warning]Timeout waiting for agents to go offline. Proceeding with deployment."
+                }
+
+# ======================================================================
+# Stage 3: Build & Publish
+# Three parallel jobs: hub, agent, installer. All target .NET 10.
+# Agent and installer are published as win-x64 self-contained.
+# ======================================================================
+
+  - stage: BuildAndPublish
+    displayName: 'Build & Publish'
+    dependsOn: ShutdownAgents
+    jobs:
+
+      - job: BuildHub
+        displayName: 'Build Hub'
+        pool:
+          name: $(buildPool)
+        steps:
+          - task: UseDotNet@2
+            displayName: 'Install .NET $(dotnetVersion)'
+            inputs:
+              packageType: 'sdk'
+              version: '$(dotnetVersion)'
+              includePreviewVersions: true
+
+          - script: dotnet restore $(hubProjectPath)
+            displayName: 'Restore Hub'
+
+          - script: dotnet publish $(hubProjectPath) -c $(buildConfiguration) -o $(publishPath)/hub
+            displayName: 'Publish Hub'
+
+          - publish: $(publishPath)/hub
+            artifact: hub
+            displayName: 'Upload Hub Artifact'
+
+      - job: BuildAgent
+        displayName: 'Build Agent'
+        pool:
+          name: $(buildPool)
+        steps:
+          - task: UseDotNet@2
+            displayName: 'Install .NET $(dotnetVersion)'
+            inputs:
+              packageType: 'sdk'
+              version: '$(dotnetVersion)'
+              includePreviewVersions: true
+
+          - script: dotnet restore $(agentProjectPath)
+            displayName: 'Restore Agent'
+
+          - script: dotnet publish $(agentProjectPath) -c $(buildConfiguration) -r win-x64 --self-contained -o $(publishPath)/agent
+            displayName: 'Publish Agent (Windows x64, self-contained)'
+
+          - publish: $(publishPath)/agent
+            artifact: agent
+            displayName: 'Upload Agent Artifact'
+
+      - job: BuildInstaller
+        displayName: 'Build Installer'
+        pool:
+          name: $(buildPool)
+        steps:
+          - task: UseDotNet@2
+            displayName: 'Install .NET $(dotnetVersion)'
+            inputs:
+              packageType: 'sdk'
+              version: '$(dotnetVersion)'
+              includePreviewVersions: true
+
+          - script: dotnet restore $(installerProjectPath)
+            displayName: 'Restore Installer'
+
+          - script: dotnet publish $(installerProjectPath) -c $(buildConfiguration) -r win-x64 --self-contained -o $(publishPath)/installer
+            displayName: 'Publish Installer (Windows x64, self-contained)'
+
+          - publish: $(publishPath)/installer
+            artifact: installer
+            displayName: 'Upload Installer Artifact'
+
+# ======================================================================
+# Stage 4: Deploy Hub
+# Stop IIS site, copy new build, run FileTransform on appsettings.json,
+# restart IIS site. Uses deployment environment for approvals/gates.
+# ======================================================================
+
+  - stage: DeployHub
+    displayName: 'Deploy Hub'
+    dependsOn: BuildAndPublish
+    jobs:
+      - deployment: DeployHub
+        displayName: 'Deploy Hub to IIS'
+        environment: 'FreeServicesHub-Hub'
+        pool:
+          name: $(deployPool)
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: hub
+
+                # Inject pipeline variables into appsettings.json via FileTransform
+                - task: FileTransform@2
+                  displayName: 'Inject variables into hub appsettings.json'
+                  inputs:
+                    folderPath: '$(Pipeline.Workspace)/hub'
+                    jsonTargetFiles: '**/appsettings.json'
+
+                - task: PowerShell@2
+                  displayName: 'Stop IIS site and deploy hub'
+                  inputs:
+                    targetType: inline
+                    pwsh: true
+                    script: |
+                      Import-Module WebAdministration -ErrorAction Stop
+
+                      $siteName = "$(iisSiteName)"
+                      $appPoolName = "$(iisAppPoolName)"
+                      $deployDir = "$(hubDeployPath)"
+
+                      # Stop the app pool and site
+                      Write-Host "Stopping app pool: $appPoolName"
+                      Stop-WebAppPool -Name $appPoolName -ErrorAction SilentlyContinue
+                      Start-Sleep -Seconds 2
+
+                      # Copy new files
+                      Write-Host "Deploying hub to: $deployDir"
+                      if (!(Test-Path $deployDir)) {
+                        New-Item -ItemType Directory -Path $deployDir -Force | Out-Null
+                      }
+                      Copy-Item -Path "$(Pipeline.Workspace)\hub\*" -Destination $deployDir -Recurse -Force
+
+                      # Start the app pool
+                      Write-Host "Starting app pool: $appPoolName"
+                      Start-WebAppPool -Name $appPoolName
+
+                      Write-Host "Hub deployment complete."
+
+                - task: PowerShell@2
+                  displayName: 'Verify hub is responding'
+                  inputs:
+                    targetType: inline
+                    pwsh: true
+                    script: |
+                      $timeout = 30
+                      $elapsed = 0
+                      while ($elapsed -lt $timeout) {
+                        try {
+                          $response = Invoke-WebRequest -Uri "$(hubUrl)" -UseBasicParsing -TimeoutSec 5
+                          if ($response.StatusCode -eq 200) {
+                            Write-Host "Hub is responding (HTTP 200)."
+                            exit 0
+                          }
+                        } catch {
+                          Write-Host "Waiting for hub... (${elapsed}s)"
+                        }
+                        Start-Sleep -Seconds 5
+                        $elapsed += 5
+                      }
+                      Write-Host "##vso[task.logissue type=warning]Hub did not respond within ${timeout}s."
+
+# ======================================================================
+# Stage 5: Deploy Agents
+# For each agent server: stop the Windows service, copy new agent +
+# installer files, inject the registration key into appsettings.json
+# via FileTransform, start the service. Agent auto-registers on startup.
+# ======================================================================
+
+  - stage: DeployAgents
+    displayName: 'Deploy Agents'
+    dependsOn:
+      - DeployHub
+      - GenerateKeys
+    variables:
+      # Pull registration key output variables from the GenerateKeys stage
+      regKeys: $[ stageDependencies.GenerateKeys.GenerateKeys.outputs ]
+    jobs:
+      - deployment: DeployAgents
+        displayName: 'Deploy agents to all servers'
+        environment: 'FreeServicesHub-Agents'
+        pool:
+          name: $(deployPool)
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: agent
+
+                - download: current
+                  artifact: installer
+
+                # Inject variables into agent appsettings.json via FileTransform
+                - task: FileTransform@2
+                  displayName: 'Inject variables into agent appsettings.json'
+                  inputs:
+                    folderPath: '$(Pipeline.Workspace)/agent'
+                    jsonTargetFiles: '**/appsettings.json'
+
+                - task: PowerShell@2
+                  displayName: 'Deploy agent and start service'
+                  inputs:
+                    targetType: inline
+                    pwsh: true
+                    script: |
+                      $hostname = $env:COMPUTERNAME
+                      $agentInstallDir = "$(agentInstallPath)"
+                      $installerInstallDir = "$(installerInstallPath)"
+
+                      Write-Host "Deploying agent to: $hostname"
+
+                      # Stop the existing service (ignore if not found)
+                      Write-Host "Stopping FreeServicesHubAgent service..."
+                      sc.exe stop FreeServicesHubAgent 2>$null
+                      Start-Sleep -Seconds 3
+
+                      # Copy new agent files
+                      Write-Host "Copying agent files to: $agentInstallDir"
+                      if (!(Test-Path $agentInstallDir)) {
+                        New-Item -ItemType Directory -Path $agentInstallDir -Force | Out-Null
+                      }
+                      Copy-Item -Path "$(Pipeline.Workspace)\agent\*" -Destination $agentInstallDir -Recurse -Force
+
+                      # Copy new installer files
+                      Write-Host "Copying installer files to: $installerInstallDir"
+                      if (!(Test-Path $installerInstallDir)) {
+                        New-Item -ItemType Directory -Path $installerInstallDir -Force | Out-Null
+                      }
+                      Copy-Item -Path "$(Pipeline.Workspace)\installer\*" -Destination $installerInstallDir -Recurse -Force
+
+                      # Inject registration key into agent appsettings.json
+                      # The key variable name is regKey_<HOSTNAME> from the GenerateKeys stage
+                      $keyVarName = "regKey_$hostname"
+                      $regKey = [Environment]::GetEnvironmentVariable($keyVarName)
+
+                      if ([string]::IsNullOrWhiteSpace($regKey)) {
+                        Write-Host "##vso[task.logissue type=warning]No registration key found for $hostname (variable: $keyVarName)"
+                      } else {
+                        Write-Host "Injecting registration key for $hostname into appsettings.json"
+                      }
+
+                      $configPath = Join-Path $agentInstallDir "appsettings.json"
+                      $config = Get-Content $configPath | ConvertFrom-Json
+                      $config.Agent.RegistrationKey = $regKey
+                      $config.Agent.HubUrl = "$(hubUrl)"
+                      $config.Agent.AgentName = $hostname
+                      $config | ConvertTo-Json -Depth 10 | Set-Content $configPath -Encoding UTF8
+
+                      Write-Host "Configuration written to: $configPath"
+
+                      # Start the service
+                      Write-Host "Starting FreeServicesHubAgent service..."
+                      sc.exe start FreeServicesHubAgent
+
+                      Write-Host "Agent deployment complete on $hostname."
+
+# ======================================================================
+# Stage 6: Verify
+# Wait for all agents to register and appear online in the hub.
+# ======================================================================
+
+  - stage: Verify
+    displayName: 'Verify Deployment'
+    dependsOn: DeployAgents
+    jobs:
+      - job: VerifyAgents
+        displayName: 'Verify all agents are online'
+        pool:
+          name: $(buildPool)
+        steps:
+          - task: PowerShell@2
+            displayName: 'Poll hub for agent status'
+            inputs:
+              targetType: inline
+              pwsh: true
+              script: |
+                $servers = "$(agentServers)".Split(",") | ForEach-Object { $_.Trim() }
+                $expected = $servers.Length
+                $timeout = 120
+                $elapsed = 0
+
+                Write-Host "Waiting for $expected agents to come online..."
+
+                while ($elapsed -lt $timeout) {
+                  $status = Invoke-RestMethod -Uri "$(hubUrl)/api/Data/GetAgents" `
+                    -Method POST `
+                    -Headers @{ "Authorization" = "Bearer $(hubAdminToken)" }
+
+                  $online = ($status | Where-Object { $_.Status -eq "Online" }).Count
+                  Write-Host "Agents online: $online / $expected (elapsed: ${elapsed}s)"
+
+                  if ($online -ge $expected) {
+                    Write-Host "All $expected agents are online. Deployment verified."
+
+                    Write-Host ""
+                    Write-Host "======================================================"
+                    Write-Host "  FreeServicesHub Deployment Complete"
+                    Write-Host "======================================================"
+                    Write-Host "  Hub:    $(hubUrl)"
+                    Write-Host "  Agents: $expected online"
+                    Write-Host "  Build:  $(Build.BuildNumber)"
+                    Write-Host "  Commit: $(Build.SourceVersion)"
+                    Write-Host "======================================================"
+                    exit 0
+                  }
+
+                  Start-Sleep -Seconds 10
+                  $elapsed += 10
+                }
+
+                Write-Host "##vso[task.logissue type=warning]Only $online / $expected agents online after ${timeout}s."
+                Write-Host "Deployment may require manual investigation."

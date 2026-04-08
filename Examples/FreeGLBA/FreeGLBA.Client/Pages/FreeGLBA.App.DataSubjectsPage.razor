@@ -1,0 +1,640 @@
+﻿@* FreeGLBA.App.DataSubjectsPage.razor - List page for DataSubject *@
+@page "/DataSubjects"
+@page "/DataSubjects/{SelectedSubjectId}"
+@page "/{TenantCode}/DataSubjects"
+@page "/{TenantCode}/DataSubjects/{SelectedSubjectId}"
+@implements IDisposable
+@inject BlazorDataModel Model
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+@if (Model.Loaded && Model.LoggedIn && Model.View == _pageName) {
+    <div class="container-fluid">
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title mb-0">
+                <i class="fa-solid fa-users me-2"></i>Data Subjects
+            </h1>
+        </div>
+
+        @* About Data Subjects - Collapsible Help *@
+        <div class="card shadow-sm mb-3 border-info">
+            <div class="card-header bg-info bg-opacity-10 cursor-pointer py-2" @onclick="() => _helpExpanded = !_helpExpanded">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span>
+                        <i class="fa-solid fa-circle-info me-2 text-info"></i>
+                        <strong>What are Data Subjects?</strong>
+                        <span class="text-muted ms-2">— Individuals whose protected financial information is being tracked</span>
+                    </span>
+                    <i class="fa-solid @(_helpExpanded ? "fa-chevron-up" : "fa-chevron-down") text-info"></i>
+                </div>
+            </div>
+            @if (_helpExpanded) {
+                <div class="card-body py-2">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <h6 class="text-info"><i class="fa-solid fa-user-shield me-1"></i>In GLBA Terms</h6>
+                            <p class="small text-muted mb-0">
+                                A <strong>Data Subject</strong> is any individual whose nonpublic personal information (NPI) 
+                                is held by your institution. Under GLBA, you must protect their financial data and be able 
+                                to report all access to their records upon request (e.g., for audits or data subject access requests).
+                            </p>
+                        </div>
+                        <div class="col-md-4">
+                            <h6 class="text-info"><i class="fa-solid fa-list-ul me-1"></i>Examples</h6>
+                            <ul class="small text-muted mb-0 ps-3">
+                                <li>Students who applied for financial aid</li>
+                                <li>Students with tuition payment plans</li>
+                                <li>Alumni with outstanding balances</li>
+                                <li>Parents who provided financial info (PLUS loans)</li>
+                                <li>Employees with direct deposit/payroll data</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-4">
+                            <h6 class="text-info"><i class="fa-solid fa-gears me-1"></i>How It Works</h6>
+                            <p class="small text-muted mb-0">
+                                Data subjects are <strong>automatically created</strong> when access events reference them. 
+                                The system tracks statistics like total access count, unique accessors, and first/last access dates. 
+                                This enables quick auditing of all activity related to any individual.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+
+
+
+        <div class="row">
+            @* Subject List Panel *@
+            <div class="@(_selectedSubject != null ? "col-lg-5" : "col-12")">
+                <div class="card shadow-sm mb-3">
+                    <div class="card-body py-2">
+                        <div class="row g-2 align-items-center">
+                            <div class="col-md-3">
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text"><i class="fa-solid fa-search"></i></span>
+                                    <input type="text" class="form-control" placeholder="Search by ID or type..."
+                                           @bind="_filter.Search" @bind:event="oninput" @bind:after="LoadData" />
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <select class="form-select form-select-sm" @bind="_filter.PageSize" @bind:after="@(() => { _filter.Page = 1; LoadData(); })">
+                                    <option value="10">10 per page</option>
+                                    <option value="25">25 per page</option>
+                                    <option value="50">50 per page</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <select class="form-select form-select-sm" @bind="_sortOption" @bind:after="ApplySortOption">
+                                    <option value="TotalAccessCount-desc">Most Accessed</option>
+                                    <option value="TotalAccessCount-asc">Least Accessed</option>
+                                    <option value="LastAccessedAt-desc">Recent Activity</option>
+                                    <option value="LastAccessedAt-asc">Oldest Activity</option>
+                                    <option value="UniqueAccessorCount-desc">Most Accessors</option>
+                                    <option value="ExternalId-asc">ID (A-Z)</option>
+                                    <option value="ExternalId-desc">ID (Z-A)</option>
+                                    <option value="SubjectType-asc">Type (A-Z)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3 text-end">
+                                <button class="btn btn-sm @(_showMoreFilters ? "btn-secondary" : "btn-outline-secondary")" @onclick="() => _showMoreFilters = !_showMoreFilters">
+                                    <i class="fa-solid fa-filter me-1"></i>More Filters
+                                    @if (HasAdvancedFilters()) { <span class="badge bg-primary ms-1">@GetAdvancedFilterCount()</span> }
+                                </button>
+                            </div>
+                        </div>
+
+                        @* Advanced Filters - Expandable *@
+                        @if (_showMoreFilters) {
+                            <div class="mt-3 pt-3 border-top">
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label class="form-label small text-muted mb-1">Min Total Accesses</label>
+                                        <input type="number" class="form-control form-control-sm" placeholder="Min" 
+                                               @bind="_filter.MinTotalAccesses" @bind:after="@(() => { _filter.Page = 1; _ = LoadData(); })" />
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small text-muted mb-1">Max Total Accesses</label>
+                                        <input type="number" class="form-control form-control-sm" placeholder="Max" 
+                                               @bind="_filter.MaxTotalAccesses" @bind:after="@(() => { _filter.Page = 1; _ = LoadData(); })" />
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small text-muted mb-1">Min Unique Accessors</label>
+                                        <input type="number" class="form-control form-control-sm" placeholder="Min" 
+                                               @bind="_filter.MinUniqueAccessors" @bind:after="@(() => { _filter.Page = 1; _ = LoadData(); })" />
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small text-muted mb-1">Max Unique Accessors</label>
+                                        <input type="number" class="form-control form-control-sm" placeholder="Max" 
+                                               @bind="_filter.MaxUniqueAccessors" @bind:after="@(() => { _filter.Page = 1; _ = LoadData(); })" />
+                                    </div>
+                                </div>
+                                <div class="row g-2 mt-2">
+                                    <div class="col-md-3">
+                                        <label class="form-label small text-muted mb-1">Last Access After</label>
+                                        <input type="date" class="form-control form-control-sm" @bind="_filter.LastAccessAfter" @bind:after="@(() => { _filter.Page = 1; _ = LoadData(); })" />
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small text-muted mb-1">Last Access Before</label>
+                                        <input type="date" class="form-control form-control-sm" @bind="_filter.LastAccessBefore" @bind:after="@(() => { _filter.Page = 1; _ = LoadData(); })" />
+                                    </div>
+                                    <div class="col-md-6 d-flex align-items-end">
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="ClearAdvancedFilters">
+                                            <i class="fa-solid fa-times me-1"></i>Clear Advanced Filters
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+
+                        @* Active Filter Pills *@
+                        @if (HasActiveFilters()) {
+                            <div class="mt-2 d-flex flex-wrap gap-1 align-items-center">
+                                <small class="text-muted me-1">Filters:</small>
+                                @if (!string.IsNullOrWhiteSpace(_filter.Search)) {
+                                    <span class="badge bg-primary d-inline-flex align-items-center">
+                                        <i class="fa-solid fa-search me-1"></i>@_filter.Search
+                                        <button type="button" class="btn-close btn-close-white ms-1" style="font-size: 0.5rem;" 
+                                                @onclick="@(() => { _filter.Search = ""; _filter.Page = 1; _ = LoadData(); })"></button>
+                                    </span>
+                                }
+                                @if (_filter.MinTotalAccesses.HasValue || _filter.MaxTotalAccesses.HasValue) {
+                                    <span class="badge bg-warning text-dark d-inline-flex align-items-center">
+                                        Accesses: @(_filter.MinTotalAccesses?.ToString() ?? "0")–@(_filter.MaxTotalAccesses?.ToString() ?? "∞")
+                                        <button type="button" class="btn-close ms-1" style="font-size: 0.5rem;" 
+                                                @onclick="@(() => { _filter.MinTotalAccesses = null; _filter.MaxTotalAccesses = null; _filter.Page = 1; _ = LoadData(); })"></button>
+                                    </span>
+                                }
+                                @if (_filter.MinUniqueAccessors.HasValue || _filter.MaxUniqueAccessors.HasValue) {
+                                    <span class="badge bg-warning text-dark d-inline-flex align-items-center">
+                                        Accessors: @(_filter.MinUniqueAccessors?.ToString() ?? "0")–@(_filter.MaxUniqueAccessors?.ToString() ?? "∞")
+                                        <button type="button" class="btn-close ms-1" style="font-size: 0.5rem;" 
+                                                @onclick="@(() => { _filter.MinUniqueAccessors = null; _filter.MaxUniqueAccessors = null; _filter.Page = 1; _ = LoadData(); })"></button>
+                                    </span>
+                                }
+                                @if (_filter.LastAccessAfter.HasValue || _filter.LastAccessBefore.HasValue) {
+                                    <span class="badge bg-warning text-dark d-inline-flex align-items-center">
+                                        Last: @(_filter.LastAccessAfter?.ToString("M/d") ?? "…")–@(_filter.LastAccessBefore?.ToString("M/d") ?? "…")
+                                        <button type="button" class="btn-close ms-1" style="font-size: 0.5rem;" 
+                                                @onclick="@(() => { _filter.LastAccessAfter = null; _filter.LastAccessBefore = null; _filter.Page = 1; _ = LoadData(); })"></button>
+                                    </span>
+                                }
+                                <span class="badge bg-secondary d-inline-flex align-items-center">
+                                    <i class="fa-solid fa-sort me-1"></i>@GetSortDisplayName()
+                                </span>
+                                <button class="btn btn-link btn-sm text-danger p-0 ms-2" @onclick="ClearAllFilters">
+                                    <i class="fa-solid fa-times me-1"></i>Clear All
+                                </button>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                @if (_loading) {
+                    <div class="text-center py-5"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>
+                } else if (_result.Records.Count == 0) {
+                    <div class="text-center py-5 text-muted">
+                        <i class="fa-solid fa-users fa-4x mb-3 opacity-50"></i>
+                        <h4>No data subjects found</h4>
+                        <p>Data subjects are automatically created when access events reference them.</p>
+                    </div>
+                } else {
+                    <div class="card shadow-sm">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th class="sortable @SortClass("ExternalId")" @onclick="@(() => Sort("ExternalId"))">
+                                            Subject ID <i class="fa-solid @SortIcon("ExternalId") ms-1"></i>
+                                        </th>
+                                        <th class="sortable @SortClass("TotalAccessCount")" @onclick="@(() => Sort("TotalAccessCount"))">
+                                            Accesses <i class="fa-solid @SortIcon("TotalAccessCount") ms-1"></i>
+                                        </th>
+                                        <th class="sortable @SortClass("LastAccessedAt")" @onclick="@(() => Sort("LastAccessedAt"))">
+                                            Last Access <i class="fa-solid @SortIcon("LastAccessedAt") ms-1"></i>
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in _result.Records) {
+                                        <tr class="@(item.ExternalId == _selectedSubject?.ExternalId ? "table-active" : "") cursor-pointer"
+                                            @onclick="@(() => SelectSubject(item))">
+                                            <td>
+                                                <a href="@GetSubjectUrl(item.ExternalId)" @onclick:preventDefault @onclick:stopPropagation
+                                                   @onclick="@(() => SelectSubject(item))">
+                                                    <strong>@item.ExternalId</strong>
+                                                </a>
+                                                <br />
+                                                <small class="text-muted">@(string.IsNullOrEmpty(item.SubjectType) ? "Unknown" : item.SubjectType)</small>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-primary">@item.TotalAccessCount.ToString("N0")</span>
+                                            </td>
+                                            <td>
+                                                <span title="@item.LastAccessedAt.ToString("f")">
+                                                    @GetRelativeTime(item.LastAccessedAt)
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        @* Pagination *@
+                        @if (_result.TotalPages > 1) {
+                            <div class="card-footer d-flex justify-content-between align-items-center py-2">
+                                <span class="text-muted small">
+                                    @((_filter.Page - 1) * _filter.PageSize + 1)-@Math.Min(_filter.Page * _filter.PageSize, _result.TotalRecords) of @_result.TotalRecords
+                                </span>
+                                <nav>
+                                    <ul class="pagination pagination-sm mb-0">
+                                        <li class="page-item @(_filter.Page <= 1 ? "disabled" : "")">
+                                            <button class="page-link" @onclick="@(() => GoToPage(1))" disabled="@(_filter.Page <= 1)" title="First page">
+                                                <i class="fa-solid fa-angles-left"></i>
+                                            </button>
+                                        </li>
+                                        <li class="page-item @(_filter.Page <= 1 ? "disabled" : "")">
+                                            <button class="page-link" @onclick="@(() => GoToPage(_filter.Page - 1))" disabled="@(_filter.Page <= 1)" title="Previous page">
+                                                <i class="fa-solid fa-angle-left"></i>
+                                            </button>
+                                        </li>
+                                        @foreach (var p in GetPageNumbers()) {
+                                            <li class="page-item @(p == _filter.Page ? "active" : "")">
+                                                <button class="page-link" @onclick="@(() => GoToPage(p))">@p</button>
+                                            </li>
+                                        }
+                                        <li class="page-item @(_filter.Page >= _result.TotalPages ? "disabled" : "")">
+                                            <button class="page-link" @onclick="@(() => GoToPage(_filter.Page + 1))" disabled="@(_filter.Page >= _result.TotalPages)" title="Next page">
+                                                <i class="fa-solid fa-angle-right"></i>
+                                            </button>
+                                        </li>
+                                        <li class="page-item @(_filter.Page >= _result.TotalPages ? "disabled" : "")">
+                                            <button class="page-link" @onclick="@(() => GoToPage(_result.TotalPages))" disabled="@(_filter.Page >= _result.TotalPages)" title="Last page">
+                                                <i class="fa-solid fa-angles-right"></i>
+                                            </button>
+                                        </li>
+                                    </ul>
+                                </nav>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            @* Subject Detail Panel *@
+            @if (_selectedSubject != null) {
+                <div class="col-lg-7">
+                    <div class="card shadow-sm">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">
+                                <i class="fa-solid fa-user-shield me-2"></i>
+                                @_selectedSubject.ExternalId
+                                <span class="badge bg-secondary ms-2">@_selectedSubject.SubjectType</span>
+                            </h5>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="CloseDetail">
+                                <i class="fa-solid fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            @* Stats Row *@
+                            <div class="row mb-3">
+                                <div class="col-3 text-center">
+                                    <h4 class="mb-0 text-primary">@_selectedSubject.TotalAccessCount.ToString("N0")</h4>
+                                    <small class="text-muted">Total Accesses</small>
+                                </div>
+                                <div class="col-3 text-center">
+                                    <h4 class="mb-0 text-info">@_selectedSubject.UniqueAccessorCount.ToString("N0")</h4>
+                                    <small class="text-muted">Unique Users</small>
+                                </div>
+                                <div class="col-3 text-center">
+                                    <small class="text-muted d-block">First Access</small>
+                                    <span>@_selectedSubject.FirstAccessedAt.ToString("MMM dd, yyyy")</span>
+                                </div>
+                                <div class="col-3 text-center">
+                                    <small class="text-muted d-block">Last Access</small>
+                                    <span>@GetRelativeTime(_selectedSubject.LastAccessedAt)</span>
+                                </div>
+                            </div>
+
+                            <hr />
+
+                            @* Access History *@
+                            <h6 class="mb-3">
+                                <i class="fa-solid fa-clock-rotate-left me-2"></i>Access History
+                            </h6>
+
+                            @if (_loadingEvents) {
+                                <div class="text-center py-3">
+                                    <i class="fa-solid fa-spinner fa-spin"></i> Loading events...
+                                </div>
+                            } else if (_subjectEvents.Count == 0) {
+                                <div class="text-center py-3 text-muted">
+                                    <i class="fa-solid fa-inbox me-2"></i>No access events found
+                                </div>
+                            } else {
+                                <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                                    <table class="table table-sm table-hover mb-0">
+                                        <thead class="table-light sticky-top">
+                                            <tr>
+                                                <th>When</th>
+                                                <th>Who</th>
+                                                <th>Type</th>
+                                                <th>Purpose</th>
+                                                <th></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var evt in _subjectEvents) {
+                                                <tr>
+                                                    <td>
+                                                        <span title="@evt.AccessedAt.ToLocalTime().ToString("f")">
+                                                            @GetRelativeTime(evt.AccessedAt)
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <strong>@evt.UserId</strong>
+                                                        @if (!string.IsNullOrEmpty(evt.UserName)) {
+                                                            <br /><small class="text-muted">@evt.UserName</small>
+                                                        }
+                                                    </td>
+                                                    <td>
+                                                        @{
+                                                            var badgeClass = evt.AccessType?.ToLower() switch {
+                                                                "export" or "download" => "bg-warning text-dark",
+                                                                "view" or "query" => "bg-info",
+                                                                "print" => "bg-secondary",
+                                                                _ => "bg-primary"
+                                                            };
+                                                        }
+                                                        <span class="badge @badgeClass">@evt.AccessType</span>
+                                                    </td>
+                                                    <td>
+                                                        <span class="text-truncate d-inline-block" style="max-width: 200px;" title="@evt.Purpose">
+                                                            @(string.IsNullOrEmpty(evt.Purpose) ? "-" : evt.Purpose)
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <a href="@GetEventUrl(evt.AccessEventId)" class="btn btn-sm btn-outline-primary" 
+                                                           title="View Event Details">
+                                                            <i class="fa-solid fa-arrow-right"></i>
+                                                        </a>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                                @if (_subjectEvents.Count >= 100) {
+                                    <div class="text-center py-2">
+                                        <a href="@Helpers.BuildUrl("AccessEvents")?subjectId=@_selectedSubject.ExternalId" class="btn btn-sm btn-outline-primary">
+                                            View All Events <i class="fa-solid fa-arrow-right ms-1"></i>
+                                        </a>
+                                    </div>
+                                }
+                            }
+                        </div>
+                        <div class="card-footer small text-muted">
+                            <i class="fa-solid fa-lock me-1"></i>
+                            Audit records are immutable and cannot be deleted.
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<style>
+    .sortable { cursor: pointer; user-select: none; }
+    .sortable:hover { background-color: #e9ecef; }
+    .sort-active { font-weight: bold; }
+    .cursor-pointer { cursor: pointer; }
+</style>
+
+@code {
+[Parameter] public string? TenantCode { get; set; }
+[Parameter] public string? SelectedSubjectId { get; set; }
+    
+private string _pageName = "datasubjects";
+private bool _loading = true;
+private bool _loadingEvents = false;
+private bool _showMoreFilters = false;
+private DataObjects.DataSubjectFilter _filter = new() { SortColumn = "LastAccessedAt", SortDescending = true, PageSize = 25 };
+private DataObjects.DataSubjectFilterResult _result = new();
+private string _sortOption = "LastAccessedAt-desc";
+private bool _helpExpanded = false;
+    
+// Detail panel
+private DataObjects.DataSubject? _selectedSubject = null;
+private List<DataObjects.AccessEvent> _subjectEvents = new();
+
+public void Dispose() { Model.OnChange -= StateHasChanged; }
+
+protected override void OnInitialized() {
+    Model.View = _pageName;
+    Model.OnChange += StateHasChanged;
+}
+
+protected override async Task OnParametersSetAsync()
+{
+    // Handle URL parameter for selected subject
+    if (!string.IsNullOrEmpty(SelectedSubjectId) && _selectedSubject?.ExternalId != SelectedSubjectId)
+    {
+        await LoadSubjectByExternalId(SelectedSubjectId);
+    }
+    else if (string.IsNullOrEmpty(SelectedSubjectId) && _selectedSubject != null)
+    {
+        _selectedSubject = null;
+        _subjectEvents.Clear();
+    }
+}
+
+protected override async Task OnAfterRenderAsync(bool firstRender) {
+    if (firstRender) await LoadData();
+}
+
+private async Task LoadSubjectByExternalId(string externalId)
+{
+    // Find subject in current results or search for it
+    var subject = _result.Records.FirstOrDefault(x => x.ExternalId == externalId);
+    if (subject == null)
+    {
+        // Search for it
+        var searchFilter = new DataObjects.DataSubjectFilter { Search = externalId, PageSize = 1 };
+        var searchResult = await Helpers.GetOrPost<DataObjects.DataSubjectFilterResult>(
+            DataObjects.Endpoints.FreeGLBA.GetDataSubjects, searchFilter);
+        subject = searchResult?.Records.FirstOrDefault(x => x.ExternalId == externalId);
+    }
+        
+    if (subject != null)
+    {
+        _selectedSubject = subject;
+        await LoadSubjectEvents();
+    }
+}
+
+private async Task LoadData() {
+    _loading = true;
+    StateHasChanged();
+    _result = await Helpers.GetOrPost<DataObjects.DataSubjectFilterResult>(
+        DataObjects.Endpoints.FreeGLBA.GetDataSubjects, _filter) ?? new();
+    _loading = false;
+    StateHasChanged();
+
+    // If we have a URL parameter, select that subject
+    if (!string.IsNullOrEmpty(SelectedSubjectId) && _selectedSubject == null)
+    {
+            await LoadSubjectByExternalId(SelectedSubjectId);
+        }
+    }
+
+    private async Task LoadSubjectEvents()
+    {
+        if (_selectedSubject == null) return;
+        
+        _loadingEvents = true;
+        StateHasChanged();
+
+        try {
+            _subjectEvents = await Helpers.GetOrPost<List<DataObjects.AccessEvent>>(
+                $"api/glba/subjects/{Uri.EscapeDataString(_selectedSubject.ExternalId)}/events?limit=500") ?? new();
+        } catch {
+            _subjectEvents = new();
+        }
+
+        _loadingEvents = false;
+        StateHasChanged();
+    }
+
+    private void SelectSubject(DataObjects.DataSubject item)
+    {
+        // Update URL without full navigation
+        var url = GetSubjectUrl(item.ExternalId);
+        Nav.NavigateTo(url, forceLoad: false, replace: false);
+        
+        _selectedSubject = item;
+        _ = LoadSubjectEvents();
+    }
+
+    private void CloseDetail()
+    {
+        // Navigate back to list view
+        Nav.NavigateTo(Helpers.BuildUrl("DataSubjects"), forceLoad: false, replace: false);
+        
+        _selectedSubject = null;
+        _subjectEvents.Clear();
+    }
+
+    private string GetSubjectUrl(string externalId)
+    {
+        var encoded = Uri.EscapeDataString(externalId);
+        return Helpers.BuildUrl($"DataSubjects/{encoded}");
+    }
+
+    private string GetEventUrl(Guid eventId)
+    {
+        return Helpers.BuildUrl($"AccessEvents/{eventId}");
+    }
+
+    private bool HasActiveFilters() => !string.IsNullOrWhiteSpace(_filter.Search) || HasAdvancedFilters();
+
+    private bool HasAdvancedFilters() =>
+        _filter.MinTotalAccesses.HasValue || _filter.MaxTotalAccesses.HasValue ||
+        _filter.MinUniqueAccessors.HasValue || _filter.MaxUniqueAccessors.HasValue ||
+        _filter.LastAccessAfter.HasValue || _filter.LastAccessBefore.HasValue;
+
+    private int GetAdvancedFilterCount() {
+        int count = 0;
+        if (_filter.MinTotalAccesses.HasValue || _filter.MaxTotalAccesses.HasValue) count++;
+        if (_filter.MinUniqueAccessors.HasValue || _filter.MaxUniqueAccessors.HasValue) count++;
+        if (_filter.LastAccessAfter.HasValue || _filter.LastAccessBefore.HasValue) count++;
+        return count;
+    }
+
+    private void ClearAdvancedFilters() {
+        _filter.MinTotalAccesses = null;
+        _filter.MaxTotalAccesses = null;
+        _filter.MinUniqueAccessors = null;
+        _filter.MaxUniqueAccessors = null;
+        _filter.LastAccessAfter = null;
+        _filter.LastAccessBefore = null;
+        _filter.Page = 1;
+        _ = LoadData();
+    }
+
+    private void ClearAllFilters() {
+        _filter.Search = "";
+        _sortOption = "LastAccessedAt-desc";
+        _filter.SortColumn = "LastAccessedAt";
+        _filter.SortDescending = true;
+        ClearAdvancedFilters();
+    }
+
+    private void ApplySortOption() {
+        var parts = _sortOption.Split('-');
+        if (parts.Length == 2) {
+            _filter.SortColumn = parts[0];
+            _filter.SortDescending = parts[1] == "desc";
+            _filter.Page = 1;
+            _ = LoadData();
+        }
+    }
+
+    private string GetSortDisplayName() => _sortOption switch {
+        "TotalAccessCount-desc" => "Most Accessed",
+        "TotalAccessCount-asc" => "Least Accessed",
+        "LastAccessedAt-desc" => "Recent Activity",
+        "LastAccessedAt-asc" => "Oldest Activity",
+        "UniqueAccessorCount-desc" => "Most Accessors",
+        "ExternalId-asc" => "ID (A-Z)",
+        "ExternalId-desc" => "ID (Z-A)",
+        "SubjectType-asc" => "Type (A-Z)",
+        _ => "Custom"
+    };
+
+    private void Sort(string column) {
+        if (_filter.SortColumn == column) {
+            _filter.SortDescending = !_filter.SortDescending;
+        } else {
+            _filter.SortColumn = column;
+            _filter.SortDescending = column == "TotalAccessCount" || column == "UniqueAccessorCount" || 
+                                     column == "LastAccessedAt" || column == "FirstAccessedAt";
+        }
+        _sortOption = $"{column}-{(_filter.SortDescending ? "desc" : "asc")}";
+        _filter.Page = 1;
+        _ = LoadData();
+    }
+
+    private string SortClass(string column) => _filter.SortColumn == column ? "sort-active" : "";
+    private string SortIcon(string column) {
+        if (_filter.SortColumn != column) return "fa-sort text-muted";
+        return _filter.SortDescending ? "fa-sort-down" : "fa-sort-up";
+    }
+
+    private async Task GoToPage(int page) {
+        _filter.Page = page;
+        await LoadData();
+    }
+
+    private IEnumerable<int> GetPageNumbers()
+    {
+        // Show up to 5 page numbers centered around current page
+        int start = Math.Max(1, _filter.Page - 2);
+        int end = Math.Min(_result.TotalPages, start + 4);
+        start = Math.Max(1, end - 4); // Adjust start if near the end
+        
+        for (int i = start; i <= end; i++)
+            yield return i;
+    }
+
+    private string GetRelativeTime(DateTime dt) {
+        var diff = DateTime.UtcNow - dt;
+        if (diff.TotalMinutes < 1) return "Just now";
+        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}h ago";
+        if (diff.TotalDays < 7) return $"{(int)diff.TotalDays}d ago";
+        return dt.ToString("MMM dd, yyyy");
+    }
+}

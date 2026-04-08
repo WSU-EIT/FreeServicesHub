@@ -1,0 +1,139 @@
+﻿@* Pipeline Group Component *@
+@* Collapsible group with header showing folder name and status summary badges *@
+@* Supports recursive nesting for folder hierarchies *@
+
+<div class="pipeline-group card mb-3 shadow-sm border-0" style="@GetIndentStyle()">
+    @* Group Header *@
+    <div class="card-header bg-white py-3 cursor-pointer @(IsExpanded ? "" : "border-bottom-0")"
+         @onclick="ToggleExpanded"
+         role="button"
+         aria-expanded="@IsExpanded"
+         aria-controls="group-content-@GroupId">
+        <div class="d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center gap-2">
+                @* Expand/Collapse Icon *@
+                <i class="fa @(IsExpanded ? "fa-chevron-down" : "fa-chevron-right") text-muted"></i>
+
+                @* Folder Icon and Name *@
+                <i class="fa fa-folder@(IsExpanded ? "-open" : "") @GetFolderColorClass()"></i>
+                <h6 class="mb-0 fw-semibold @GetHeaderSizeClass()">@GroupName</h6>
+                <span class="badge bg-secondary rounded-pill">@PipelineCount</span>
+            </div>
+
+            @* Status Summary Badges *@
+            <div class="d-flex gap-2">
+                @if (SucceededCount > 0) {
+                    <span class="badge bg-success" title="@SucceededCount Succeeded">
+                        <i class="fa fa-check me-1"></i>@SucceededCount
+                    </span>
+                }
+                @if (FailedCount > 0) {
+                    <span class="badge bg-danger" title="@FailedCount Failed">
+                        <i class="fa fa-times me-1"></i>@FailedCount
+                    </span>
+                }
+                @if (PartialCount > 0) {
+                    <span class="badge bg-warning text-dark" title="@PartialCount Partial">
+                        <i class="fa fa-exclamation-triangle me-1"></i>@PartialCount
+                    </span>
+                }
+                @if (RunningCount > 0) {
+                    <span class="badge bg-info" title="@RunningCount Running">
+                        <i class="fa fa-spinner fa-spin me-1"></i>@RunningCount
+                    </span>
+                }
+                @if (QueuedCount > 0) {
+                    <span class="badge bg-secondary" title="@QueuedCount Queued">
+                        <i class="fa fa-pause me-1"></i>@QueuedCount
+                    </span>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* Group Content *@
+    @if (IsExpanded) {
+        <div class="card-body pt-3" id="group-content-@GroupId">
+            @ChildContent
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string GroupId { get; set; } = "";
+    [Parameter] public string GroupName { get; set; } = "";
+    [Parameter] public int PipelineCount { get; set; }
+
+    [Parameter] public int SucceededCount { get; set; }
+    [Parameter] public int FailedCount { get; set; }
+    [Parameter] public int PartialCount { get; set; }
+    [Parameter] public int RunningCount { get; set; }
+    [Parameter] public int QueuedCount { get; set; }
+
+    [Parameter] public bool IsExpanded { get; set; } = true;
+    [Parameter] public EventCallback<bool> IsExpandedChanged { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    // Depth parameter for nested folder indentation (0 = root level)
+    [Parameter] public int Depth { get; set; } = 0;
+
+    private async Task ToggleExpanded()
+    {
+        IsExpanded = !IsExpanded;
+        await IsExpandedChanged.InvokeAsync(IsExpanded);
+    }
+
+    // Calculate margin-left based on depth for visual hierarchy
+    private string GetIndentStyle()
+    {
+        if (Depth <= 0) return "";
+        // Subtle indent for nested folders
+        var marginLeft = Depth * 1.5; // 1.5rem per level
+        return $"margin-left: {marginLeft}rem;";
+    }
+
+    // Vary folder color by depth for visual distinction
+    private string GetFolderColorClass()
+    {
+        return Depth switch {
+            0 => "text-warning",      // Root level - yellow/gold
+            1 => "text-info",         // Level 1 - blue
+            2 => "text-success",      // Level 2 - green
+            _ => "text-secondary"     // Deeper levels - gray
+        };
+    }
+
+    // Slightly smaller headers for nested folders
+    private string GetHeaderSizeClass()
+    {
+        return Depth switch {
+            0 => "",                  // Root level - normal size
+            1 => "fs-6",              // Level 1 - slightly smaller
+            _ => "small"              // Deeper levels - small
+        };
+    }
+}
+
+<style>
+    .cursor-pointer {
+        cursor: pointer;
+    }
+
+    .pipeline-group .card-header:hover {
+        background-color: #f8f9fa !important;
+    }
+
+    /* Nested folder styling */
+    .pipeline-group .pipeline-group {
+        margin-top: 0.5rem;
+    }
+
+    .pipeline-group .pipeline-group .card-header {
+        background-color: #fafafa !important;
+    }
+
+    .pipeline-group .pipeline-group .pipeline-group .card-header {
+        background-color: #f5f5f5 !important;
+    }
+</style>

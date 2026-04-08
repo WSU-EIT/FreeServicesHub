@@ -1,0 +1,433 @@
+﻿@inject IDataAccess data
+@inject IConfigurationHelper ConfigurationHelper
+@inject IHttpContextAccessor HttpContextAccessor
+@{
+    string cookiePrefix = String.Empty + ConfigurationHelper.CookiePrefix;
+    string applicationUrl = data.ApplicationUrl(HttpContextAccessor.HttpContext);
+    string appVersion = data.Version;
+    string basePath = !String.IsNullOrWhiteSpace(ConfigurationHelper.BasePath) ? ConfigurationHelper.BasePath : "/";
+    string favicon96 = applicationUrl + "favicon-96x96.png";
+    string faviconAppleTouch = applicationUrl + "apple-touch-icon.png";
+    string faviconIco = applicationUrl + "favicon.ico";
+    string faviconManifest = applicationUrl + "site.webmanifest";
+    string faviconSvg = applicationUrl + "favicon.svg";
+    string unique = data.UniqueId;
+
+    string analyticsCodeHtml = String.Empty;
+    if (!String.IsNullOrWhiteSpace(ConfigurationHelper.AnalyticsCode)) {
+        if (ConfigurationHelper.AnalyticsCode.ToLower().StartsWith("g-")) {
+            // This is a Google Analytics code, so format it accordingly.
+            analyticsCodeHtml = "<!-- Google tag (gtag.js) --> <script async src='https://www.googletagmanager.com/gtag/js?id=" + ConfigurationHelper.AnalyticsCode + "'></script> <script>   window.dataLayer = window.dataLayer || [];   function gtag(){dataLayer.push(arguments);}   gtag('js', new Date());   gtag('config', '" + ConfigurationHelper.AnalyticsCode + "'); </script>";
+        } else if (ConfigurationHelper.AnalyticsCode.ToLower().Contains("<script")) {
+            // This is a full script tag, so just use it as is.
+            analyticsCodeHtml = ConfigurationHelper.AnalyticsCode;
+        } else {
+            // Ignore this value, as it is not a known format.
+        }
+    }
+}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta name="app:server" content="@System.Environment.MachineName" />
+    <meta name="app:version" content="@data.Version" />
+    <meta name="app:released" content="@data.Released" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="@faviconSvg" />
+    <link rel="icon" type="image/png" href="@favicon96" sizes="96x96" />
+    <link rel="shortcut icon" href="@faviconIco" />
+    <link rel="apple-touch-icon" sizes="180x180" href="@faviconAppleTouch" />
+    <link rel="manifest" href="@faviconManifest" />
+    <base href="@basePath" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="@(applicationUrl + "_content/Blazor.Bootstrap/blazor.bootstrap.css?v=" + appVersion)" />
+    <link rel="stylesheet" href="@(applicationUrl + "_content/FreeBlazor/styles.css?v=" + appVersion)" />
+    <link rel="stylesheet" href="@(applicationUrl + "_content/MudBlazor/MudBlazor.min.css?v=" + appVersion)" />
+    <link rel="stylesheet" href="@(applicationUrl + "_content/Radzen.Blazor/css/material-base.css?v=" + appVersion)" />
+    <link rel="stylesheet" href="@Assets["fontawesome/css/all.css"]" />
+    <link rel="stylesheet" href="@Assets["js/bootstrap/css/bootstrap.min.css"]" />
+    <link rel="stylesheet" href="@Assets["css/themes.css"]" />
+    <link rel="stylesheet" href="@Assets["css/site.css"]" />
+    <link rel="stylesheet" href="@Assets["css/site.App.css"]" />
+    <link rel="stylesheet" href="@Assets["css/tags.css"]" />
+    @if (!String.IsNullOrWhiteSpace(analyticsCodeHtml)) {
+        @((MarkupString)analyticsCodeHtml)
+    }
+    <Modules_App Module="head" />
+    <ImportMap />
+    <HeadOutlet @rendermode="new InteractiveWebAssemblyRenderMode(prerender: false)" />
+</head>
+
+<body id="body-element" data-bs-theme="" class="loading">
+    <Routes @rendermode="new InteractiveWebAssemblyRenderMode(prerender: false)" />
+    <script src="https://cdn.jsdelivr.net/npm/@@thumbmarkjs/thumbmarkjs/dist/thumbmark.umd.js"></script>
+    <script src="@(applicationUrl + "_content/Blazor.Bootstrap/blazor.bootstrap.js?v=" + appVersion)"></script>
+    <script src="@(applicationUrl + "_content/MudBlazor/MudBlazor.min.js?v=" + appVersion)"></script>
+    <script src="@(applicationUrl + "_content/Radzen.Blazor/Radzen.Blazor.js?v=" + (typeof(Radzen.Colors).Assembly.GetName().Version))"></script>
+    <script src="@("_content/BlazorSortableList/SortableList.razor.js?v=" + appVersion)" type="module"></script>
+    <script src="@Assets["js/sortablejs/sortable.min.js"]"></script>
+    <script src="@Assets["js/jquery/jquery-3.7.0.min.js"]"></script>
+    <script src="@Assets["js/bootstrap/js/bootstrap.bundle.min.js"]"></script>
+    <script src="@(applicationUrl + "_content/BlazorMonaco/jsInterop.js?v=" + appVersion)"></script>
+    <script src="@(applicationUrl + "_content/BlazorMonaco/lib/monaco-editor/min/vs/loader.js?v=" + appVersion)"></script>
+    <script src="@(applicationUrl + "_content/BlazorMonaco/lib/monaco-editor/min/vs/editor/editor.main.js?v=" + appVersion)"></script>
+    <script src="_framework/blazor.web.js"></script>
+    <Modules_App Module="body" />
+
+    <script type="text/javascript">
+        let cookiePrefix = "@cookiePrefix";
+        let dotNetHelper;
+        let fingerprint;
+
+        const onReady = (callback) => {
+            if (document.readyState!='loading') {
+                callback();
+            } else if (document.addEventListener) {
+                document.addEventListener('DOMContentLoaded', callback);
+            } else {
+                document.attachEvent('onreadystatechange', function() {
+                    if (document.readyState=='complete') callback();
+                });
+            }
+        };
+
+        onReady(() => {
+            SetPreferredColorScheme("");
+        });
+
+        function ConsoleLog(message, objects) {
+            if (objects != undefined && objects != null) {
+                if (message != undefined && message != null && message != "") {
+                    console.log(message, objects);
+                } else {
+                    console.log(objects);
+                }
+            } else if (message != undefined && message != null && message != "") {
+                console.log(message);
+            }
+        }
+
+        function CookieRead(cname) {
+            let name = cookiePrefix + cname + "=";
+            let decodedCookie = decodeURIComponent(document.cookie);
+            let ca = decodedCookie.split(';');
+
+            for (let i = 0; i < ca.length; i++) {
+                let c = ca[i];
+
+                while (c.charAt(0) == ' ') {
+                    c = c.substring(1);
+                }
+
+                if (c.indexOf(name) == 0) {
+                    return c.substring(name.length, c.length);
+                }
+            }
+
+            return "";
+        }
+
+        function CookieWrite(name, value, days) {
+            var expires;
+
+            if (days == undefined || days == null || days < 1) {
+                days = 14;
+            }
+
+            if (days) {
+                var date = new Date();
+                date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+                expires = "; expires=" + date.toGMTString();
+            } else {
+                expires = "";
+            }
+
+            document.cookie = cookiePrefix + name + "=" + value + expires + "; path=/";
+        }
+
+        function CopyToClipboard(value) {
+            navigator.clipboard.writeText(value);
+        }
+
+        function DelayedFocus(element) {
+            setTimeout(() => DelayedFocusInternal(element, 0), 0);
+        }
+
+        function DelayedFocusInternal(element, safety) {
+            if (safety > 20) { return; }
+            safety++;
+
+            if (isVisibleByElementId(element)) {
+                let el = document.getElementById(element);
+
+                if (el != undefined && el != null) {
+                    if (el instanceof HTMLDivElement || el instanceof HTMLTableElement) {
+                        // The element provided was a div or table, so find the first input element inside that element.
+                        let inputElements = el.querySelectorAll("input,textarea,select");
+                        if (inputElements != null && inputElements.length > 0) {
+                            for (let i = 0; i < inputElements.length ; i++) {
+                                let inputElement = inputElements[i];
+                                if (isVisible(inputElement)) {
+                                    inputElement.focus();
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        el.focus();
+                    }
+                }
+            } else {
+                setTimeout(() => DelayedFocusInternal(element, safety), 20);
+            }
+        }
+
+        function DelayedSelect(element) {
+            setTimeout(() => DelayedSelectInternal(element, 0), 0);
+        }
+
+        function DelayedSelectInternal(element, safety) {
+            if (safety > 20) { return; }
+            safety++;
+
+            let el = document.getElementById(element);
+            if (el != undefined && el != null) {
+                if (isVisible(el)) {
+                    if (el instanceof HTMLDivElement || el instanceof HTMLTableElement) {
+                        // The element provided was a div or table, so find the first input element inside that element.
+                        let inputElements = el.querySelectorAll("input,textarea,select");
+                        if (inputElements != null && inputElements.length > 0) {
+                            for (let i = 0; i < inputElements.length ; i++) {
+                                let inputElement = inputElements[i];
+                                if (isVisible(inputElement)) {
+                                    inputElement.select();
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        el.select();
+                    }
+                } else {
+                    setTimeout(() => DelayedSelectInternal(element, safety), 20);
+                }
+            }
+
+        }
+
+        async function DownloadFileFromStream(fileName, contentStreamReference) {
+            const arrayBuffer = await contentStreamReference.arrayBuffer();
+            const blob = new Blob([arrayBuffer]);
+            const url = URL.createObjectURL(blob);
+            const anchorElement = document.createElement('a');
+            anchorElement.href = url;
+            anchorElement.download = fileName ?? '';
+            anchorElement.click();
+            anchorElement.remove();
+            URL.revokeObjectURL(url);
+        }
+
+        function ElementHasClass(elementId, className) {
+            let el = document.getElementById(elementId);
+            if (el != undefined && el != null) {
+                if (el.classList.contains(className)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function GetFingerprint(){
+            ThumbmarkJS.setOption('exclude', ['permissions']);
+            // ThumbmarkJS.getFingerprint(includeData = true).then(
+            //     function(fp) {
+            //         console.log("FP", fp.hash);
+            //         console.log("FP DATA", JSON.stringify(fp.data, null, 2));
+            //         dotNetHelper.invokeMethod("SetFingerprint", fp.hash);
+            //     }
+            // );
+
+            ThumbmarkJS.getFingerprint().then(
+                function(fp) {
+                    fingerprint = fp;
+                    dotNetHelper.invokeMethod("SetFingerprint", fp);
+                }
+            );
+        }
+
+        function HideElementByClass(className) {
+            let elements = document.getElementsByClassName(className);
+            if (elements != undefined && elements != null) {
+                for(let i = 0; i < elements.length ; i++) {
+                    elements[i].setAttribute("previous-display-style", elements[i].style.display);
+                    elements[i].style.display = "none";
+                }
+            }
+        }
+
+        function HideElementById(id) {
+            let el = document.getElementById(id);
+            if (el != undefined && el != null) {
+                el.style.display = "none";
+            }
+        }
+
+        function HideMenu() {
+            let bsOffcanvasUserMenu = bootstrap.Offcanvas.getInstance("#offcanvasUserMenu");
+            if (bsOffcanvasUserMenu != undefined && bsOffcanvasUserMenu != null && bsOffcanvasUserMenu._isShown) {
+                bsOffcanvasUserMenu.hide();
+            }
+
+            let bsOffcanvasQuickActionMenu = bootstrap.Offcanvas.getInstance("#offcanvasQuickAction");
+            if (bsOffcanvasQuickActionMenu != undefined && bsOffcanvasQuickActionMenu != null && bsOffcanvasQuickActionMenu._isShown) {
+                bsOffcanvasQuickActionMenu.hide();
+            }
+        }
+
+        function InsertAtCursor(field, value) {
+            var $txt = jQuery("#" + field);
+            var caretPos = $txt[0].selectionStart;
+            var textAreaTxt = $txt.val();
+            $txt.val(textAreaTxt.substring(0, caretPos) + value + textAreaTxt.substring(caretPos));
+        }
+
+        function isVisible(e) {
+            if (e == undefined || e == null) {
+                return false;
+            } else {
+                return !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length );
+            }
+        }
+
+        function isVisibleByElementId(elementId) {
+            let e = document.getElementById(elementId);
+            if (e == undefined || e == null) {
+                return false;
+            } else {
+                return isVisible(e);
+            }
+        }
+
+        function Loaded() {
+            let el = document.getElementById("body-element");
+            if (el != undefined && el != null) {
+                el.classList.remove("loading");
+            }
+        }
+
+        function NavigateTo(url) {
+            window.location.href = url;
+        }
+
+        function ReloadCurrentPage() {
+            window.location.href = window.location.href;
+        }
+
+        function RemoveElementHighlightByClass(className, classToRemove = "highlight") {
+            let elements = document.getElementsByClassName(className);
+            if (elements != undefined && elements != null) {
+                for(let i = 0; i < elements.length ; i++) {
+                    elements[i].classList.remove(classToRemove);
+                }
+            }
+        }
+
+        function SetDotNetHelper(value) {
+            dotNetHelper = value;
+        }
+
+        function SetPreferredColorScheme(preferred) {
+            Loaded();
+
+            if (preferred == undefined || preferred == null) {
+                preferred = "light";
+            }
+
+            if (preferred == "auto") {
+                let colorScheme = getComputedStyle(document.body, ':after').content;
+                preferred = colorScheme.indexOf("dark") > -1 ? "dark" : "light";
+            }
+
+            let setTheme = "";
+            let setClass = "";
+            let setMonacoTheme = "vs";
+
+            if (preferred == "dark") {
+                setTheme = "dark";
+                setClass = "dark";
+                setMonacoTheme = "vs-dark";
+            } else if (preferred == "light") {
+                setTheme = "";
+                setClass = "light";
+            } else {
+                setTheme = preferred;
+                setClass = preferred;
+            }
+
+            // Only update if this has changed.
+            if (ElementHasClass("body-element", setClass)) {
+                // Already up-to-date
+            } else {
+                let el = document.getElementById("body-element");
+                if (el != undefined && el != null) {
+                    el.setAttribute("data-bs-theme", setTheme);
+                    el.classList = "";
+
+                    if (setClass != "") {
+                        el.classList.add(setClass);
+                    }
+                }
+            }
+
+            if (typeof(monaco) == 'object'){
+                monaco.editor.setTheme(setMonacoTheme);
+            }
+        }
+
+        function ShowElementByClass(className, display = "block") {
+            let elements = document.getElementsByClassName(className);
+            if (elements != undefined && elements != null) {
+                for(let i = 0; i < elements.length ; i++) {
+                    let previous = elements[i].getAttribute("previous-display-style");
+                    if (previous != undefined && previous != null && previous != "") {
+                        elements[i].removeAttribute("previous-display-style");
+                        elements[i].style.display = previous;
+                    } else {
+                        elements[i].style.display = display;
+                    }
+                }
+            }
+        }
+
+        function ShowElementById(id, display = "block") {
+            let el = document.getElementById(id);
+            if (el != undefined && el != null) {
+                el.style.display = display;
+            }
+        }
+
+        function ShowQuickActionMenu() {
+            HideMenu();
+
+            const bsOffcanvasQuickActionMenu = new bootstrap.Offcanvas("#offcanvasQuickAction");
+            if (bsOffcanvasQuickActionMenu != undefined && bsOffcanvasQuickActionMenu != null) {
+                bsOffcanvasQuickActionMenu.show();
+            }
+        }
+
+        function SetElementValue(id, value) {
+            let el = document.getElementById(id);
+            if (el != undefined && el != null) {
+                if (el instanceof HTMLInputElement || el instanceof  HTMLSelectElement || el instanceof HTMLTextAreaElement) {
+                    el.value = value;
+                } else if (el.innerHTML != undefined && el.innerHTML != null) {
+                    el.innerHTML = value;
+                }
+            }
+        }
+    </script>
+
+    <Modules_App Module="javascript" />
+</body>
+</html>

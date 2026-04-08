@@ -1,0 +1,339 @@
+@page "/Examples/ChatView"
+@page "/{TenantCode}/Examples/ChatView"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-message me-1"></i> Chat View</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title">
+                <i class="fa-solid fa-message me-1"></i> Chat View Demo
+                <StickyMenuIcon />
+            </h1>
+        </div>
+
+        <ExampleNav />
+
+        <AboutSection Title="About Chat View" Subtitle="The same Comment Thread API in a Slack / Teams / iMessage layout" IconClass="fa-solid fa-message">
+            <div class="row">
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-question-circle me-1"></i>What Is This Page?</h6>
+                    <p class="small text-muted mb-0">
+                        This is a <strong>variant</strong> of the Comment Thread demo. It uses the exact same API endpoints
+                        (<code>GetComments</code>, <code>SaveComment</code>, <code>DeleteComment</code>) but displays
+                        them as <strong>chat bubbles</strong> — your messages on the right in blue, others on the left
+                        in grey. This is the Slack, Teams, and iMessage layout.
+                    </p>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-lightbulb me-1"></i>What's Different?</h6>
+                    <ul class="small text-muted mb-0 ps-3">
+                        <li><strong>Bubble alignment</strong> — your messages right-aligned, others left-aligned</li>
+                        <li><strong>Color coding</strong> — blue for you, light grey for others</li>
+                        <li><strong>Day separators</strong> — "Today", "Yesterday" dividers between message groups</li>
+                        <li><strong>Typing indicator</strong> — animated dots shown while saving</li>
+                        <li><strong>Same API</strong> — identical backend, completely different UI</li>
+                    </ul>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <h6 class="text-info"><i class="fa-solid fa-road me-1"></i>Why Show a Variant?</h6>
+                    <p class="small text-muted mb-0">
+                        Real projects often need the <strong>same data displayed differently</strong> depending on
+                        context. A helpdesk ticket uses the thread layout (Comment Thread). A live chat uses the
+                        bubble layout (this page). The API doesn't change — only the Razor markup does. This is
+                        the power of separating data from presentation.
+                    </p>
+                </div>
+            </div>
+        </AboutSection>
+
+        @* ── Item Selector ── *@
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+            <label class="form-label mb-0 small text-muted">Conversation on:</label>
+            <select class="form-select form-select-sm" style="width:auto;" @bind="_selectedItemId" @bind:after="LoadComments">
+                @foreach (var item in _items) {
+                    <option value="@item.SampleItemId">@item.Name</option>
+                }
+            </select>
+            <span class="badge bg-secondary rounded-pill">@_comments.Count messages</span>
+        </div>
+
+        @* ── Chat Window ── *@
+        <div class="card shadow-sm border-0 mb-3">
+            @* Chat Header *@
+            <div class="card-header bg-dark text-white py-2 d-flex justify-content-between align-items-center">
+                <div>
+                    <i class="fa-solid fa-hashtag me-1 opacity-50"></i>
+                    <span class="fw-semibold small">@(_items.FirstOrDefault(i => i.SampleItemId == _selectedItemId)?.Name ?? "General")</span>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-success rounded-pill" style="font-size:0.6rem;">
+                        <i class="fa-solid fa-circle me-1" style="font-size:0.4rem;"></i>Online
+                    </span>
+                </div>
+            </div>
+
+            @* Chat Body *@
+            <div class="card-body bg-light" style="max-height:500px; overflow-y:auto; min-height:300px;">
+                @if (!_comments.Any()) {
+                    <div class="text-center py-5">
+                        <i class="fa-solid fa-comments fa-3x text-muted opacity-25 mb-2"></i>
+                        <div class="text-muted small">No messages yet. Say hello!</div>
+                    </div>
+                } else {
+                    string lastDateLabel = "";
+                    @foreach (var comment in _comments) {
+                        bool isMe = IsCurrentUser(comment.AuthorName);
+                        string dateLabel = GetDateLabel(comment.Created);
+
+                        @* Day separator *@
+                        @if (dateLabel != lastDateLabel) {
+                            lastDateLabel = dateLabel;
+                            <div class="d-flex align-items-center my-3">
+                                <hr class="flex-grow-1 border-secondary opacity-25" />
+                                <span class="badge bg-white text-muted border mx-2 small">@dateLabel</span>
+                                <hr class="flex-grow-1 border-secondary opacity-25" />
+                            </div>
+                        }
+
+                        @* Message bubble *@
+                        <div class="d-flex mb-2 @(isMe ? "justify-content-end" : "justify-content-start")">
+                            @if (!isMe) {
+                                @* Avatar for others (left side) *@
+                                <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center flex-shrink-0 me-2 align-self-end"
+                                     style="width:28px; height:28px; font-size:0.65rem; font-weight:600;">
+                                    @comment.AuthorInitials
+                                </div>
+                            }
+
+                            <div style="max-width:70%;">
+                                @if (!isMe) {
+                                    <div class="small fw-semibold text-muted mb-1">@comment.AuthorName</div>
+                                }
+                                <div class="rounded-3 px-3 py-2 @(isMe ? "bg-primary text-white" : "bg-white border")"
+                                     style="@(isMe ? "border-bottom-right-radius:0.25rem !important;" : "border-bottom-left-radius:0.25rem !important;")">
+                                    <div class="small">@comment.Text</div>
+                                </div>
+                                <div class="@(isMe ? "text-end" : "") mt-1">
+                                    <span class="text-muted" style="font-size:0.65rem;"
+                                          title="@comment.Created.ToLocalTime().ToString("f")">
+                                        @comment.Created.ToLocalTime().ToString("h:mm tt")
+                                        @if (comment.Edited.HasValue) {
+                                            <span class="fst-italic"> (edited)</span>
+                                        }
+                                    </span>
+                                </div>
+                            </div>
+
+                            @if (isMe) {
+                                @* Avatar for me (right side) *@
+                                <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center flex-shrink-0 ms-2 align-self-end"
+                                     style="width:28px; height:28px; font-size:0.65rem; font-weight:600;">
+                                    @_currentUserInitials
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @* Typing indicator *@
+                    @if (_saving) {
+                        <div class="d-flex justify-content-start mb-2">
+                            <div class="bg-white border rounded-3 px-3 py-2">
+                                <span class="text-muted small">
+                                    <span class="spinner-grow spinner-grow-sm me-1" style="width:0.4rem; height:0.4rem;"></span>
+                                    <span class="spinner-grow spinner-grow-sm me-1" style="width:0.4rem; height:0.4rem; animation-delay:0.2s;"></span>
+                                    <span class="spinner-grow spinner-grow-sm" style="width:0.4rem; height:0.4rem; animation-delay:0.4s;"></span>
+                                </span>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+
+            @* Chat Input *@
+            <div class="card-footer bg-white py-2">
+                <div class="input-group">
+                    <input type="text" class="form-control" placeholder="Type a message..."
+                           @bind="_newCommentText" @bind:event="oninput"
+                           @onkeydown="HandleKeydown" />
+                    <button class="btn btn-primary" @onclick="SendMessage"
+                            disabled="@(string.IsNullOrWhiteSpace(_newCommentText) || _saving)">
+                        <i class="fa-solid fa-paper-plane"></i>
+                    </button>
+                </div>
+                <div class="small text-muted mt-1">Press <kbd>Enter</kbd> to send</div>
+            </div>
+        </div>
+
+        <div class="d-flex flex-wrap gap-1">
+            <InfoTip Title="Same API, Different Layout"
+                     Description="This page calls GetComments, SaveComment, and DeleteComment — the exact same endpoints as the Comment Thread page. The only difference is the Razor markup. Your messages get 'bg-primary text-white' and justify-content-end. Others get 'bg-white border' and justify-content-start."
+                     Code="@_codeBubble" />
+            <InfoTip Title="Day Separators"
+                     Description="As we loop through comments, we track the last date label. When it changes (e.g., from 'Yesterday' to 'Today'), we insert a horizontal rule with a badge in the middle. This groups messages by day without duplicating date headers."
+                     Code="@_codeDaySep" />
+            <InfoTip Title="Typing Indicator"
+                     Description="While the Save API call is in progress, we show three animated dots (spinner-grow) at the bottom of the chat. Each dot has a different animation-delay to create the wave effect. This is the same indicator Slack and iMessage show."
+                     Code="@_codeTyping" />
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+
+    private bool _loading = true;
+    private bool _loadedData = false;
+    private bool _saving = false;
+    private string _pageName = "chatview";
+
+    // InfoTip snippets
+    private string _codeBubble = "<div class=\"d-flex @(isMe ? \"justify-content-end\" : \"justify-content-start\")\">\n    <div class=\"rounded-3 @(isMe ? \"bg-primary text-white\" : \"bg-white border\")\">\n        @comment.Text\n    </div>\n</div>";
+    private string _codeDaySep = "string dateLabel = GetDateLabel(comment.Created);\nif (dateLabel != lastDateLabel) {\n    // Insert separator with badge\n}";
+    private string _codeTyping = "<span class=\"spinner-grow\" style=\"width:0.4rem; animation-delay:0.2s;\"></span>";
+
+    // Data
+    private List<DataObjects.SampleItem> _items = new();
+    private List<DataObjects.SampleComment> _comments = new();
+    private Guid _selectedItemId;
+    private string _newCommentText = "";
+    private string _currentUserInitials = "";
+    private string _currentUserName = "";
+
+    // ── Lifecycle ──
+
+    public void Dispose()
+    {
+        Model.OnChange -= OnDataModelUpdated;
+        Model.OnSignalRUpdate -= SignalRUpdate;
+        Model.Subscribers_OnChange.Remove(_pageName);
+        Model.Subscribers_OnSignalRUpdate.Remove(_pageName);
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.View = _pageName;
+        Model.OnChange += OnDataModelUpdated;
+        Model.OnSignalRUpdate += SignalRUpdate;
+        if (!Model.Subscribers_OnChange.Contains(_pageName)) { Model.Subscribers_OnChange.Add(_pageName); }
+        if (!Model.Subscribers_OnSignalRUpdate.Contains(_pageName)) { Model.Subscribers_OnSignalRUpdate.Add(_pageName); }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+
+            _currentUserName = (Model.User.FirstName + " " + Model.User.LastName).Trim();
+            if (string.IsNullOrWhiteSpace(_currentUserName)) _currentUserName = Model.User.Email ?? "User";
+            _currentUserInitials = GetInitials(_currentUserName);
+
+            var items = await Helpers.GetOrPost<List<DataObjects.SampleItem>>("api/Data/GetSampleItems", new List<Guid>());
+            if (items != null && items.Any()) {
+                _items = items.Where(i => !i.Deleted).Take(10).ToList();
+                _selectedItemId = _items.First().SampleItemId;
+                await LoadComments();
+            }
+
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnDataModelUpdated()
+    {
+        if (Model.View == _pageName) StateHasChanged();
+    }
+
+    // ── SignalR ──
+
+    private async void SignalRUpdate(DataObjects.SignalRUpdate update)
+    {
+        if (update.UpdateType == DataObjects.SignalRUpdateType.CommentSaved) {
+            var saved = Helpers.DeserializeObject<DataObjects.SampleComment>(update.ObjectAsString);
+            if (saved == null || saved.SampleItemId != _selectedItemId) return;
+
+            var existing = _comments.FirstOrDefault(c => c.CommentId == saved.CommentId);
+            if (existing != null) {
+                int idx = _comments.IndexOf(existing);
+                _comments[idx] = saved;
+            } else {
+                _comments.Add(saved);
+            }
+            await InvokeAsync(StateHasChanged);
+        } else if (update.UpdateType == DataObjects.SignalRUpdateType.CommentDeleted) {
+            _comments.RemoveAll(c => c.CommentId == update.ItemId);
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    // ── Data ──
+
+    private async Task LoadComments()
+    {
+        if (_selectedItemId == Guid.Empty) return;
+        var result = await Helpers.GetOrPost<List<DataObjects.SampleComment>>("api/Data/GetComments", _selectedItemId);
+        if (result != null) _comments = result;
+        StateHasChanged();
+    }
+
+    // ── Send ──
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(_newCommentText)) return;
+
+        _saving = true;
+        StateHasChanged();
+
+        var comment = new DataObjects.SampleComment {
+            SampleItemId = _selectedItemId,
+            AuthorName = _currentUserName,
+            AuthorInitials = _currentUserInitials,
+            Text = _newCommentText.Trim(),
+        };
+
+        var result = await Helpers.GetOrPost<DataObjects.SampleComment>("api/Data/SaveComment", comment);
+        if (result != null && !_comments.Any(c => c.CommentId == result.CommentId)) {
+            _comments.Add(result);
+            _newCommentText = "";
+        }
+
+        _saving = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleKeydown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey) {
+            await SendMessage();
+        }
+    }
+
+    // ── Helpers ──
+
+    private bool IsCurrentUser(string authorName) => authorName == _currentUserName;
+
+    private string GetInitials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "?";
+        string[] parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return string.Concat(parts.Select(p => p[0])).ToUpper();
+    }
+
+    private string GetDateLabel(DateTime utcTime)
+    {
+        DateTime local = utcTime.ToLocalTime().Date;
+        DateTime today = DateTime.Now.Date;
+
+        if (local == today) return "Today";
+        if (local == today.AddDays(-1)) return "Yesterday";
+        if (local >= today.AddDays(-7)) return local.ToString("dddd");
+        return local.ToString("MMM d, yyyy");
+    }
+}

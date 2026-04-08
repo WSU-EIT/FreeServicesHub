@@ -1,0 +1,117 @@
+@implements IDisposable
+@inject IJSRuntime jsRuntime
+
+@if (IncludeClearButton) {
+    <button type="button" class="@ClearButtonClass" @onclick="Clear" disabled="@(String.IsNullOrWhiteSpace(Value))">
+        <i class="@ClearButtonIcon"></i> @ClearButtonText
+    </button>
+}
+<div class="signature @Class" id="@SignatureId"></div>
+
+@code {
+    [Parameter] public string Class { get; set; } = "";
+
+    /// <summary>
+    /// OPTIONAL: An Id for the signature editor. If empty a random Id will be generated.
+    /// </summary>
+    [Parameter] public string Id { get; set;} = "";
+
+    /// <summary>
+    /// OPTIONAL: Show a clear button to clear the signature.
+    /// </summary>
+    [Parameter] public bool IncludeClearButton { get; set; } = false;
+
+    /// <summary>
+    /// OPTIONAL: If showing the clear button this is the class to display on the button.
+    /// </summary>
+    [Parameter] public string ClearButtonClass { get; set; } = "btn btn-sm btn-dark";
+
+    /// <summary>
+    /// OPTIONAL: If showing the clear button this is the text to display on the button.
+    /// </summary>
+    [Parameter] public string? ClearButtonText { get; set; } = "Clear";
+
+    /// <summary>
+    /// OPTIONAL: If showing the clear button this is the class to display for the icon.
+    /// </summary>
+    [Parameter] public string? ClearButtonIcon { get; set; } = "fas fa-eraser";
+
+    /// <summary>
+    /// The signature value (base30 format)
+    /// </summary>
+    [Parameter] public string Value { get; set; } = "";
+
+    /// <summary>
+    /// Internal method for 2-way binding with @bind-Value
+    /// </summary>
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+
+    protected string _id = Guid.NewGuid().ToString().Replace("-", "").ToLower();
+
+    private IJSObjectReference jsModule = null!;
+    protected DotNetObjectReference<Signature>? dotNetHelper;
+
+    public void Dispose()
+    {
+        dotNetHelper?.Dispose();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) {
+            dotNetHelper = DotNetObjectReference.Create(this);
+
+            jsModule = await jsRuntime.InvokeAsync<IJSObjectReference>("import",
+                "./Shared/Signature.razor.js");
+
+            await jsModule.InvokeVoidAsync("SetDotNetHelper", dotNetHelper);
+
+            if (!String.IsNullOrWhiteSpace(Value)) {
+                if (!Value.ToLower().StartsWith("image/jsignature;base30,")) {
+                    Value = "";
+                    ValueHasChanged();
+                }
+            }
+
+            await jsModule.InvokeVoidAsync("SetupSignature", SignatureId, Value);
+        }
+    }
+
+    public async Task Clear()
+    {
+        await jsModule.InvokeVoidAsync("ClearSignature", SignatureId);
+
+        Value = String.Empty;
+        ValueHasChanged();
+    }
+
+    public string GetValue()
+    {
+        return Value;
+    }
+
+    protected string SignatureId {
+        get {
+            return !String.IsNullOrWhiteSpace(Id) ? Id : _id;
+        }
+    }
+
+    [JSInvokable]
+    public void SignatureUpdated(string value)
+    {
+        Value = value;
+        ValueHasChanged();
+    }
+
+    public async Task SetValue(string value)
+    {
+        Value = value;
+        ValueHasChanged();
+    }
+
+    protected void ValueHasChanged()
+    {
+        ValueChanged.InvokeAsync(Value);
+        StateHasChanged();
+    }
+}

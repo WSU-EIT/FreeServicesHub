@@ -1,0 +1,23 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitignore" />
+    <File Path="LICENSE" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/Solution Items/templates/">
+    <File Path="Templates/build-template.yml" />
+    <File Path="Templates/clean-workspace-template.yml" />
+    <File Path="Templates/common-variables.yml" />
+    <File Path="Templates/deploy-template.yml" />
+    <File Path="Templates/dump-env-variables-template.yml" />
+    <File Path="Templates/gather-iis-info-template.yml" />
+  </Folder>
+  <Project Path="docs/Docs.csproj" />
+  <Project Path="FreeCICD.Client/FreeCICD.Client.csproj" />
+  <Project Path="FreeCICD.DataAccess/FreeCICD.DataAccess.csproj" Id="c3d74026-d748-47a7-aba3-a3296d06b4ef" />
+  <Project Path="FreeCICD.DataObjects/FreeCICD.DataObjects.csproj" Id="b5bbbe19-a355-4d45-9d83-6dc59b12bd9a" />
+  <Project Path="FreeCICD.EFModels/FreeCICD.EFModels.csproj" Id="118f14f1-b4e3-4f40-892f-b5a6ac5ed97a" />
+  <Project Path="FreeCICD.Plugins/FreeCICD.Plugins.csproj" Id="5a6be7bb-0264-4631-9d74-5cc37d0f5c23" />
+  <Project Path="FreeCICD/FreeCICD.csproj" />
+</Solution>

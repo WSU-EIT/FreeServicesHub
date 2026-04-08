@@ -1,0 +1,54 @@
+@page "/Examples/ChartsV5"
+@page "/{TenantCode}/Examples/ChartsV5"
+@implements IDisposable
+@inject BlazorDataModel Model
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) { <h1 class="page-title"><i class="fa-solid fa-globe me-1"></i> Web Analytics</h1><LoadingMessage /> } else {
+        <div class="@Model.StickyMenuClass"><h1 class="page-title"><i class="fa-solid fa-globe me-1"></i> V5: Web Analytics Dashboard <StickyMenuIcon /></h1></div>
+
+        <ExampleNav />
+        <AboutSection Title="Charts in Context: Web Analytics" Subtitle="Page views, bounce rate, referrers — the Google Analytics pattern" IconClass="fa-solid fa-globe">
+            <p class="small text-muted mb-0">Charts in a web analytics context. Page views, unique visitors, bounce rate, top pages, and referral sources — the Google Analytics / Plausible pattern.</p>
+        </AboutSection>
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Web Analytics KPIs"
+                     Description="Web analytics dashboards show page views, unique visitors, bounce rate, and session duration. The same KPI card grid (row-cols-2 row-cols-md-4) and trend arrows pattern. This is the Google Analytics/Plausible dashboard layout."
+                     Code="@_codeWebKpi" />
+            <InfoTip Title="Top Pages Table"
+                     Description="A ranked table shows the most visited pages with view counts and percentage of total traffic. Each row has a rank number, page path, and bar visualization. This 'Top N' pattern is the most common analytics view."
+                     Code="@_codeTopPages" />
+            <InfoTip Title="Traffic Sources Breakdown"
+                     Description="A horizontal bar chart breaks down traffic by source (Organic, Direct, Referral, Social). Each source has a colored progress bar and percentage. This category-breakdown pattern works for any dimension: browser, country, device, etc."
+                     Code="@_codeSources" />
+        </div>
+        <div class="row row-cols-2 row-cols-md-4 g-2 mb-3">
+            <div class="col"><div class="card border-0 shadow-sm text-center py-2"><div class="h4 mb-0 text-primary">48.2k</div><div class="small text-muted">Page Views</div><div class="small text-success"><i class="fa-solid fa-arrow-up"></i> 18%</div></div></div>
+            <div class="col"><div class="card border-0 shadow-sm text-center py-2"><div class="h4 mb-0 text-success">12.4k</div><div class="small text-muted">Unique Visitors</div><div class="small text-success"><i class="fa-solid fa-arrow-up"></i> 23%</div></div></div>
+            <div class="col"><div class="card border-0 shadow-sm text-center py-2"><div class="h4 mb-0 text-warning">42%</div><div class="small text-muted">Bounce Rate</div><div class="small text-danger"><i class="fa-solid fa-arrow-up"></i> 5%</div></div></div>
+            <div class="col"><div class="card border-0 shadow-sm text-center py-2"><div class="h4 mb-0 text-info">3:24</div><div class="small text-muted">Avg Session</div><div class="small text-success"><i class="fa-solid fa-arrow-up"></i> 12%</div></div></div>
+        </div>
+        <div class="row g-3 mb-3">
+            <div class="col-md-6"><div class="card shadow-sm border-0"><div class="card-header bg-white py-2"><span class="small fw-semibold">Top Pages</span></div><div class="card-body p-0">
+                @foreach (var p in new[] { ("/", "Home", "12,450"), ("/examples/dashboard", "Dashboard", "8,230"), ("/examples/sampleitems", "Sample Items", "5,120"), ("/examples/bootstrapshowcase", "Bootstrap", "3,890"), ("/examples/chartsdashboard", "Charts", "2,740") }) {
+                    <div class="px-3 py-2 border-bottom d-flex justify-content-between"><div><span class="small fw-semibold">@p.Item2</span><div class="small text-muted">@p.Item1</div></div><span class="small fw-semibold">@p.Item3</span></div>
+                }
+            </div></div></div>
+            <div class="col-md-6"><div class="card shadow-sm border-0"><div class="card-header bg-white py-2"><span class="small fw-semibold">Traffic Sources</span></div><div class="card-body p-0">
+                @foreach (var s in new[] { ("Direct", 45, "bg-primary"), ("Google Search", 28, "bg-success"), ("GitHub", 15, "bg-dark"), ("Twitter/X", 8, "bg-info"), ("Other", 4, "bg-secondary") }) {
+                    <div class="px-3 py-2 border-bottom d-flex align-items-center gap-2"><span class="small" style="min-width:100px;">@s.Item1</span><div class="flex-grow-1"><div class="progress" style="height:6px;"><div class="progress-bar @s.Item3" style="width:@s.Item2%"></div></div></div><span class="small fw-semibold">@s.Item2%</span></div>
+                }
+            </div></div></div>
+        </div>
+    }
+}
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "chartsv5";
+    private string _codeWebKpi = "<div class=\"h4 text-primary\">142k</div>\n<div class=\"small text-muted\">Page Views</div>";
+    private string _codeTopPages = "<tr>\n  <td class=\"small\">1</td>\n  <td class=\"small\">/home</td>\n  <td class=\"small text-end\">45,210</td>\n</tr>";
+    private string _codeSources = "<div class=\"d-flex gap-2\">\n  <span>Organic</span>\n  <div class=\"progress flex-grow-1\">\n    <div class=\"progress-bar bg-success\" style=\"width:45%\">45%</div>\n  </div>\n</div>";
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) Model.TenantCodeFromUrl = TenantCode; if (Model.Loaded && Model.LoggedIn && !_loadedData) { _loadedData = true; _loading = false; StateHasChanged(); } }
+}

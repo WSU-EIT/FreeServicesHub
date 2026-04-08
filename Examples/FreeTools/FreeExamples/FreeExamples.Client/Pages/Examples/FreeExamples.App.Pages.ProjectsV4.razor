@@ -1,0 +1,152 @@
+﻿@page "/Examples/ProjectsV4"
+@page "/{TenantCode}/Examples/ProjectsV4"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@* V4: Project Comparison — Side-by-side comparison of 2-3 projects *@
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><i class="fa-solid fa-code-compare me-1"></i> Project Comparison</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title"><i class="fa-solid fa-code-compare me-1"></i> V4: Project Comparison <StickyMenuIcon /></h1>
+        </div>
+
+        <ExampleNav />
+        <AboutSection Title="Project Comparison" Subtitle="Select 2-3 projects to compare ticket counts, completion, and assignment" IconClass="fa-solid fa-code-compare">
+            <p class="small text-muted mb-0">Side-by-side comparison cards showing metrics for each selected project. Useful for sprint planning and resource allocation decisions.</p>
+        </AboutSection>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Multi-Select Pattern"
+                     Description="Checkboxes let you pick 2-3 projects. The comparison view only renders when at least 2 are selected, up to a max of 3."
+                     Code="@_codeSelect" />
+        </div>
+
+        @* Project selector *@
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-light"><i class="fa-solid fa-check-square me-1"></i> Select Projects to Compare (2-3)</div>
+            <div class="card-body">
+                <div class="row row-cols-2 row-cols-md-3 row-cols-lg-4 g-2">
+                    @foreach (var p in _all.Where(x => x.ParentProjectId == null).OrderBy(x => x.Name)) {
+                        var isSelected = _selectedIds.Contains(p.RecordId);
+                        <div class="col">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" checked="@isSelected" disabled="@(!isSelected && _selectedIds.Count >= 3)"
+                                       @onchange="() => ToggleProject(p.RecordId)" id="@($"cmp-{p.RecordId}")"/>
+                                <label class="form-check-label small" for="@($"cmp-{p.RecordId}")">
+                                    @if (!string.IsNullOrEmpty(p.Color)) { <span class="rounded-circle d-inline-block me-1" style="width:8px; height:8px; background:@p.Color;"></span> }
+                                    @p.Name
+                                </label>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        @if (_selectedIds.Count >= 2) {
+            <div class="row g-3">
+                @foreach (var id in _selectedIds) {
+                    var p = _all.First(x => x.RecordId == id);
+                    var tickets = _allTickets.Where(t => t.ProjectId == id).ToList();
+                    var total = tickets.Count;
+                    var done = tickets.Count(t => t.Status == DataObjects.TicketStatus.Done || t.Status == DataObjects.TicketStatus.Closed);
+                    var pct = total > 0 ? (int)(done * 100.0 / total) : 0;
+                    var byType = tickets.GroupBy(t => t.Type).Select(g => new { Type = g.Key, Count = g.Count() }).OrderByDescending(g => g.Count);
+                    var byPriority = tickets.GroupBy(t => t.Priority).Select(g => new { Priority = g.Key, Count = g.Count() }).OrderBy(g => g.Priority);
+                    var assigned = tickets.Where(t => !string.IsNullOrEmpty(t.AssignedTo)).GroupBy(t => t.AssignedTo).Select(g => new { Name = g.Key, Count = g.Count() }).OrderByDescending(g => g.Count);
+                    var totalPoints = tickets.Where(t => t.StoryPoints.HasValue).Sum(t => t.StoryPoints!.Value);
+
+                    <div class="col-md-@(12 / _selectedIds.Count)">
+                        <div class="card border-0 shadow-sm h-100" style="border-top:4px solid @(p.Color ?? "#6c757d") !important;">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0">@p.Name <code class="small">@p.ProjectKey</code></h6>
+                            </div>
+                            <div class="card-body small">
+                                <div class="row g-2 mb-3">
+                                    <div class="col-6 text-center">
+                                        <div class="fs-4 fw-bold text-primary">@total</div>
+                                        <div class="text-muted">Tickets</div>
+                                    </div>
+                                    <div class="col-6 text-center">
+                                        <div class="fs-4 fw-bold text-success">@pct%</div>
+                                        <div class="text-muted">Complete</div>
+                                    </div>
+                                    <div class="col-6 text-center">
+                                        <div class="fs-4 fw-bold">@totalPoints</div>
+                                        <div class="text-muted">Story Pts</div>
+                                    </div>
+                                    <div class="col-6 text-center">
+                                        <div class="fs-4 fw-bold text-info">@assigned.Count()</div>
+                                        <div class="text-muted">Assignees</div>
+                                    </div>
+                                </div>
+
+                                <div class="progress mb-3" style="height:8px;">
+                                    <div class="progress-bar bg-success" style="width:@pct%"></div>
+                                </div>
+
+                                <h6 class="text-muted">By Type</h6>
+                                @foreach (var g in byType) {
+                                    <div class="d-flex justify-content-between"><span>@g.Type</span><span class="badge bg-secondary">@g.Count</span></div>
+                                }
+
+                                <h6 class="text-muted mt-2">By Priority</h6>
+                                @foreach (var g in byPriority) {
+                                    <div class="d-flex justify-content-between"><span>@g.Priority</span><span class="badge @GetPriorityBadge(g.Priority)">@g.Count</span></div>
+                                }
+
+                                <h6 class="text-muted mt-2">Assignment</h6>
+                                @foreach (var a in assigned.Take(5)) {
+                                    <div class="d-flex justify-content-between"><span>@a.Name</span><span class="badge bg-info">@a.Count</span></div>
+                                }
+                                @{ var unassigned = tickets.Count(t => string.IsNullOrEmpty(t.AssignedTo)); }
+                                @if (unassigned > 0) {
+                                    <div class="d-flex justify-content-between text-danger"><span>Unassigned</span><span class="badge bg-danger">@unassigned</span></div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        } else {
+            <div class="text-center text-muted py-4"><i class="fa-solid fa-arrow-up fa-2x mb-2 opacity-50"></i><div>Select at least 2 projects above to compare</div></div>
+        }
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "projectsv4";
+    private List<DataObjects.Project> _all = new();
+    private List<DataObjects.Ticket> _allTickets = new();
+    private List<Guid> _selectedIds = new();
+
+    private string _codeSelect = "<input type=\"checkbox\" checked=\"@isSelected\" disabled=\"@(!isSelected && count >= 3)\" />";
+
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) Model.TenantCodeFromUrl = TenantCode;
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            var p = await Helpers.GetOrPost<List<DataObjects.Project>>("api/Data/GetProjects", new List<Guid>());
+            var t = await Helpers.GetOrPost<List<DataObjects.Ticket>>("api/Data/GetTickets", new List<Guid>());
+            _all = p ?? new(); _allTickets = t ?? new();
+            _loading = false; StateHasChanged();
+        }
+    }
+
+    private void ToggleProject(Guid id) {
+        if (!_selectedIds.Remove(id) && _selectedIds.Count < 3) _selectedIds.Add(id);
+    }
+
+    private static string GetPriorityBadge(DataObjects.TicketPriority p) => p switch {
+        DataObjects.TicketPriority.Critical => "bg-danger", DataObjects.TicketPriority.High => "bg-warning text-dark",
+        DataObjects.TicketPriority.Medium => "bg-info", DataObjects.TicketPriority.Low => "bg-secondary", _ => "bg-light text-dark"
+    };
+}

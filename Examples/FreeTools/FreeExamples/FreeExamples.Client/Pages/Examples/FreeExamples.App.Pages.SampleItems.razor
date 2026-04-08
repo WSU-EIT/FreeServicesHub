@@ -1,0 +1,476 @@
+@page "/Examples/SampleItems"
+@page "/{TenantCode}/Examples/SampleItems"
+@implements IDisposable
+@inject BlazorDataModel Model
+
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title"><Icon Name="Files" /> Sample Items</h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title">
+                <Icon Name="Files" /> Sample Items
+                <StickyMenuIcon />
+            </h1>
+
+            <AboutSection Title="About Sample Items" Subtitle="Learn how web apps show lists, search, filter, add, edit, and delete records" IconClass="fa-solid fa-list">
+                <div class="row">
+                    <div class="col-md-4 mb-2">
+                        <h6 class="text-info"><i class="fa-solid fa-question-circle me-1"></i>What Is This Page?</h6>
+                        <p class="small text-muted mb-0">
+                            This is the most common pattern in web development: a <strong>list of records</strong>.
+                            Think of it like a spreadsheet — you can see all your items, search for specific ones,
+                            filter by category or status, and click a row to edit it. You can also add new items,
+                            delete existing ones, and export everything to a CSV file (a spreadsheet format).
+                            This is called <strong>CRUD</strong>: Create, Read, Update, Delete.
+                        </p>
+                    </div>
+
+                    <div class="col-md-4 mb-2">
+                        <h6 class="text-info"><i class="fa-solid fa-lightbulb me-1"></i>What You'll Learn</h6>
+                        <ul class="small text-muted mb-0 ps-3">
+                            <li><strong>Pagination</strong> — splitting a big list into pages (like pages of a book)</li>
+                            <li><strong>Filtering</strong> — narrowing results by typing keywords or selecting categories</li>
+                            <li><strong>Real-time sync</strong> — changes show up in other browser tabs instantly via SignalR</li>
+                            <li><strong>Two-click delete</strong> — preventing accidental deletions by requiring confirmation</li>
+                            <li><strong>CSV export</strong> — turning your data into a spreadsheet file</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-4 mb-2">
+                        <h6 class="text-info"><i class="fa-solid fa-road me-1"></i>How Does It Work?</h6>
+                        <p class="small text-muted mb-0">
+                            The page sends your search/filter choices to the server as a <strong>POST request</strong>
+                            (like filling out a form and clicking submit). The server queries the database, applies
+                            your filters, grabs just one page of results, and sends them back as <strong>JSON</strong>
+                            (a data format computers use to exchange information). Blazor then renders the table
+                            rows from that data — no full page reload needed.
+                        </p>
+                    </div>
+                </div>
+            </AboutSection>
+
+        <ExampleNav />
+
+            <div class="mb-2">
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-success" @onclick="Add">
+                        <i class="fa-solid fa-plus me-1"></i> Add New
+                    </button>
+                    <button type="button" class="btn btn-dark" @onclick="Export" disabled="@Filter.Loading">
+                        <i class="fa-solid fa-file-csv me-1"></i> Export CSV
+                    </button>
+                    <button type="button" class="btn btn-warning" @onclick="ClearFilter" disabled="@Filter.Loading">
+                        <i class="fa-solid fa-eraser me-1"></i> Clear
+                    </button>
+                    @if (Filter.ShowFilters) {
+                        <button type="button" class="btn btn-dark" @onclick="ToggleShowFilter" disabled="@Filter.Loading">
+                            <i class="fa-solid fa-eye-slash me-1"></i> Hide Filter
+                        </button>
+                    } else {
+                        <button type="button" class="btn btn-dark" @onclick="ToggleShowFilter" disabled="@Filter.Loading">
+                            <i class="fa-solid fa-filter me-1"></i> Show Filter
+                        </button>
+                    }
+                    <button type="button" class="btn btn-dark" @onclick="Refresh" disabled="@Filter.Loading">
+                        <i class="fa-solid fa-refresh me-1"></i> Refresh
+                    </button>
+                </div>
+                <InfoTip Title="Action Buttons"
+                         Description="These buttons perform actions on your data. Add New opens a blank form for a new record. Export CSV downloads all your filtered data as a spreadsheet. Clear resets all your search filters. Show/Hide Filter toggles the search bar. Refresh reloads data from the server. Buttons turn grey (disabled) while loading to prevent double-clicks."
+                         Code="@_codeActionBtn" />
+
+                @if (Filter.ShowFilters && !Filter.Loading) {
+                    <div class="keyword-search mb-2">
+                        <label for="sampleitems-filter-keyword">Search
+                            <InfoTip Title="Keyword Search"
+                                     Description="When you type in this box and press Enter (or tab away), the page sends your search term to the server. The server searches the Name, Description, and Category fields for matches. This is called a filter — it narrows down the full list to only matching records."
+                                     Code="@_codeKeywordSearch" />
+                        </label>
+                        <div class="fixed-200">
+                            <input type="text"
+                                   id="sampleitems-filter-keyword"
+                                   class="form-control"
+                                   value="@Filter.Keyword"
+                                   @onchange="KeywordChanged"
+                                   placeholder="Search name, description, category..." />
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        @if (Filter.ShowFilters) {
+            <div class="row mb-2">
+                <div class="col col-lg-2 col-md-3 col-sm-4 col-12 mb-2">
+                    <label for="sampleitems-filter-status">Status
+                        <InfoTip Title="Filter Dropdowns"
+                                 Description="These dropdown lists let you narrow results by one value. When you select Active, only Active items are shown. Selecting All removes the filter. The bind attribute connects the dropdown to a C# variable — when you change the selection, Blazor automatically updates the variable and re-fetches data."
+                                 Code="@_codeFilterDropdown" />
+                    </label>
+                    <select class="form-select" size="5" id="sampleitems-filter-status" @bind="Filter.Status" @bind:after="LoadFilter">
+                        @if (string.IsNullOrWhiteSpace(Filter.Status)) {
+                            <option value="" selected>All</option>
+                        } else {
+                            <option value="">All</option>
+                        }
+                        <option value="Draft">Draft</option>
+                        <option value="Active">Active</option>
+                        <option value="Completed">Completed</option>
+                        <option value="Archived">Archived</option>
+                    </select>
+                </div>
+
+                <div class="col col-lg-2 col-md-3 col-sm-4 col-12 mb-2">
+                    <label for="sampleitems-filter-category">Category</label>
+                    <select class="form-select" size="5" id="sampleitems-filter-category" @bind="Filter.Category" @bind:after="LoadFilter">
+                        @if (string.IsNullOrWhiteSpace(Filter.Category)) {
+                            <option value="" selected>All</option>
+                        } else {
+                            <option value="">All</option>
+                        }
+                        @foreach (var cat in Filter.AvailableCategories) {
+                            <option value="@cat">@cat</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="col col-lg-2 col-md-3 col-sm-4 col-12 mb-2">
+                    <label for="sampleitems-filter-enabled">Enabled</label>
+                    <select class="form-select" size="3" id="sampleitems-filter-enabled" @bind="Filter.Enabled" @bind:after="LoadFilter">
+                        @if (string.IsNullOrWhiteSpace(Filter.Enabled)) {
+                            <option value="" selected>All</option>
+                        } else {
+                            <option value="">All</option>
+                        }
+                        <option value="enabled">Enabled Only</option>
+                        <option value="disabled">Disabled Only</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="mb-2">
+                <div class="form-check form-switch">
+                    <input type="checkbox"
+                        id="sampleitems-filter-IncludeDeletedRecords"
+                        class="form-check-input"
+                        @bind="Filter.IncludeDeletedItems"
+                        @bind:after="LoadFilter" />
+                    <label for="sampleitems-filter-IncludeDeletedRecords" class="form-check-label">
+                        Include Deleted Records
+                        <InfoTip Title="Toggle Switch"
+                                 Description="This is a Bootstrap switch — a styled checkbox that looks like a sliding toggle. When turned on, soft-deleted records (items marked as deleted but not permanently removed) appear in the list. Soft delete means the record stays in the database with a Deleted flag instead of being erased."
+                                 Code="@_codeToggleSwitch" />
+                    </label>
+                </div>
+            </div>
+        }
+
+        @if (Filter.Loading) {
+            <LoadingMessage />
+        } else {
+            if (Filter.RecordCount == 0) {
+                <div class="text-muted">No items to show.</div>
+            } else {
+                <div class="d-flex flex-wrap gap-1 mb-1">
+                    <InfoTip Title="Pagination"
+                             Description="Pagination splits a long list into pages (like pages of a book). Instead of loading all records at once, the server sends only 10 at a time. You click page numbers or Next/Previous to see more. This makes the page load faster and uses less memory."
+                             Code="@_codePagination" />
+                    <InfoTip Title="Page Size"
+                             Description="The dropdown next to the record count controls how many rows appear per page. Choosing 25 shows more rows but takes longer to load. Choosing 10 keeps the page fast. The value is sent to the server with each request so it only returns that many records."
+                             Code="@_codePageSize" />
+                    <InfoTip Title="Column Sorting"
+                             Description="Clicking a column header sorts the data by that column. The arrow shows which direction: ascending (A to Z, 1 to 9) or descending (Z to A, 9 to 1). Sorting happens on the server — the full dataset is sorted before the page of results is returned."
+                             Code="@_codeSorting" />
+                    <InfoTip Title="Edit Link"
+                             Description="Clicking the Edit button in a row navigates to the edit page for that specific record. The record's unique ID (a GUID — a long random string) is passed in the URL. The edit page uses that ID to load the full record from the server."
+                             Code="@_codeEditLink" />
+                </div>
+                <PagedRecordset ActionHandlers="ActionHandlers"
+                    Configuration="Config"
+                    Formatters="Formatters"
+                    NavigationCallbackHander="NavigationCallbackHandler"
+                    NavigationLocation="PagedRecordset.NavLocation.Both"
+                    RecordData="Data"
+                    RowClasses="_rowClasses"
+                    UseBootstrap="true" />
+            }
+        }
+    }
+}
+
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+
+    private List<PagedRecordset.ActionHandler> ActionHandlers = [];
+    private PagedRecordset.Config Config = new();
+    private PagedRecordset.Recordset Data = new();
+    private DataObjects.FilterSampleItems Filter = new();
+    private List<PagedRecordset.Formatter> Formatters = [];
+    private List<string> _rowClasses = [];
+
+    private bool _loading = true;
+    private bool _loadedData = false;
+    private string _pageName = "sampleitems";
+    private string _codeActionBtn = "<button class=\"btn btn-success\" @onclick=\"Add\">\n    Add New\n</button>";
+    private string _codeKeywordSearch = "<input class=\"form-control\" value=\"@Filter.Keyword\" @onchange=\"KeywordChanged\" />";
+    private string _codeFilterDropdown = "<select class=\"form-select\" @bind=\"Filter.Status\" @bind:after=\"LoadFilter\">";
+    private string _codeToggleSwitch = "<input type=\"checkbox\" class=\"form-check-input\" @bind=\"Filter.IncludeDeletedItems\" />";
+    private string _codePagination = "NavigationLocation=\"PagedRecordset.NavLocation.Both\"";
+    private string _codePageSize = "Config.PageSize = 10;";
+    private string _codeSorting = "Config.SortField = \"Name\";\nConfig.SortDirection = \"ASC\";";
+    private string _codeEditLink = "NavigationManager.NavigateTo($\"Examples/EditSampleItem/{id}\")";
+
+    public void Dispose()
+    {
+        Model.OnChange -= OnDataModelUpdated;
+        Model.Subscribers_OnChange.Remove(_pageName);
+        Model.OnSignalRUpdate -= SignalRUpdate;
+        Model.Subscribers_OnSignalRUpdate.Remove(_pageName);
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.View = _pageName;
+        Model.OnChange += OnDataModelUpdated;
+        if (!Model.Subscribers_OnChange.Contains(_pageName)) { Model.Subscribers_OnChange.Add(_pageName); }
+        Model.OnSignalRUpdate += SignalRUpdate;
+        if (!Model.Subscribers_OnSignalRUpdate.Contains(_pageName)) { Model.Subscribers_OnSignalRUpdate.Add(_pageName); }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) {
+            Model.TenantCodeFromUrl = TenantCode;
+        }
+
+        Config = new PagedRecordset.Config {
+            TextFirstRecord = Helpers.Text("FirstRecord"),
+            TextLastRecord = Helpers.Text("LastRecord"),
+            TextNextRecord = Helpers.Text("NextRecord"),
+            TextOf = Helpers.Text("Of"),
+            TextPreviousRecord = Helpers.Text("PreviousRecord"),
+            TextRecord = Helpers.Text("Record"),
+            TextRecords = Helpers.Text("Records"),
+            TextRecordsPerPage = Helpers.Text("RecordsPerPage"),
+            TextShowing = Helpers.Text("Showing"),
+            TextShowingAllRecords = Helpers.Text("ShowingAllRecords"),
+        };
+
+        if (Model.Loaded && Model.LoggedIn && !_loadedData) {
+            _loadedData = true;
+            await LoadData();
+        }
+    }
+
+    private void OnDataModelUpdated()
+    {
+        if (Model.View == _pageName) StateHasChanged();
+    }
+
+    private async Task KeywordChanged(ChangeEventArgs e)
+    {
+        Filter.Keyword = e.Value?.ToString();
+        await LoadFilter();
+    }
+
+    private async void SignalRUpdate(DataObjects.SignalRUpdate update)
+    {
+        if ((update.UpdateType == DataObjects.SignalRUpdateType.SampleItemSaved
+            || update.UpdateType == DataObjects.SignalRUpdateType.SampleItemDeleted)
+            && update.UserId != Model.User.UserId) {
+            await LoadFilter();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        ActionHandlers = [
+            new PagedRecordset.ActionHandler {
+                CallbackHandler = OnRecordSelected,
+                ActionElement =
+                    "<button type=\"button\" class=\"btn btn-xs btn-primary nowrap action-button\">" +
+                    "<i class=\"fa-solid fa-pen-to-square me-1\"></i>Edit" +
+                    "</button>",
+            },
+        ];
+
+        Formatters = [
+            new PagedRecordset.Formatter {
+                DataType = "decimal",
+                CallbackHandler = FormatCurrency,
+            },
+        ];
+
+        await LoadFilter();
+    }
+
+    private async Task LoadFilter()
+    {
+        if (!Model.LoggedIn) return;
+
+        Filter.Loading = true;
+        Filter.TenantId = Model.TenantId;
+
+        if (Filter.RecordsPerPage < 1) {
+            Filter.RecordsPerPage = 10;
+        }
+
+        var results = await Helpers.GetOrPost<DataObjects.FilterSampleItems>("api/Data/GetSampleItemsFiltered", Filter);
+        if (results != null) {
+            Filter = results;
+            Filter.Loading = false;
+            RenderTable();
+            _loading = false;
+            StateHasChanged();
+
+            if (Filter.ShowFilters) {
+                await Helpers.DelayedFocus("sampleitems-filter-keyword");
+            }
+        }
+    }
+
+    private async Task ClearFilter()
+    {
+        Filter.Keyword = null;
+        Filter.Status = null;
+        Filter.Category = null;
+        Filter.Enabled = null;
+        Filter.IncludeDeletedItems = false;
+        Filter.Sort = "name";
+        Filter.SortOrder = "ASC";
+        Filter.Page = 1;
+        await LoadFilter();
+    }
+
+    private void ToggleShowFilter()
+    {
+        Filter.ShowFilters = !Filter.ShowFilters;
+    }
+
+    private async Task Refresh() => await LoadFilter();
+
+    private async void NavigationCallbackHandler(string action, object? o)
+    {
+        switch (action.ToLower()) {
+            case "count":
+                int recordsPerPage = -1;
+                try { recordsPerPage = Convert.ToInt32(o); } catch { }
+                if (recordsPerPage > -1) {
+                    Filter.RecordsPerPage = recordsPerPage;
+                    await LoadFilter();
+                }
+                break;
+
+            case "page":
+                int page = -1;
+                try { page = Convert.ToInt32(o); } catch { }
+                if (page > -1) {
+                    Filter.Page = page;
+                    await LoadFilter();
+                }
+                break;
+
+            case "sort":
+                string dataElementName = string.Empty;
+                try { dataElementName += Convert.ToString(o); } catch { }
+                if (!string.IsNullOrWhiteSpace(dataElementName)) {
+                    string currentSort = Helpers.StringValue(Filter.Sort);
+                    string currentDirection = Helpers.StringValue(Filter.SortOrder);
+
+                    if (currentSort.Equals(dataElementName, StringComparison.OrdinalIgnoreCase)) {
+                        Filter.SortOrder = currentDirection.Equals("ASC", StringComparison.OrdinalIgnoreCase) ? "DESC" : "ASC";
+                    } else {
+                        Filter.Sort = dataElementName;
+                        Filter.SortOrder = "ASC";
+                    }
+                    await LoadFilter();
+                }
+                break;
+        }
+    }
+
+    private void OnRecordSelected(object? record)
+    {
+        if (record != null) {
+            try {
+                var id = Helpers.GetObjectPropertyValue<Guid>(record, "SampleItemId");
+                if (id != Guid.Empty) {
+                    Helpers.NavigateTo("Examples/EditSampleItem/" + id.ToString());
+                }
+            } catch { }
+        }
+    }
+
+    private void Add()
+    {
+        Helpers.NavigateTo("Examples/EditSampleItem/New");
+    }
+
+    private async Task Export()
+    {
+        var all = await Helpers.GetOrPost<List<DataObjects.SampleItem>>("api/Data/GetSampleItems", new List<Guid>());
+        if (all != null) {
+            var csv = Helpers.GetCsvData(all);
+            if (csv != null) {
+                await Helpers.DownloadFileToBrowser("SampleItems_" + Helpers.SafeFileDate() + ".csv", csv);
+                Model.AddMessage($"Exported {all.Count} item(s) to CSV.", MessageType.Success);
+            }
+        } else {
+            Model.AddMessage("Failed to export items.", MessageType.Danger);
+        }
+    }
+
+    private void RenderTable()
+    {
+        var columns = new List<PagedRecordset.Column>();
+        var updatedFilter = Helpers.UpdatePagedRecordsetColumnIcons(Filter);
+        if (updatedFilter.Columns != null && updatedFilter.Columns.Any()) {
+            foreach (var column in updatedFilter.Columns) {
+                columns.Add(new PagedRecordset.Column {
+                    Align = column.Align,
+                    BooleanIcon = column.BooleanIcon,
+                    Class = column.Class,
+                    DataElementName = column.DataElementName,
+                    DataType = column.DataType,
+                    Label = column.Label,
+                    Sortable = column.Sortable,
+                    TipText = column.TipText,
+                });
+            }
+        }
+
+        // Row classes for deleted/disabled items
+        _rowClasses = [];
+        if (Filter.Records != null) {
+            foreach (var record in Filter.Records) {
+                if (record.Deleted) {
+                    _rowClasses.Add("item-deleted");
+                } else if (!record.Enabled) {
+                    _rowClasses.Add("disabled");
+                } else {
+                    _rowClasses.Add("");
+                }
+            }
+        }
+
+        Data = new PagedRecordset.Recordset {
+            Columns = columns,
+            CurrentPage = Filter.Page,
+            TotalPages = Filter.PageCount,
+            TotalRecords = Filter.RecordCount,
+            Records = Filter.Records,
+            RecordsPerPage = Filter.RecordsPerPage,
+            Sort = Filter.Sort,
+            SortOrder = Filter.SortOrder,
+        };
+    }
+
+    private static string FormatCurrency(string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value) && decimal.TryParse(value, out var d)) {
+            return d.ToString("C");
+        }
+        return value ?? "";
+    }
+}

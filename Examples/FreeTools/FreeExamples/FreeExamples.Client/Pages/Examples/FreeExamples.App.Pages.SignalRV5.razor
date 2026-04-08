@@ -1,0 +1,47 @@
+@page "/Examples/SignalRV5"
+@page "/{TenantCode}/Examples/SignalRV5"
+@implements IDisposable
+@inject BlazorDataModel Model
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) { <h1 class="page-title"><i class="fa-solid fa-display me-1"></i> Live Scoreboard</h1><LoadingMessage /> } else {
+        <div class="@Model.StickyMenuClass"><h1 class="page-title"><i class="fa-solid fa-display me-1"></i> V5: Live Scoreboard <StickyMenuIcon /></h1></div>
+
+        <ExampleNav />
+        <AboutSection Title="SignalR in Context: Live Scoreboard" Subtitle="Real-time score updates — the ESPN / hackathon leaderboard pattern" IconClass="fa-solid fa-display">
+            <p class="small text-muted mb-0">A leaderboard that updates in real time via SignalR. Scores change, rankings re-sort, and position changes animate. Think hackathon scores or game leaderboards.</p>
+        </AboutSection>
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <InfoTip Title="Live Scoreboard Layout"
+                     Description="Scores update in real-time via SignalR. Each team has a row with name, score, and trend indicator. The leading team gets highlighted (table-primary). This is the ESPN/live sports scoreboard pattern."
+                     Code="@_codeScoreboard" />
+            <InfoTip Title="Score Animation"
+                     Description="When a score changes, the cell briefly flashes (using a CSS transition or class swap). The new value appears with a subtle bg-warning highlight that fades. This draws attention to what just changed."
+                     Code="@_codeScoreFlash" />
+            <InfoTip Title="Last Updated Timestamp"
+                     Description="A 'Last updated: X seconds ago' indicator shows connection freshness. If the timestamp is stale (>30s), it turns text-danger to indicate possible disconnection. This heartbeat pattern is essential for real-time UIs."
+                     Code="@_codeLastUpdated" />
+        </div>
+        <div class="d-flex justify-content-end mb-3"><button class="btn btn-sm btn-outline-primary" @onclick="RandomizeScores"><i class="fa-solid fa-shuffle me-1"></i> Update Scores</button></div>
+        <div class="card shadow-sm border-0"><div class="card-body p-0"><table class="table table-hover mb-0"><thead class="table-dark"><tr><th class="text-center" style="width:50px;">#</th><th>Team</th><th class="text-center">Score</th><th style="width:100px;"></th></tr></thead><tbody>
+            @{ int rank = 1; }
+            @foreach (var team in _teams.OrderByDescending(t => t.Score)) {
+                <tr><td class="text-center fw-bold @(rank <= 3 ? "text-warning" : "")">@rank</td><td><span class="fw-semibold">@team.Name</span><div class="small text-muted">@team.Motto</div></td><td class="text-center h5 mb-0">@team.Score</td><td><div class="progress" style="height:6px;"><div class="progress-bar bg-success" style="width:@(team.Score)%"></div></div></td></tr>
+                rank++;
+            }
+        </tbody></table></div></div>
+    }
+}
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+    private bool _loading = true, _loadedData = false;
+    private string _pageName = "signalrv5";
+    private string _codeScoreboard = "<tr class=\"@(team.IsLeading ? \"table-primary\" : \"\")\">\n  <td>@team.Name</td>\n  <td class=\"h4\">@team.Score</td>\n</tr>";
+    private string _codeScoreFlash = "// Temporarily add 'bg-warning' class:\nawait Task.Delay(500);\n_flashClass = \"\"; // remove after animation";
+    private string _codeLastUpdated = "<span class=\"@(_secondsAgo > 30 ? \"text-danger\" : \"text-muted\")\">\n  Last updated: @_secondsAgo seconds ago\n</span>";
+    private List<Team> _teams = new() { new("Team Alpha", "Move fast, break things", 72), new("Team Beta", "Slow and steady", 68), new("Team Gamma", "Innovation first", 81), new("Team Delta", "Ship it!", 55), new("Team Epsilon", "Quality matters", 63) };
+    public void Dispose() { Model.OnChange -= StateHasChanged; Model.Subscribers_OnChange.Remove(_pageName); }
+    protected override void OnInitialized() { Model.View = _pageName; Model.OnChange += StateHasChanged; if (!Model.Subscribers_OnChange.Contains(_pageName)) Model.Subscribers_OnChange.Add(_pageName); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) Model.TenantCodeFromUrl = TenantCode; if (Model.Loaded && Model.LoggedIn && !_loadedData) { _loadedData = true; _loading = false; StateHasChanged(); } }
+    private void RandomizeScores() { var r = new Random(); foreach (var t in _teams) t.Score = Math.Min(100, Math.Max(0, t.Score + r.Next(-10, 15))); }
+    private class Team { public string Name; public string Motto; public int Score; public Team(string n, string m, int s) { Name = n; Motto = m; Score = s; } }
+}
