@@ -8,12 +8,12 @@
     <Project Path="Examples/FreeCRM/CRM/CRM.csproj" />
   </Folder>
   <Folder Name="/FreeServicesHub/">
+    <Project Path="../../All-of-Daniels-Projects2/WebDevExample/ReferenceProjects/FreeTools-main/FreeExamples/Docs/Docs.csproj" />
     <Project Path="FreeServicesHub.Agent.Installer/FreeServicesHub.Agent.Installer.csproj" />
     <Project Path="FreeServicesHub.Agent/FreeServicesHub.Agent.csproj" />
     <Project Path="FreeServicesHub.AppHost/FreeServicesHub.AppHost.csproj" />
     <Project Path="FreeServicesHub.TestMe/FreeServicesHub.TestMe.csproj" />
     <Project Path="FreeServicesHub.Tests.Integration/FreeServicesHub.Tests.Integration.csproj" />
-    <Project Path="FreeServicesHub/Docs/Docs.csproj" />
     <Project Path="FreeServicesHub/FreeServicesHub.Client/FreeServicesHub.Client.csproj" />
     <Project Path="FreeServicesHub/FreeServicesHub.DataAccess/FreeServicesHub.DataAccess.csproj" />
     <Project Path="FreeServicesHub/FreeServicesHub.DataObjects/FreeServicesHub.DataObjects.csproj" />
