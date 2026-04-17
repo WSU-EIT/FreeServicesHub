@@ -11,6 +11,9 @@ public static partial class Helpers
                 { "fa:fa-solid fa-server", new List<string> { "AgentDashboard", "Agents" }},
                 { "fa:fa-solid fa-heartbeat", new List<string> { "AgentHeartbeat" }},
                 { "fa:fa-solid fa-key", new List<string> { "AgentApiKey", "RegistrationKey" }},
+                { "fa:fa-solid fa-gears", new List<string> { "BackgroundServices" }},
+                { "fa:fa-solid fa-sliders", new List<string> { "AgentSettings" }},
+                { "fa:fa-solid fa-users-cog", new List<string> { "AgentManagement" }},
             };
 
             return icons;
@@ -110,6 +113,24 @@ public static partial class Helpers
                 AppAdminOnly = false,
             });
 
+            output.Add(new DataObjects.MenuItem {
+                Title = "Background Services",
+                Icon = "BackgroundServices",
+                PageNames = new List<string> { "backgroundservices" },
+                SortOrder = 110,
+                url = Helpers.BuildUrl("BackgroundServices"),
+                AppAdminOnly = false,
+            });
+
+            output.Add(new DataObjects.MenuItem {
+                Title = "Agent Settings",
+                Icon = "AgentSettings",
+                PageNames = new List<string> { "agentsettings" },
+                SortOrder = 120,
+                url = Helpers.BuildUrl("AgentSettings"),
+                AppAdminOnly = false,
+            });
+
             return output;
         }
     }
@@ -118,6 +139,15 @@ public static partial class Helpers
         get {
             // Add any app-specific admin menu items here.
             var output = new List<DataObjects.MenuItem>();
+
+            output.Add(new DataObjects.MenuItem {
+                Title = "Agent Management",
+                Icon = "AgentManagement",
+                PageNames = new List<string> { "agentmanagement" },
+                SortOrder = 10,
+                url = Helpers.BuildUrl("AgentManagement"),
+                AppAdminOnly = true,
+            });
 
             return output;
         }
@@ -156,6 +186,20 @@ public static partial class Helpers
                         }
                         Model.AgentStatuses = current;
                     }
+                    break;
+
+                case DataObjects.SignalRUpdateType.BackgroundServiceLog:
+                    // Handled by the BackgroundServices page's own SignalRUpdate handler.
+                    break;
+
+                case DataObjects.SignalRUpdateType.AgentSettingsReport:
+                case DataObjects.SignalRUpdateType.AgentSettingsUpdated:
+                    // Handled by the AgentSettings page's own SignalRUpdate handler.
+                    break;
+
+                case DataObjects.SignalRUpdateType.JobUpdated:
+                case DataObjects.SignalRUpdateType.JobCompleted:
+                    // Handled by the AgentDashboard page's own SignalRUpdate handler.
                     break;
 
                 default:

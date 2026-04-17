@@ -338,11 +338,11 @@
         _loading = true;
         StateHasChanged();
 
-        _agent = await Helpers.GetOrPost<DataObjects.Agent>("api/Data/GetAgent/" + agentid);
+        _agent = await Helpers.GetOrPost<DataObjects.Agent>("api/Data/GetAgent/" + agentid, new { });
 
         if (_agent != null) {
             // Load heartbeat history
-            var history = await Helpers.GetOrPost<List<DataObjects.AgentHeartbeat>>("api/Data/GetAgentHeartbeats/" + agentid);
+            var history = await Helpers.GetOrPost<List<DataObjects.AgentHeartbeat>>("api/Data/GetAgentHeartbeats/" + agentid, new { });
             if (history != null) {
                 _heartbeatHistory = history;
                 var latest = history.OrderByDescending(h => h.Timestamp).FirstOrDefault();
@@ -360,7 +360,7 @@
             }
 
             // Load token for this agent
-            _token = await Helpers.GetOrPost<DataObjects.ApiClientToken>("api/Data/GetAgentToken/" + agentid);
+            _token = await Helpers.GetOrPost<DataObjects.ApiClientToken>("api/Data/GetAgentToken/" + agentid, new { });
         }
 
         _loading = false;
@@ -374,7 +374,7 @@
         Model.ClearMessages();
         Model.Message_Saving();
 
-        var result = await Helpers.GetOrPost<DataObjects.BooleanResponse>("api/Data/RevokeToken/" + _token.ApiClientTokenId);
+        var result = await Helpers.GetOrPost<DataObjects.BooleanResponse>("api/Data/RevokeToken/" + _token.ApiClientTokenId, new { });
 
         Model.ClearMessages();
 

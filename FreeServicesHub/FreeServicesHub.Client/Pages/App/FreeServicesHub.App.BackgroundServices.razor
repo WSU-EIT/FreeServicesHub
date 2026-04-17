@@ -1,0 +1,573 @@
+@page "/BackgroundServices"
+@page "/{TenantCode}/BackgroundServices"
+@implements IDisposable
+@using Blazored.LocalStorage
+@inject IJSRuntime jsRuntime
+@inject HttpClient Http
+@inject ILocalStorageService LocalStorage
+@inject BlazorDataModel Model
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title">
+            <Icon Name="Settings" /> Background Services
+        </h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title">
+                <Icon Name="Settings" /> Background Services
+                <StickyMenuIcon />
+            </h1>
+            <div class="btn-group mb-2" role="group" aria-label="Page actions">
+                <button type="button" class="btn btn-primary" @onclick="LoadData">
+                    <Icon Name="Refresh" /> <Language Tag="Refresh" />
+                </button>
+                <button type="button"
+                        class="btn @(_autoScroll ? "btn-success" : "btn-outline-secondary")"
+                        @onclick="ToggleAutoScroll"
+                        aria-pressed="@(_autoScroll ? "true" : "false")"
+                        aria-label="Auto-scroll @(_autoScroll ? "on" : "off")">
+                    <i class="fa-solid fa-arrow-down" aria-hidden="true"></i> Auto-scroll @(_autoScroll ? "ON" : "OFF")
+                </button>
+                <button type="button" class="btn btn-outline-danger" @onclick="ClearLogs"
+                        aria-label="Clear all log entries">
+                    <i class="fa-solid fa-trash" aria-hidden="true"></i> Clear
+                </button>
+            </div>
+        </div>
+
+        @* About Section *@
+        <FreeServicesHub_App_AboutSection Title="Background Services" Subtitle="Monitor hub-side background services in real time">
+            <div class="row">
+                <div class="col-md-4">
+                    <h6><Icon Name="Info" /> What Is This?</h6>
+                    <p class="small text-muted">
+                        This page displays the hub's background services and streams their log
+                        output in real time via SignalR. You can monitor service health without
+                        opening server logs.
+                    </p>
+                </div>
+                <div class="col-md-4">
+                    <h6><Icon Name="Eye" /> What You'll See</h6>
+                    <p class="small text-muted">
+                        Service cards showing each background service's status, health pulse,
+                        and last activity. Expand each card for a dedicated log feed, or view
+                        the combined log console below.
+                    </p>
+                </div>
+                <div class="col-md-4">
+                    <h6><Icon Name="Settings" /> Services Monitored</h6>
+                    <p class="small text-muted">
+                        <strong>Agent Monitor</strong> &mdash; polls agents for staleness every 5s.<br />
+                        <strong>Dev Key Seeder</strong> &mdash; seeds a registration key in dev mode.<br />
+                        <strong>Background Processor</strong> &mdash; scheduled processing tasks.
+                    </p>
+                </div>
+            </div>
+        </FreeServicesHub_App_AboutSection>
+
+        @* Service Cards with Health Pulse and Expandable Feeds *@
+        <section aria-label="Background service status">
+            <div class="row g-3 mb-4">
+                @foreach (var svc in _services) {
+                    var statusColor = GetServiceHealthColor(svc);
+                    var healthLabel = GetServiceHealthLabel(svc);
+                    var isExpanded = _expandedServices.Contains(svc.ServiceName);
+                    var svcLogs = GetServiceLogs(svc.ServiceName);
+                    var cardId = $"svc-feed-{svc.ServiceName.Replace(" ", "-").ToLower()}";
+                    <div class="col-12">
+                        <div class="card border-@statusColor h-100" role="region" aria-label="@svc.ServiceName service">
+                            <div class="card-body py-3">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div class="d-flex align-items-center gap-2">
+                                        @* Pulsing health dot *@
+                                        <span class="d-inline-block rounded-circle bg-@statusColor @(statusColor == "success" ? "health-pulse" : "")"
+                                              style="width: 10px; height: 10px; flex-shrink: 0;"
+                                              title="@healthLabel"
+                                              aria-label="Health: @healthLabel"></span>
+                                        <h6 class="card-title mb-0">
+                                            @svc.ServiceName
+                                        </h6>
+                                        @* Info tooltip button *@
+                                        <button type="button"
+                                                class="btn btn-link btn-sm p-0 text-info"
+                                                style="font-size: 0.85rem; line-height: 1;"
+                                                title="About @svc.ServiceName"
+                                                aria-label="About @svc.ServiceName"
+                                                aria-expanded="@(_infoExpanded.Contains(svc.ServiceName))"
+                                                aria-controls="@($"info-{cardId}")"
+                                                @onclick="() => ToggleInfo(svc.ServiceName)">
+                                            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="badge bg-@statusColor" aria-label="Status: @healthLabel">@healthLabel</span>
+                                        <button type="button"
+                                                class="btn btn-sm btn-outline-secondary py-0 px-1"
+                                                @onclick="() => ToggleServiceExpand(svc.ServiceName)"
+                                                aria-expanded="@isExpanded"
+                                                aria-controls="@cardId"
+                                                title="@(isExpanded ? "Collapse" : "Expand") log feed">
+                                            <i class="fa-solid @(isExpanded ? "fa-chevron-up" : "fa-chevron-down")" aria-hidden="true"></i>
+                                            <span class="visually-hidden">@(isExpanded ? "Collapse" : "Expand") log feed</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                @* Service description *@
+                                <div class="small text-muted mt-1">@svc.Description</div>
+
+                                @* Last activity + age indicator *@
+                                <div class="small mt-1 d-flex gap-3 flex-wrap">
+                                    @if (svc.LastActivity.HasValue) {
+                                        var age = DateTime.UtcNow - svc.LastActivity.Value;
+                                        var ageText = age.TotalSeconds < 60
+                                            ? $"{(int)age.TotalSeconds}s ago"
+                                            : age.TotalMinutes < 60
+                                                ? $"{(int)age.TotalMinutes}m ago"
+                                                : $"{(int)age.TotalHours}h ago";
+                                        <span class="text-muted">
+                                            Last activity: <time datetime="@svc.LastActivity.Value.ToString("o")">@ageText</time>
+                                        </span>
+                                    } else {
+                                        <span class="text-muted">No activity recorded</span>
+                                    }
+                                    <span class="text-muted">
+                                        Entries: <strong>@svcLogs.Count</strong>
+                                    </span>
+                                    @{
+                                        var errCount = svcLogs.Count(l => l.LogLevel == "Error" || l.LogLevel == "Critical");
+                                        var warnCount = svcLogs.Count(l => l.LogLevel == "Warning");
+                                    }
+                                    @if (errCount > 0) {
+                                        <span class="text-danger"><i class="fa-solid fa-circle-exclamation me-1" aria-hidden="true"></i>@errCount error@(errCount != 1 ? "s" : "")</span>
+                                    }
+                                    @if (warnCount > 0) {
+                                        <span class="text-warning"><i class="fa-solid fa-triangle-exclamation me-1" aria-hidden="true"></i>@warnCount warning@(warnCount != 1 ? "s" : "")</span>
+                                    }
+                                </div>
+
+                                @* Expandable Info Panel *@
+                                @if (_infoExpanded.Contains(svc.ServiceName)) {
+                                    <div id="@($"info-{cardId}")" class="mt-2 p-2 bg-light rounded small" role="note">
+                                        @switch (svc.ServiceName) {
+                                            case "Agent Monitor":
+                                                <p class="mb-1"><strong>Agent Monitor</strong> runs a continuous loop checking registered agents for heartbeat staleness.</p>
+                                                <ul class="mb-0 ps-3">
+                                                    <li>Polls every <strong>5 seconds</strong></li>
+                                                    <li>Marks agents as <em>Offline</em> if no heartbeat received within the configured threshold</li>
+                                                    <li>Broadcasts status changes via SignalR to the Agent Dashboard</li>
+                                                </ul>
+                                                break;
+                                            case "Dev Registration Key Seeder":
+                                                <p class="mb-1"><strong>Dev Registration Key Seeder</strong> automatically creates a registration key at startup when running in development mode.</p>
+                                                <ul class="mb-0 ps-3">
+                                                    <li>Runs once at startup, then remains idle</li>
+                                                    <li>Only active in <em>Development</em> environment</li>
+                                                    <li>Creates a predictable key for local agent testing</li>
+                                                </ul>
+                                                break;
+                                            case "Background Processor":
+                                                <p class="mb-1"><strong>Background Processor</strong> handles scheduled and deferred processing tasks.</p>
+                                                <ul class="mb-0 ps-3">
+                                                    <li>Processes queued work items on a timer</li>
+                                                    <li>Handles cleanup, notifications, and maintenance tasks</li>
+                                                    <li>Logs progress and errors for each cycle</li>
+                                                </ul>
+                                                break;
+                                            default:
+                                                <p class="mb-0">Background service: <code>@svc.Description</code></p>
+                                                break;
+                                        }
+                                    </div>
+                                }
+                            </div>
+
+                            @* Expandable Per-Service Log Feed *@
+                            @if (isExpanded) {
+                                <div id="@cardId" class="border-top">
+                                    <div class="bg-dark text-light font-monospace p-2"
+                                         style="max-height: 250px; overflow-y: auto; font-size: 0.78rem; line-height: 1.45;"
+                                         role="log" aria-live="polite" aria-label="@svc.ServiceName log feed">
+                                        @if (svcLogs.Any()) {
+                                            @foreach (var entry in svcLogs.TakeLast(50)) {
+                                                var levelClass = entry.LogLevel switch {
+                                                    "Error" => "text-danger",
+                                                    "Warning" => "text-warning",
+                                                    "Critical" => "text-danger fw-bold",
+                                                    _ => "text-info"
+                                                };
+                                                <div class="log-line">
+                                                    <time class="text-muted" datetime="@entry.Timestamp.ToString("o")">@entry.Timestamp.ToLocalTime().ToString("HH:mm:ss.fff")</time>
+                                                    <span class="@levelClass ms-2">[@entry.LogLevel.ToUpper().PadRight(4)[..4]]</span>
+                                                    <span class="text-light ms-2">@entry.Message</span>
+                                                </div>
+                                            }
+                                        } else {
+                                            <div class="text-muted text-center py-3">
+                                                No log entries for @svc.ServiceName yet.
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+                @if (!_services.Any()) {
+                    <div class="col-12">
+                        <div class="alert alert-info" role="status">No background services reported yet. They will appear after the first log entry.</div>
+                    </div>
+                }
+            </div>
+        </section>
+
+        @* Filter Toolbar *@
+        <div class="mb-2 d-flex gap-2 flex-wrap align-items-end" role="toolbar" aria-label="Log filter toolbar">
+            <fieldset class="d-flex gap-1 align-items-center border-0 p-0 m-0">
+                <legend class="small fw-bold mb-0 me-1" style="float:left; width:auto; font-size:inherit;">Level:</legend>
+                <button class="btn btn-sm @(_filterLevel == null ? "btn-primary" : "btn-outline-secondary")"
+                        @onclick="@(() => SetFilter(null))"
+                        aria-pressed="@(_filterLevel == null ? "true" : "false")">All</button>
+                <button class="btn btn-sm @(_filterLevel == "Information" ? "btn-info" : "btn-outline-info")"
+                        @onclick="@(() => SetFilter("Information"))"
+                        aria-pressed="@(_filterLevel == "Information" ? "true" : "false")">Info</button>
+                <button class="btn btn-sm @(_filterLevel == "Warning" ? "btn-warning" : "btn-outline-warning")"
+                        @onclick="@(() => SetFilter("Warning"))"
+                        aria-pressed="@(_filterLevel == "Warning" ? "true" : "false")">Warn</button>
+                <button class="btn btn-sm @(_filterLevel == "Error" ? "btn-danger" : "btn-outline-danger")"
+                        @onclick="@(() => SetFilter("Error"))"
+                        aria-pressed="@(_filterLevel == "Error" ? "true" : "false")">Error</button>
+            </fieldset>
+            @if (_services.Any()) {
+                <fieldset class="d-flex gap-1 align-items-center ms-2 border-0 p-0 m-0">
+                    <legend class="small fw-bold mb-0 me-1" style="float:left; width:auto; font-size:inherit;">Service:</legend>
+                    <button class="btn btn-sm @(_filterService == null ? "btn-primary" : "btn-outline-secondary")"
+                            @onclick="@(() => SetServiceFilter(null))"
+                            aria-pressed="@(_filterService == null ? "true" : "false")">All</button>
+                    @foreach (var svc in _services) {
+                        <button class="btn btn-sm @(_filterService == svc.ServiceName ? "btn-primary" : "btn-outline-secondary")"
+                                @onclick="@(() => SetServiceFilter(svc.ServiceName))"
+                                aria-pressed="@(_filterService == svc.ServiceName ? "true" : "false")">
+                            @svc.ServiceName
+                        </button>
+                    }
+                </fieldset>
+            }
+            <div class="ms-2">
+                <label for="logSearchFilter" class="visually-hidden">Search logs</label>
+                <input type="search" id="logSearchFilter" class="form-control form-control-sm"
+                       placeholder="Search messages…" @bind="_logSearchText" @bind:event="oninput"
+                       style="min-width:180px;" />
+            </div>
+            <div class="ms-auto small text-muted align-self-center" aria-live="polite">
+                @FilteredLogs.Count entries
+            </div>
+        </div>
+
+        @* Combined Log Console *@
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center py-2">
+                <span><i class="fa-solid fa-terminal me-2" aria-hidden="true"></i> Live Log Output</span>
+                <div class="d-flex gap-2 align-items-center">
+                    @if (LogTotalPages > 1) {
+                        <nav aria-label="Log pagination" class="d-inline-flex align-items-center gap-1">
+                            <button class="btn btn-sm btn-outline-secondary py-0 px-1"
+                                    @onclick="() => GoToLogPage(_logCurrentPage - 1)"
+                                    disabled="@(_logCurrentPage <= 1)" aria-label="Previous log page">
+                                <span aria-hidden="true">&laquo;</span>
+                            </button>
+                            <span class="small text-light">@_logCurrentPage / @LogTotalPages</span>
+                            <button class="btn btn-sm btn-outline-secondary py-0 px-1"
+                                    @onclick="() => GoToLogPage(_logCurrentPage + 1)"
+                                    disabled="@(_logCurrentPage >= LogTotalPages)" aria-label="Next log page">
+                                <span aria-hidden="true">&raquo;</span>
+                            </button>
+                        </nav>
+                    }
+                    <span class="badge bg-secondary">@FilteredLogs.Count total</span>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="bg-dark text-light font-monospace p-3"
+                     style="max-height: 600px; overflow-y: auto; font-size: 0.82rem; line-height: 1.5;"
+                     id="logConsole" role="log" aria-live="polite" aria-label="Service log output">
+                    @if (PagedLogs.Any()) {
+                        @foreach (var entry in PagedLogs) {
+                            var levelClass = entry.LogLevel switch {
+                                "Error" => "text-danger",
+                                "Warning" => "text-warning",
+                                "Critical" => "text-danger fw-bold",
+                                _ => "text-info"
+                            };
+                            <div class="log-line">
+                                <time class="text-muted" datetime="@entry.Timestamp.ToString("o")">@entry.Timestamp.ToLocalTime().ToString("HH:mm:ss.fff")</time>
+                                <span class="@levelClass ms-2" aria-label="@entry.LogLevel">[@entry.LogLevel.ToUpper().PadRight(4)[..4]]</span>
+                                <span class="text-success ms-2">@entry.ServiceName</span>
+                                <span class="text-light ms-2">@entry.Message</span>
+                            </div>
+                        }
+                    } else {
+                        <div class="text-muted text-center py-4" role="status">
+                            <i class="fa-solid fa-satellite-dish fa-2x mb-2 d-block" aria-hidden="true"></i>
+                            Waiting for log entries… Background services will emit logs as they run.
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+}
+
+<style>
+    @@keyframes healthPulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+    }
+    .health-pulse {
+        animation: healthPulse 2s ease-in-out infinite;
+    }
+</style>
+}
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+
+    protected bool _loadedData = false;
+    protected bool _loading = true;
+    protected bool _validatedUrl = false;
+    protected string _pageName = "backgroundservices";
+    protected bool _autoScroll = true;
+    protected string? _filterLevel = null;
+    protected string? _filterService = null;
+    protected string _logSearchText = "";
+
+    // Log pagination
+    protected int _logCurrentPage = 1;
+    protected int _logPageSize = 200;
+
+    // Expandable state
+    protected HashSet<string> _expandedServices = new();
+    protected HashSet<string> _infoExpanded = new();
+
+    // Health check timer
+    private System.Threading.Timer? _healthCheckTimer;
+    private const int HealthCheckIntervalMs = 15_000;
+    private const int StaleThresholdSeconds = 60;
+
+    protected List<DataObjects.BackgroundServiceInfo> _services = new();
+    protected List<DataObjects.BackgroundServiceLogEntry> _logEntries = new();
+
+    protected List<DataObjects.BackgroundServiceLogEntry> FilteredLogs =>
+        _logEntries
+            .Where(e => _filterLevel == null || e.LogLevel == _filterLevel)
+            .Where(e => _filterService == null || e.ServiceName == _filterService)
+            .Where(e => string.IsNullOrWhiteSpace(_logSearchText)
+                        || e.Message.Contains(_logSearchText, StringComparison.OrdinalIgnoreCase)
+                        || e.ServiceName.Contains(_logSearchText, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(e => e.Timestamp)
+            .ToList();
+
+    protected int LogTotalPages => Math.Max(1, (int)Math.Ceiling((double)FilteredLogs.Count / _logPageSize));
+
+    protected List<DataObjects.BackgroundServiceLogEntry> PagedLogs {
+        get {
+            var filtered = FilteredLogs;
+            if (_autoScroll) {
+                // In auto-scroll mode, always show the last page
+                _logCurrentPage = LogTotalPages;
+            }
+            return filtered.Skip((_logCurrentPage - 1) * _logPageSize).Take(_logPageSize).ToList();
+        }
+    }
+
+    protected List<DataObjects.BackgroundServiceLogEntry> GetServiceLogs(string serviceName)
+    {
+        return _logEntries.Where(e => e.ServiceName == serviceName).OrderBy(e => e.Timestamp).ToList();
+    }
+
+    protected string GetServiceHealthColor(DataObjects.BackgroundServiceInfo svc)
+    {
+        // Check for recent errors
+        var recentErrors = _logEntries
+            .Where(e => e.ServiceName == svc.ServiceName && (e.LogLevel == "Error" || e.LogLevel == "Critical"))
+            .Where(e => (DateTime.UtcNow - e.Timestamp).TotalMinutes < 5)
+            .Any();
+        if (recentErrors) return "danger";
+
+        if (svc.Status == "Error") return "danger";
+
+        // Stale check: no activity in StaleThresholdSeconds
+        if (svc.LastActivity.HasValue && (DateTime.UtcNow - svc.LastActivity.Value).TotalSeconds > StaleThresholdSeconds) {
+            return "warning";
+        }
+
+        if (svc.Status == "Running") return "success";
+        return "secondary";
+    }
+
+    protected string GetServiceHealthLabel(DataObjects.BackgroundServiceInfo svc)
+    {
+        var color = GetServiceHealthColor(svc);
+        return color switch {
+            "danger" => "Error",
+            "warning" => "Stale",
+            "success" => "Healthy",
+            _ => svc.Status
+        };
+    }
+
+    protected void ToggleServiceExpand(string serviceName)
+    {
+        if (!_expandedServices.Remove(serviceName)) {
+            _expandedServices.Add(serviceName);
+        }
+        StateHasChanged();
+    }
+
+    protected void ToggleInfo(string serviceName)
+    {
+        if (!_infoExpanded.Remove(serviceName)) {
+            _infoExpanded.Add(serviceName);
+        }
+        StateHasChanged();
+    }
+
+    protected void GoToLogPage(int page)
+    {
+        _autoScroll = false;
+        _logCurrentPage = Math.Clamp(page, 1, LogTotalPages);
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        _healthCheckTimer?.Dispose();
+        Model.OnChange -= OnDataModelUpdated;
+        Model.OnSignalRUpdate -= SignalRUpdate;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) {
+            Model.TenantCodeFromUrl = TenantCode;
+        }
+
+        if (Model.Loaded && Model.LoggedIn) {
+            if (!_validatedUrl) {
+                _validatedUrl = true;
+                await Helpers.ValidateUrl(TenantCode);
+            }
+
+            if (!_loadedData) {
+                _loadedData = true;
+                await LoadData();
+                StartHealthCheckTimer();
+            }
+        }
+
+        if (_autoScroll) {
+            try {
+                await jsRuntime.InvokeVoidAsync("eval", "var el = document.getElementById('logConsole'); if(el) el.scrollTop = el.scrollHeight;");
+            } catch { }
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.OnChange += OnDataModelUpdated;
+        Model.OnSignalRUpdate += SignalRUpdate;
+        Model.View = _pageName;
+    }
+
+    protected void OnDataModelUpdated()
+    {
+        if (Model.View == _pageName) {
+            StateHasChanged();
+        }
+    }
+
+    protected async Task LoadData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        var services = await Helpers.GetOrPost<List<DataObjects.BackgroundServiceInfo>>("api/Data/GetBackgroundServices", new { });
+        if (services != null) {
+            _services = services;
+        }
+
+        var logs = await Helpers.GetOrPost<List<DataObjects.BackgroundServiceLogEntry>>("api/Data/GetBackgroundServiceLogs", new { });
+        if (logs != null) {
+            _logEntries = logs;
+        }
+
+        _logCurrentPage = 1;
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private void StartHealthCheckTimer()
+    {
+        _healthCheckTimer = new System.Threading.Timer(async _ =>
+        {
+            try {
+                var services = await Helpers.GetOrPost<List<DataObjects.BackgroundServiceInfo>>("api/Data/GetBackgroundServices", new { });
+                if (services != null) {
+                    _services = services;
+                    await InvokeAsync(StateHasChanged);
+                }
+            } catch { }
+        }, null, HealthCheckIntervalMs, HealthCheckIntervalMs);
+    }
+
+    protected void SetFilter(string? level)
+    {
+        _filterLevel = level;
+        _logCurrentPage = 1;
+        StateHasChanged();
+    }
+
+    protected void SetServiceFilter(string? service)
+    {
+        _filterService = service;
+        _logCurrentPage = 1;
+        StateHasChanged();
+    }
+
+    protected void ToggleAutoScroll()
+    {
+        _autoScroll = !_autoScroll;
+    }
+
+    protected void ClearLogs()
+    {
+        _logEntries.Clear();
+        _logCurrentPage = 1;
+        StateHasChanged();
+    }
+
+    protected void SignalRUpdate(DataObjects.SignalRUpdate update)
+    {
+        if (Model.View != _pageName) return;
+
+        if (update.UpdateType == DataObjects.SignalRUpdateType.BackgroundServiceLog) {
+            if (update.ObjectAsString != null) {
+                var entry = Helpers.DeserializeObject<DataObjects.BackgroundServiceLogEntry>(update.ObjectAsString);
+                if (entry != null) {
+                    _logEntries.Add(entry);
+
+                    if (_logEntries.Count > 500) {
+                        _logEntries.RemoveRange(0, _logEntries.Count - 500);
+                    }
+
+                    var svc = _services.FirstOrDefault(s => s.ServiceName == entry.ServiceName);
+                    if (svc != null) {
+                        svc.LastActivity = entry.Timestamp;
+                    }
+
+                    StateHasChanged();
+                }
+            }
+        }
+    }
+}

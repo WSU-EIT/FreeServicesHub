@@ -3,20 +3,571 @@
 @inject BlazorDataModel Model
 
 @{
-    // This component is used to display application-specific items on the about page.
-
     <h1 class="page-title">
         <Icon Name="About" />
         About FreeServicesHub
     </h1>
 
-    <div class="mb-2">
-        A free, open-source FreeServicesHub (Customer Relationship Management) system.
+    @* ── ASCII Art Banner ─────────────────────────────────────────── *@
+    <div class="card bg-dark text-light mb-4 shadow">
+        <div class="card-body p-3">
+<pre class="mb-0" style="font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace; font-size: 0.72rem; line-height: 1.35; color: #58d68d; overflow-x: auto; white-space: pre;">
+ ╔═══════════════════════════════════════════════════════════════════════════════════════╗
+ ║           F R E E   S E R V I C E S   H U B                                         ║
+ ║           ─────────────────────────────────                                          ║
+ ║           Open-Source  ·  .NET 10  ·  Blazor  ·  SignalR  ·  EF Core                ║
+ ╠═══════════════════════════════════════════════════════════════════════════════════════╣
+ ║                                                                                     ║
+ ║  ┌───────────────────┐     ┌────────────────────────────┐     ┌───────────────────┐  ║
+ ║  │   INSTALLER (CLI) │     │      HUB WEB APP           │     │  AGENT (Worker)   │  ║
+ ║  │   ─────────────── │     │  ────────────────────────── │     │  ─────────────── │  ║
+ ║  │  Build &amp; Deploy   │     │  Blazor Server + WASM       │     │  BackgroundSvc   │  ║
+ ║  │  the Agent as a   │────▶│  SignalR Hub                │◀────│  Heartbeats      │  ║
+ ║  │  Windows Service  │     │  REST API                   │     │  System Snapshots │  ║
+ ║  │                   │     │  Agent Monitor              │     │                   │  ║
+ ║  └───────────────────┘     └────────────────────────────┘     └───────────────────┘  ║
+ ║                                        │                                             ║
+ ║                               ┌────────┴────────┐                                    ║
+ ║                               │   DATA LAYER    │                                    ║
+ ║                               │  EF Core + DA   │                                    ║
+ ║                               │  Multi-Provider │                                    ║
+ ║                               └─────────────────┘                                    ║
+ ╚═══════════════════════════════════════════════════════════════════════════════════════╝
+</pre>
+        </div>
     </div>
 
-    <div class="mb-2">
-        Use this as-is to run your business, or use this as a starting point
-        for building your own application on this framework.
+    @* ── What Is FreeServicesHub? ─────────────────────────────────── *@
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary bg-opacity-10">
+            <h4 class="mb-0"><i class="fa-solid fa-circle-info me-2 text-primary"></i>What Is FreeServicesHub?</h4>
+        </div>
+        <div class="card-body">
+            <p>
+                <strong>FreeServicesHub</strong> is a free, open-source service-agent management platform built on
+                .NET 10. It monitors remote Windows services by collecting real-time CPU, memory, and disk metrics,
+                then displays them on a live Blazor dashboard powered by SignalR.
+            </p>
+            <p>
+                The system is built on the <strong>FreeCRM framework</strong> — inheriting its authentication,
+                multi-tenancy, plugin system, EF Core data layer, and SignalR infrastructure.
+                Everything new follows the <code>.App.</code> extension-file pattern so the base framework
+                can be updated independently.
+            </p>
+            <div class="row mt-3">
+                <div class="col-md-4">
+                    <h6><i class="fa-solid fa-server me-1 text-success"></i> Hub</h6>
+                    <p class="small text-muted mb-0">
+                        Blazor Server + WebAssembly app. Receives agent heartbeats via SignalR,
+                        stores metrics in a multi-provider database (SQL Server, MySQL, PostgreSQL,
+                        SQLite, or InMemory), and pushes live updates to connected dashboards.
+                    </p>
+                </div>
+                <div class="col-md-4">
+                    <h6><i class="fa-solid fa-microchip me-1 text-warning"></i> Agent</h6>
+                    <p class="small text-muted mb-0">
+                        .NET Worker Service that runs as a Windows Service. Collects system snapshots
+                        every 30 seconds, sends heartbeats to the hub over SignalR, and falls back to
+                        HTTP POST + local logging when disconnected.
+                    </p>
+                </div>
+                <div class="col-md-4">
+                    <h6><i class="fa-solid fa-wrench me-1 text-info"></i> Installer</h6>
+                    <p class="small text-muted mb-0">
+                        Dual-mode CLI tool. Interactive menu for developers; headless mode for CI/CD
+                        pipelines. Builds, deploys, configures, and manages the agent as a Windows Service
+                        using <code>sc.exe</code>.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* ── Two-Key Trust Chain ──────────────────────────────────────── *@
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-warning bg-opacity-10">
+            <h4 class="mb-0"><i class="fa-solid fa-key me-2 text-warning"></i>Two-Key Trust Chain</h4>
+        </div>
+        <div class="card-body">
+            <p>Security between the hub and agents uses two cryptographic keys with distinct lifecycles:</p>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Key Type</th>
+                            <th>Created By</th>
+                            <th>Given To</th>
+                            <th>Stored As</th>
+                            <th>Lifetime</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Registration Key</strong></td>
+                            <td>Hub (via CI/CD or UI)</td>
+                            <td>Pipeline → Agent</td>
+                            <td>SHA-256 hash in DB</td>
+                            <td>24 hours, one-time-use, burns on use</td>
+                        </tr>
+                        <tr>
+                            <td><strong>API Client Token</strong></td>
+                            <td>Hub (during registration)</td>
+                            <td>Agent</td>
+                            <td>SHA-256 hash in DB</td>
+                            <td>Until revoked from Hub UI</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+<pre class="bg-dark text-light p-3 rounded" style="font-size: 0.75rem; overflow-x: auto;">
+Pipeline                        Hub                         Agent
+   │                             │                            │
+   │── GenerateRegistrationKeys ─▶│                            │
+   │◀─ [Key A, Key B] ──────────│                            │
+   │                             │  (stores hashes, 24hr exp) │
+   │── deploys Key A to ────────▶│                            │
+   │                             │                   Agent starts
+   │                             │◀── RegisterAgent (Key A) ──│
+   │                             │    validate, burn key       │
+   │                             │    generate API token       │
+   │                             │── Token X (plaintext) ────▶│
+   │                             │    (stores hash in DB)      │ (stores in config)
+   │                             │                            │
+   │                             │◀── heartbeat (Token X) ────│
+   │                             │◀── heartbeat (Token X) ────│
+</pre>
+            <p class="small text-muted mt-2 mb-0">
+                <i class="fa-solid fa-shield-halved me-1"></i>
+                The raw API token is <strong>never</strong> stored server-side. Only the SHA-256 hash is persisted.
+                The token is returned exactly <strong>once</strong> at registration time.
+            </p>
+        </div>
+    </div>
+
+    @* ── Agent Communication Flow ─────────────────────────────────── *@
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-success bg-opacity-10">
+            <h4 class="mb-0"><i class="fa-solid fa-arrows-left-right me-2 text-success"></i>Agent ↔ Hub Communication</h4>
+        </div>
+        <div class="card-body">
+<pre class="bg-dark text-light p-3 rounded" style="font-size: 0.72rem; overflow-x: auto; line-height: 1.4;">
+              AGENT                                       HUB
+         (Windows Service)                        (Blazor + SignalR)
+
+┌────────────────────┐
+│  Agent starts up   │
+│  No ApiClientToken │
+└────────┬───────────┘
+         │
+STEP 1:  │  POST /api/Data/RegisterAgent
+REGISTER │  { RegistrationKey, Hostname, OS, Arch, Version }
+         │ ────────────────────────────────────────────────▶ Validate → Create → Token
+         │ ◀──────────────────────────────────────────────── { ApiClientToken: "raw-..." }
+         │
+STEP 2:  │  WebSocket: /freeserviceshubHub?access_token=raw-...
+SIGNALR  │ ────────────────────────────────────────────────▶ ApiKeyMiddleware → SHA256 → DB
+         │  JoinGroup("Agents")
+         │
+STEP 3:  │  ┌──── every 30 seconds ────────┐
+HEARTBEAT│  │  CollectSnapshot()            │
+  LOOP   │  │  CPU, RAM, Drives, Uptime    │
+         │  │  SendHeartbeat(hub) ──────────────────────────▶ SaveHeartbeat → DB
+         │  │                               │                 Broadcast → "AgentMonitor"
+         │  └───────────────────────────────┘                       │
+         │                                                          ▼
+         │                                               ┌────────────────────┐
+         │                                               │  Blazor Dashboard  │
+SHUTDOWN │ ◀──── hub sends "Shutdown" ───────────────────│  ● DEV-01  Online  │
+         │  → Program.Lifetime.StopApplication()         │  ● PROD-01 Online  │
+         │                                               └────────────────────┘
+</pre>
+        </div>
+    </div>
+
+    @* ── Background Services ──────────────────────────────────────── *@
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-info bg-opacity-10">
+            <h4 class="mb-0"><i class="fa-solid fa-gears me-2 text-info"></i>Background Services</h4>
+        </div>
+        <div class="card-body">
+            <p>Three hub-side background services run continuously. Their logs are viewable on the
+               <a href="@Helpers.BuildUrl("BackgroundServices")">Background Services</a> page in real time.</p>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="card border-success h-100">
+                        <div class="card-body">
+                            <h6><i class="fa-solid fa-binoculars me-1 text-success"></i> AgentMonitorService</h6>
+                            <p class="small text-muted mb-0">
+                                Polls every 5 seconds. Loads all agents, compares each agent's
+                                <code>LastHeartbeat</code> against the stale threshold.
+                                Detects status transitions (Online → Stale → Offline) and broadcasts
+                                changes to the <code>AgentMonitor</code> SignalR group. Uses exponential
+                                backoff on errors (5s × multiplier, max 60s).
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card border-warning h-100">
+                        <div class="card-body">
+                            <h6><i class="fa-solid fa-seedling me-1 text-warning"></i> DevRegistrationKeySeeder</h6>
+                            <p class="small text-muted mb-0">
+                                Runs once on startup in Development mode only.
+                                Seeds a known registration key (<code>dev-test-key-seed</code>) into the
+                                InMemory database so the Aspire-orchestrated agent can auto-register
+                                without manual key generation.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card border-info h-100">
+                        <div class="card-body">
+                            <h6><i class="fa-solid fa-clock me-1 text-info"></i> BackgroundProcessor</h6>
+                            <p class="small text-muted mb-0">
+                                Configurable scheduled processor. Enabled via
+                                <code>BackgroundService:Enabled</code> in appsettings.
+                                Supports load balancing by hostname filter.
+                                Processes queued work items at a configurable interval.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* ── Data Layer ───────────────────────────────────────────────── *@
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-secondary bg-opacity-10">
+            <h4 class="mb-0"><i class="fa-solid fa-database me-2 text-secondary"></i>Data Layer</h4>
+        </div>
+        <div class="card-body">
+<pre class="bg-dark text-light p-3 rounded" style="font-size: 0.72rem; overflow-x: auto; line-height: 1.4;">
+┌───────────────────────────────────────────────────────────────────────────┐
+│  EFDataModel : DbContext  (partial class pattern)                        │
+│                                                                           │
+│  App Tables:                           Base Tables:                       │
+│    Agents              (registered)      Departments     Users            │
+│    AgentHeartbeats     (time-series)     Settings        Tenants          │
+│    RegistrationKeys    (SHA-256 hash)    FileStorages    UserGroups       │
+│    ApiClientTokens     (SHA-256 hash)    Tags / TagItems                 │
+│                                                                           │
+│  Providers:                                                               │
+│    ├── InMemory    (dev / Aspire)                                         │
+│    ├── SQL Server  (production)                                           │
+│    ├── MySQL                                                              │
+│    ├── PostgreSQL                                                         │
+│    └── SQLite                                                             │
+└───────────────────────────────────────────────────────────────────────────┘
+
+IDataAccess (interface)
+  RegisterAgent(request, tenantId) → AgentRegistrationResponse
+  SaveHeartbeat(heartbeat)         → BooleanResponse
+  GetAgents(ids, tenantId, user)   → List&lt;Agent&gt;
+  GenerateRegistrationKeys(...)    → List&lt;RegistrationKey&gt;
+  GetApiClientTokens(tenantId)     → List&lt;ApiClientToken&gt;
+  RevokeApiClientToken(id, user)   → BooleanResponse
+</pre>
+        </div>
+    </div>
+
+    @* ── SignalR Groups ───────────────────────────────────────────── *@
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-danger bg-opacity-10">
+            <h4 class="mb-0"><i class="fa-solid fa-tower-broadcast me-2 text-danger"></i>SignalR Real-Time Communication</h4>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered">
+                    <thead class="table-light">
+                        <tr><th>Group</th><th>Members</th><th>Purpose</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>Agents</code></td>
+                            <td>Connected agent instances</td>
+                            <td>Receive shutdown commands, broadcast messages</td>
+                        </tr>
+                        <tr>
+                            <td><code>AgentMonitor</code></td>
+                            <td>Dashboard UI clients</td>
+                            <td>Receive live agent status updates, heartbeat data</td>
+                        </tr>
+                        <tr>
+                            <td><code>BackgroundServiceLogs</code></td>
+                            <td>Background Services page viewers</td>
+                            <td>Real-time log streaming from hub-side services</td>
+                        </tr>
+                        <tr>
+                            <td><code>&lt;TenantId&gt;</code></td>
+                            <td>Tenant-scoped users</td>
+                            <td>Tenant-specific data change notifications</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <h6 class="mt-3">Message Types</h6>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered">
+                    <thead class="table-light">
+                        <tr><th>Direction</th><th>Type</th><th>Content</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Agent → Hub</td><td>SendHeartbeat</td><td>CPU, RAM, disk, uptime snapshot</td></tr>
+                        <tr><td>Hub → Agent</td><td>Shutdown</td><td>Graceful shutdown command</td></tr>
+                        <tr><td>Hub → Dashboard</td><td>AgentHeartbeat</td><td>All agents with latest status</td></tr>
+                        <tr><td>Hub → Dashboard</td><td>AgentStatusChanged</td><td>Status transition detected</td></tr>
+                        <tr><td>Hub → Dashboard</td><td>AgentConnected</td><td>New agent registered and online</td></tr>
+                        <tr><td>Hub → Dashboard</td><td>AgentDisconnected</td><td>Agent went offline</td></tr>
+                        <tr><td>Hub → Dashboard</td><td>BackgroundServiceLog</td><td>Real-time log entry from services</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    @* ── Deployment Pipeline ──────────────────────────────────────── *@
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary bg-opacity-10">
+            <h4 class="mb-0"><i class="fa-solid fa-rocket me-2 text-primary"></i>Deployment Pipeline (12-Step Lifecycle)</h4>
+        </div>
+        <div class="card-body">
+<pre class="bg-dark text-light p-3 rounded" style="font-size: 0.72rem; overflow-x: auto; line-height: 1.4;">
+STEP  ACTION                        ACTOR           DETAIL
+────  ────────────────────────────  ──────────────  ─────────────────────────────────────
+  1   Generate registration keys    Pipeline → Hub  N keys for N servers, 24hr, one-use
+  2   Shutdown agents               Hub → Agents    "Shutdown" via SignalR
+  3   Agents confirm shutdown       Each agent      Graceful stop, confirm
+  4   Hub reports all offline       Hub             Pipeline waits
+  5   Shutdown hub                  Pipeline        Stop hub process
+  6   Deploy hub                    Pipeline        Install new build, start hub
+  7   Hub comes online              Hub             Reconnect to DB, hashes persist
+  8   Deploy agents                 Pipeline        Install on each server, inject key
+  9   Agents start                  Each agent      Read registration key from config
+ 10   Agents register               Agent → Hub     One-time key consumed, token returned
+ 11   Agents store token            Each agent      Save to config, begin heartbeat
+ 12   Dashboard shows online        Hub             AgentMonitorService pushes to UI
+</pre>
+            <p class="small text-muted mt-2 mb-0">
+                <i class="fa-solid fa-clock me-1"></i>
+                Timing: ~5 minutes total. Azure DevOps YAML pipeline with parallel build stages.
+                Web app, agent, and installer build in parallel, then deploy sequentially.
+            </p>
+        </div>
+    </div>
+
+    @* ── Agent Reconnection Strategy ──────────────────────────────── *@
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-warning bg-opacity-10">
+            <h4 class="mb-0"><i class="fa-solid fa-rotate me-2 text-warning"></i>Agent Reconnection Strategy</h4>
+        </div>
+        <div class="card-body">
+            <p>The agent uses <code>ExponentialBackoffRetryPolicy : IRetryPolicy</code> that never gives up:</p>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered" style="max-width: 400px;">
+                    <thead class="table-light">
+                        <tr><th>Attempt</th><th>Delay</th><th>Action</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>1</td><td>2s</td><td>Reconnect via SignalR</td></tr>
+                        <tr><td>2</td><td>4s</td><td>Reconnect via SignalR</td></tr>
+                        <tr><td>3</td><td>8s</td><td>Reconnect via SignalR</td></tr>
+                        <tr><td>4</td><td>16s</td><td>Reconnect via SignalR</td></tr>
+                        <tr><td>5+</td><td>30s (cap)</td><td>Reconnect via SignalR</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="small text-muted mb-0">
+                When disconnected, the agent buffers heartbeats locally and flushes them on reconnect.
+                If SignalR is unavailable, it falls back to HTTP POST. If both fail, it logs to
+                <code>agent.log</code> (rolling file, 5 MB cap) and retries next cycle.
+            </p>
+        </div>
+    </div>
+
+    @* ── Request Pipeline ─────────────────────────────────────────── *@
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-secondary bg-opacity-10">
+            <h4 class="mb-0"><i class="fa-solid fa-diagram-project me-2 text-secondary"></i>Request Pipeline</h4>
+        </div>
+        <div class="card-body">
+<pre class="bg-dark text-light p-3 rounded" style="font-size: 0.72rem; overflow-x: auto; line-height: 1.4;">
+Incoming Request
+     │
+     ▼
+┌─────────────────────────────────────────────────────┐
+│              ApiKeyMiddleware                        │
+│                                                     │
+│   /api/agent/*        → requires Bearer token       │
+│   /freeserviceshubHub → requires Bearer token       │
+│   /api/Data/*         → pass through to Blazor auth │
+│   /health             → pass through (anonymous)    │
+│   everything else     → pass through (Blazor UI)    │
+│                                                     │
+│   Token: SHA-256(raw) → lookup ApiClientTokens DB   │
+│   Match? → ClaimsPrincipal(AgentId, TenantId)       │
+└─────────────────────────────────────────────────────┘
+     │
+     ├──────────────────────┐
+     ▼                      ▼
+┌──────────────┐    ┌───────────────┐
+│  REST API    │    │  SignalR Hub  │
+│  Controller  │    │  Endpoint    │
+└──────────────┘    └───────────────┘
+</pre>
+        </div>
+    </div>
+
+    @* ── REST API Reference ───────────────────────────────────────── *@
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-info bg-opacity-10">
+            <h4 class="mb-0"><i class="fa-solid fa-plug me-2 text-info"></i>REST API Endpoints</h4>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered">
+                    <thead class="table-light">
+                        <tr><th>Method</th><th>Route</th><th>Auth</th><th>Description</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>POST</td><td><code>/api/Data/RegisterAgent</code></td><td>Anonymous</td><td>Agent registration with one-time key</td></tr>
+                        <tr><td>POST</td><td><code>/api/Data/GetAgents</code></td><td>Authorize</td><td>List all registered agents</td></tr>
+                        <tr><td>POST</td><td><code>/api/Data/SaveAgents</code></td><td>Admin</td><td>Update agent records</td></tr>
+                        <tr><td>POST</td><td><code>/api/Data/DeleteAgents</code></td><td>Admin</td><td>Delete agent records</td></tr>
+                        <tr><td>POST</td><td><code>/api/Data/GenerateRegistrationKeys/{count}</code></td><td>Admin</td><td>Generate one-time registration keys</td></tr>
+                        <tr><td>POST</td><td><code>/api/Data/GetApiClientTokens</code></td><td>Admin</td><td>List all API client tokens</td></tr>
+                        <tr><td>POST</td><td><code>/api/Data/RevokeApiClientToken/{id}</code></td><td>Admin</td><td>Revoke an agent's API token</td></tr>
+                        <tr><td>POST</td><td><code>/api/Data/SaveHeartbeat</code></td><td>Authorize</td><td>Save an agent heartbeat</td></tr>
+                        <tr><td>POST</td><td><code>/api/Data/GetHeartbeats/{agentId}</code></td><td>Admin</td><td>Get heartbeat history for an agent</td></tr>
+                        <tr><td>POST</td><td><code>/api/Data/GetBackgroundServices</code></td><td>Authorize</td><td>List hub-side background services</td></tr>
+                        <tr><td>POST</td><td><code>/api/Data/GetBackgroundServiceLogs</code></td><td>Authorize</td><td>Get recent background service logs</td></tr>
+                        <tr><td>GET</td><td><code>/health</code></td><td>Anonymous</td><td>Health check for CI/CD pipelines</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    @* ── Project Structure ────────────────────────────────────────── *@
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-dark text-light">
+            <h4 class="mb-0"><i class="fa-solid fa-folder-tree me-2"></i>Project Structure</h4>
+        </div>
+        <div class="card-body">
+<pre class="bg-dark text-light p-3 rounded" style="font-size: 0.72rem; overflow-x: auto; line-height: 1.4;">
+FreeServicesHub/                       ← Solution root
+├── FreeServicesHub/                   ← Hub Web App (Blazor Server)
+│   ├── Controllers/                   ← REST API endpoints
+│   ├── Components/                    ← Blazor root component
+│   ├── Hubs/                          ← SignalR hub (freeserviceshubHub)
+│   ├── Pages/                         ← Razor pages (auth, error)
+│   ├── FreeServicesHub.App.*.cs       ← App-specific services &amp; middleware
+│   └── Program.cs / Program.App.cs    ← Startup &amp; DI
+│
+├── FreeServicesHub.Client/            ← Blazor WebAssembly Client
+│   ├── Pages/App/                     ← Dashboard, Detail, ApiKeyMgr, BackgroundSvcs
+│   ├── Shared/AppComponents/          ← About.App.razor, AboutSection
+│   ├── Helpers.App.cs                 ← Menu items, icons, SignalR processing
+│   └── DataModel.App.cs              ← Client-side state (AgentStatuses)
+│
+├── FreeServicesHub.DataObjects/       ← Shared DTOs (Agent, Heartbeat, etc.)
+├── FreeServicesHub.DataAccess/        ← EF Core data access layer
+├── FreeServicesHub.EFModels/          ← EF Core DbContext &amp; entities
+├── FreeServicesHub.Plugins/           ← Plugin support
+│
+├── FreeServicesHub.Agent/             ← Agent Worker Service
+│   ├── Program.cs                     ← Host builder + Windows Service
+│   └── AgentWorkerService.cs          ← Heartbeat loop, registration, reconnect
+│
+├── FreeServicesHub.Agent.Installer/   ← CLI installer for the agent
+│   ├── Program.cs                     ← Menu + headless modes
+│   └── InstallerConfig.cs             ← Configuration model
+│
+├── FreeServicesHub.AppHost/           ← .NET Aspire orchestration
+│   └── Program.cs                     ← Hub + Agent dev topology
+│
+├── FreeServicesHub.Tests.Integration/ ← Integration test suite
+│
+└── Docs/                              ← Architecture &amp; design documents
+    ├── 202_reference_architecture_overview.md
+    ├── 207_plan_cto_project_spec.md
+    └── 311-Architecture-ASCII-Art.md
+</pre>
+        </div>
+    </div>
+
+    @* ── Technology Stack ─────────────────────────────────────────── *@
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-success bg-opacity-10">
+            <h4 class="mb-0"><i class="fa-solid fa-layer-group me-2 text-success"></i>Technology Stack</h4>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h6>Runtime &amp; Frameworks</h6>
+                    <ul class="small mb-0">
+                        <li><strong>.NET 10</strong> — Target framework (C# 14.0)</li>
+                        <li><strong>ASP.NET Core</strong> — Web host, middleware, controllers</li>
+                        <li><strong>Blazor</strong> — Server + Interactive WebAssembly</li>
+                        <li><strong>SignalR</strong> — Real-time communication (local or Azure)</li>
+                        <li><strong>Entity Framework Core</strong> — Multi-provider ORM</li>
+                        <li><strong>.NET Worker Service</strong> — Agent background service</li>
+                        <li><strong>.NET Aspire</strong> — Local dev orchestration</li>
+                    </ul>
+                </div>
+                <div class="col-md-6">
+                    <h6>Libraries &amp; Tools</h6>
+                    <ul class="small mb-0">
+                        <li><strong>Radzen</strong> — Blazor UI components</li>
+                        <li><strong>Bootstrap 5</strong> — CSS framework</li>
+                        <li><strong>Font Awesome</strong> — Icon library</li>
+                        <li><strong>QuestPDF</strong> — PDF generation</li>
+                        <li><strong>Humanizer</strong> — Text formatting</li>
+                        <li><strong>Blazored.LocalStorage</strong> — Client-side storage</li>
+                        <li><strong>Azure DevOps</strong> — CI/CD pipelines</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* ── Aspire Dev Topology ──────────────────────────────────────── *@
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary bg-opacity-10">
+            <h4 class="mb-0"><i class="fa-solid fa-sitemap me-2 text-primary"></i>Aspire Dev Topology</h4>
+        </div>
+        <div class="card-body">
+<pre class="bg-dark text-light p-3 rounded" style="font-size: 0.72rem; overflow-x: auto; line-height: 1.4;">
+ .NET Aspire AppHost
+     │
+     ├── "hub"   → FreeServicesHub (Blazor)
+     │              ASPNETCORE_ENVIRONMENT = Development
+     │              DatabaseType = InMemory
+     │              https://localhost:7271  http://localhost:5111
+     │
+     └── "agent" → FreeServicesHub.Agent (Worker Service)
+                    Agent__HubUrl = https://localhost:7271
+                    Agent__RegistrationKey = dev-test-key-seed
+                    WaitFor(hub)  ← starts after hub is healthy
+</pre>
+            <p class="small text-muted mt-2 mb-0">
+                In development, the Aspire AppHost starts both the hub and one agent.
+                The <code>DevRegistrationKeySeeder</code> seeds the matching key into the InMemory database
+                so the agent can auto-register without manual intervention.
+            </p>
+        </div>
+    </div>
+
+    @* ── Footer ───────────────────────────────────────────────────── *@
+    <div class="text-center text-muted small mt-4 mb-3">
+        <p class="mb-1">
+            <i class="fa-brands fa-github me-1"></i>
+            FreeServicesHub — Open Source · MIT License · Built with .NET 10
+        </p>
+        <p class="mb-0">
+            Forked from the FreeCRM framework · Extended with the <code>.App.</code> pattern
+        </p>
     </div>
 }
 
@@ -29,19 +580,4 @@
     {
         Model.OnChange += StateHasChanged;
     }
-
-    // protected override void OnAfterRender(bool firstRender)
-    // {
-    //     RenderComponent();
-    // }
-
-    // protected override void OnParametersSet()
-    // {
-    //     RenderComponent();
-    // }
-
-    // protected void RenderComponent()
-    // {
-    //     // Do any work here that needs to be done after the component is rendered or parameters are set.
-    // }
 }

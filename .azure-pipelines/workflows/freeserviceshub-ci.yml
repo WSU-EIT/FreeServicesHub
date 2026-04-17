@@ -1,0 +1,619 @@
+# FreeServicesHub CI/CD Pipeline
+# Mirrors the FreeServices pipeline pattern:
+#   Stage 1 — Build: 3 parallel publish jobs (Hub, Agent+Installer, TestMe) → zip → artifacts
+#   Stage 2 — Test:  Pass A (from source via dotnet run) + Pass B (from pre-built artifacts)
+#   Stage 3 — Deploy: Hub + 3 agents (dev/cms/prod)
+#   Stage 4 — Smoke: verify agents registered with hub
+#
+# Test 2 (Windows service lifecycle) requires Admin and is skipped in CI.
+#
+# Pipeline variables expected per environment (variable groups):
+#   FreeServicesHub-dev / FreeServicesHub-cms / FreeServicesHub-prod
+#     hubUrl, hubAdminToken (secret), agentInstallPath, serviceName, serviceDisplayName
+
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+      - feature/*
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  buildConfiguration: 'Release'
+  dotnetVersion: '10.0.x'
+
+# ======================================================================
+# Stage 1: Build & Publish Artifacts
+#   Three parallel jobs — each publishes a self-contained win-x64
+#   binary, zips it, and uploads as a pipeline artifact.
+# ======================================================================
+
+stages:
+
+- stage: Build
+  displayName: 'Build & Publish Artifacts'
+  jobs:
+
+  # -- Publish Hub -----------------------------------------------------
+  - job: PublishHub
+    displayName: 'Publish Hub'
+    steps:
+
+    - task: UseDotNet@2
+      displayName: 'Install .NET SDK'
+      inputs:
+        packageType: 'sdk'
+        version: '$(dotnetVersion)'
+        includePreviewVersions: true
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore Hub'
+      inputs:
+        command: 'restore'
+        projects: 'FreeServicesHub/FreeServicesHub/FreeServicesHub.csproj'
+
+    - powershell: |
+        Write-Host "========================================"
+        Write-Host "[Stage: Build] [Job: PublishHub] [Step: Publish Hub]"
+        Write-Host "========================================"
+        dotnet publish FreeServicesHub/FreeServicesHub/FreeServicesHub.csproj --configuration $(buildConfiguration) --output "$(Build.ArtifactStagingDirectory)/Hub"
+        if ($LASTEXITCODE -ne 0) { Write-Error "dotnet publish failed"; exit $LASTEXITCODE }
+        Write-Host "`n--- Contents of Hub output (recursive) ---"
+        Get-ChildItem -Recurse "$(Build.ArtifactStagingDirectory)/Hub" | Select-Object FullName, Length
+      displayName: 'Publish Hub'
+
+    - task: ArchiveFiles@2
+      displayName: 'Zip Hub'
+      inputs:
+        rootFolderOrFile: '$(Build.ArtifactStagingDirectory)/Hub'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/Hub.zip'
+
+    - publish: $(Build.ArtifactStagingDirectory)/Hub.zip
+      artifact: Hub
+      displayName: 'Upload Hub artifact'
+
+  # -- Publish Agent + Installer ----------------------------------------
+  - job: PublishAgentInstaller
+    displayName: 'Publish Agent + Installer (win-x64)'
+    steps:
+
+    - task: UseDotNet@2
+      displayName: 'Install .NET SDK'
+      inputs:
+        packageType: 'sdk'
+        version: '$(dotnetVersion)'
+        includePreviewVersions: true
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore Agent'
+      inputs:
+        command: 'restore'
+        projects: 'FreeServicesHub.Agent/FreeServicesHub.Agent.csproj'
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore Installer'
+      inputs:
+        command: 'restore'
+        projects: 'FreeServicesHub.Agent.Installer/FreeServicesHub.Agent.Installer.csproj'
+
+    - powershell: |
+        Write-Host "========================================"
+        Write-Host "[Stage: Build] [Job: PublishAgentInstaller] [Step: Publish Agent (win-x64)]"
+        Write-Host "========================================"
+        dotnet publish FreeServicesHub.Agent/FreeServicesHub.Agent.csproj --configuration $(buildConfiguration) --runtime win-x64 --self-contained true --output "$(Build.ArtifactStagingDirectory)/Agent" -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+        if ($LASTEXITCODE -ne 0) { Write-Error "Agent publish failed"; exit $LASTEXITCODE }
+        Write-Host "`n--- Contents of Agent output ---"
+        Get-ChildItem -Recurse "$(Build.ArtifactStagingDirectory)/Agent" | Select-Object FullName, Length
+      displayName: 'Publish Agent'
+
+    - powershell: |
+        Write-Host "========================================"
+        Write-Host "[Stage: Build] [Job: PublishAgentInstaller] [Step: Publish Installer (win-x64)]"
+        Write-Host "========================================"
+        dotnet publish FreeServicesHub.Agent.Installer/FreeServicesHub.Agent.Installer.csproj --configuration $(buildConfiguration) --runtime win-x64 --self-contained true --output "$(Build.ArtifactStagingDirectory)/Installer"
+        if ($LASTEXITCODE -ne 0) { Write-Error "Installer publish failed"; exit $LASTEXITCODE }
+        Write-Host "`n--- Contents of Installer output ---"
+        Get-ChildItem -Recurse "$(Build.ArtifactStagingDirectory)/Installer" | Select-Object FullName, Length
+      displayName: 'Publish Installer'
+
+    - task: ArchiveFiles@2
+      displayName: 'Zip Agent'
+      inputs:
+        rootFolderOrFile: '$(Build.ArtifactStagingDirectory)/Agent'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/Agent.zip'
+
+    - task: ArchiveFiles@2
+      displayName: 'Zip Installer'
+      inputs:
+        rootFolderOrFile: '$(Build.ArtifactStagingDirectory)/Installer'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/Installer.zip'
+
+    - publish: $(Build.ArtifactStagingDirectory)/Agent.zip
+      artifact: Agent
+      displayName: 'Upload Agent artifact'
+
+    - publish: $(Build.ArtifactStagingDirectory)/Installer.zip
+      artifact: Installer
+      displayName: 'Upload Installer artifact'
+
+  # -- Publish TestMe ---------------------------------------------------
+  - job: PublishTestMe
+    displayName: 'Publish TestMe (win-x64)'
+    steps:
+
+    - task: UseDotNet@2
+      displayName: 'Install .NET SDK'
+      inputs:
+        packageType: 'sdk'
+        version: '$(dotnetVersion)'
+        includePreviewVersions: true
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore TestMe'
+      inputs:
+        command: 'restore'
+        projects: 'FreeServicesHub.TestMe/FreeServicesHub.TestMe.csproj'
+
+    - powershell: |
+        Write-Host "========================================"
+        Write-Host "[Stage: Build] [Job: PublishTestMe] [Step: Publish TestMe (win-x64)]"
+        Write-Host "========================================"
+        dotnet publish FreeServicesHub.TestMe/FreeServicesHub.TestMe.csproj --configuration $(buildConfiguration) --runtime win-x64 --self-contained true --output "$(Build.ArtifactStagingDirectory)/TestMe"
+        if ($LASTEXITCODE -ne 0) { Write-Error "TestMe publish failed"; exit $LASTEXITCODE }
+        Write-Host "`n--- Contents of TestMe output ---"
+        Get-ChildItem -Recurse "$(Build.ArtifactStagingDirectory)/TestMe" | Select-Object FullName, Length
+      displayName: 'Publish TestMe'
+
+    - task: ArchiveFiles@2
+      displayName: 'Zip TestMe'
+      inputs:
+        rootFolderOrFile: '$(Build.ArtifactStagingDirectory)/TestMe'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/TestMe.zip'
+
+    - publish: $(Build.ArtifactStagingDirectory)/TestMe.zip
+      artifact: TestMe
+      displayName: 'Upload TestMe artifact'
+
+
+# ======================================================================
+# Stage 2: Test
+#   Pass A — "From Source": build everything, run tests 1/3/4 via
+#            dotnet run, capture output to log files.
+#   Pass B — "From Artifacts": download pre-built zips, extract,
+#            run TestMe.exe against shipped binaries (no SDK needed).
+# ======================================================================
+
+- stage: Test
+  displayName: 'Run Tests'
+  dependsOn: Build
+  jobs:
+
+  # -- Pass A: Tests from source ----------------------------------------
+
+  - job: SourceTest1
+    displayName: 'Source — Test 1 (Agent Console Mode)'
+    steps:
+
+    - task: UseDotNet@2
+      displayName: 'Install .NET SDK'
+      inputs:
+        packageType: 'sdk'
+        version: '$(dotnetVersion)'
+        includePreviewVersions: true
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore'
+      inputs:
+        command: 'restore'
+        projects: '**/*.csproj'
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Build'
+      inputs:
+        command: 'build'
+        projects: '**/*.csproj'
+        arguments: '--configuration $(buildConfiguration) --no-restore'
+
+    - powershell: |
+        Write-Host "========================================"
+        Write-Host "[Stage: Test] [Job: SourceTest1] [Step: Run Test 1 — Agent Console Mode (from source)]"
+        Write-Host "Command:"
+        Write-Host "  dotnet run --project FreeServicesHub.TestMe/FreeServicesHub.TestMe.csproj --configuration $(buildConfiguration) --no-build -- --test=1 --heartbeats=1 --timeout=60 --config=$(buildConfiguration) --servicedir=$(Build.SourcesDirectory)/FreeServicesHub.Agent"
+        Write-Host "========================================"
+        New-Item -ItemType Directory -Force -Path "$(Build.ArtifactStagingDirectory)/TestLogs" | Out-Null
+        dotnet run --project FreeServicesHub.TestMe/FreeServicesHub.TestMe.csproj --configuration $(buildConfiguration) --no-build -- --test=1 --heartbeats=1 --timeout=60 --config=$(buildConfiguration) --servicedir=$(Build.SourcesDirectory)/FreeServicesHub.Agent 2>&1 | Tee-Object -FilePath "$(Build.ArtifactStagingDirectory)/TestLogs/source-test1.log"
+        Write-Host "Exit code: $LASTEXITCODE"
+        exit $LASTEXITCODE
+      displayName: 'Run Test 1 — Agent Console Mode (source)'
+
+    - publish: $(Build.ArtifactStagingDirectory)/TestLogs
+      artifact: TestLogs-Source-Test1
+      displayName: 'Upload Test 1 logs'
+      condition: always()
+
+  - job: SourceTest3
+    displayName: 'Source — Test 3 (Installer CLI)'
+    continueOnError: true
+    steps:
+
+    - task: UseDotNet@2
+      displayName: 'Install .NET SDK'
+      inputs:
+        packageType: 'sdk'
+        version: '$(dotnetVersion)'
+        includePreviewVersions: true
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore'
+      inputs:
+        command: 'restore'
+        projects: '**/*.csproj'
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Build'
+      inputs:
+        command: 'build'
+        projects: '**/*.csproj'
+        arguments: '--configuration $(buildConfiguration) --no-restore'
+
+    - powershell: |
+        Write-Host "========================================"
+        Write-Host "[Stage: Test] [Job: SourceTest3] [Step: Run Test 3 — Installer CLI (from source)]"
+        Write-Host "Command:"
+        Write-Host "  dotnet run --project FreeServicesHub.TestMe/FreeServicesHub.TestMe.csproj --configuration $(buildConfiguration) --no-build -- --test=3 --timeout=60 --config=$(buildConfiguration) --servicedir=$(Build.SourcesDirectory)/FreeServicesHub.Agent --installerdir=$(Build.SourcesDirectory)/FreeServicesHub.Agent.Installer"
+        Write-Host "========================================"
+        New-Item -ItemType Directory -Force -Path "$(Build.ArtifactStagingDirectory)/TestLogs" | Out-Null
+        dotnet run --project FreeServicesHub.TestMe/FreeServicesHub.TestMe.csproj --configuration $(buildConfiguration) --no-build -- --test=3 --timeout=60 --config=$(buildConfiguration) --servicedir=$(Build.SourcesDirectory)/FreeServicesHub.Agent --installerdir=$(Build.SourcesDirectory)/FreeServicesHub.Agent.Installer 2>&1 | Tee-Object -FilePath "$(Build.ArtifactStagingDirectory)/TestLogs/source-test3.log"
+        Write-Host "Exit code: $LASTEXITCODE"
+        exit $LASTEXITCODE
+      displayName: 'Run Test 3 — Installer CLI (source)'
+
+    - publish: $(Build.ArtifactStagingDirectory)/TestLogs
+      artifact: TestLogs-Source-Test3
+      displayName: 'Upload Test 3 logs'
+      condition: always()
+
+  - job: SourceTest4
+    displayName: 'Source — Test 4 (Agent Standalone Full)'
+    continueOnError: true
+    steps:
+
+    - task: UseDotNet@2
+      displayName: 'Install .NET SDK'
+      inputs:
+        packageType: 'sdk'
+        version: '$(dotnetVersion)'
+        includePreviewVersions: true
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore'
+      inputs:
+        command: 'restore'
+        projects: '**/*.csproj'
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Build'
+      inputs:
+        command: 'build'
+        projects: '**/*.csproj'
+        arguments: '--configuration $(buildConfiguration) --no-restore'
+
+    - powershell: |
+        Write-Host "========================================"
+        Write-Host "[Stage: Test] [Job: SourceTest4] [Step: Run Test 4 — Agent Standalone Full (from source)]"
+        Write-Host "Command:"
+        Write-Host "  dotnet run --project FreeServicesHub.TestMe/FreeServicesHub.TestMe.csproj --configuration $(buildConfiguration) --no-build -- --test=4 --heartbeats=3 --interval=5 --timeout=120 --config=$(buildConfiguration) --servicedir=$(Build.SourcesDirectory)/FreeServicesHub.Agent"
+        Write-Host "========================================"
+        New-Item -ItemType Directory -Force -Path "$(Build.ArtifactStagingDirectory)/TestLogs" | Out-Null
+        dotnet run --project FreeServicesHub.TestMe/FreeServicesHub.TestMe.csproj --configuration $(buildConfiguration) --no-build -- --test=4 --heartbeats=3 --interval=5 --timeout=120 --config=$(buildConfiguration) --servicedir=$(Build.SourcesDirectory)/FreeServicesHub.Agent 2>&1 | Tee-Object -FilePath "$(Build.ArtifactStagingDirectory)/TestLogs/source-test4.log"
+        Write-Host "Exit code: $LASTEXITCODE"
+        exit $LASTEXITCODE
+      displayName: 'Run Test 4 — Agent Standalone Full (source)'
+
+    - publish: $(Build.ArtifactStagingDirectory)/TestLogs
+      artifact: TestLogs-Source-Test4
+      displayName: 'Upload Test 4 logs'
+      condition: always()
+
+  # -- Pass B: Tests from pre-built artifacts ----------------------------
+
+  - job: ArtifactTest
+    displayName: 'Artifact — Tests from Pre-Built Binaries'
+    dependsOn:
+      - SourceTest1
+      - SourceTest3
+      - SourceTest4
+    condition: succeededOrFailed()
+    steps:
+
+    - checkout: none
+
+    - download: current
+      artifact: Agent
+      displayName: 'Download Agent artifact'
+
+    - download: current
+      artifact: Installer
+      displayName: 'Download Installer artifact'
+
+    - download: current
+      artifact: TestMe
+      displayName: 'Download TestMe artifact'
+
+    - task: ExtractFiles@1
+      displayName: 'Extract Agent'
+      inputs:
+        archiveFilePatterns: '$(Pipeline.Workspace)/Agent/Agent.zip'
+        destinationFolder: '$(Pipeline.Workspace)/artifacts/Agent'
+
+    - task: ExtractFiles@1
+      displayName: 'Extract Installer'
+      inputs:
+        archiveFilePatterns: '$(Pipeline.Workspace)/Installer/Installer.zip'
+        destinationFolder: '$(Pipeline.Workspace)/artifacts/Installer'
+
+    - task: ExtractFiles@1
+      displayName: 'Extract TestMe'
+      inputs:
+        archiveFilePatterns: '$(Pipeline.Workspace)/TestMe/TestMe.zip'
+        destinationFolder: '$(Pipeline.Workspace)/artifacts/TestMe'
+
+    - powershell: |
+        Write-Host "========================================"
+        Write-Host "[Stage: Test] [Job: ArtifactTest] [Step: List extracted artifacts]"
+        Write-Host "========================================"
+        Write-Host "--- Agent ---"
+        Get-ChildItem -Recurse "$(Pipeline.Workspace)/artifacts/Agent" | Select-Object FullName, Length
+        Write-Host "--- Installer ---"
+        Get-ChildItem -Recurse "$(Pipeline.Workspace)/artifacts/Installer" | Select-Object FullName, Length
+        Write-Host "--- TestMe ---"
+        Get-ChildItem -Recurse "$(Pipeline.Workspace)/artifacts/TestMe" | Select-Object FullName, Length
+      displayName: 'List extracted artifacts'
+
+    - powershell: |
+        Write-Host "========================================"
+        Write-Host "[Stage: Test] [Job: ArtifactTest] [Step: Run Test 1 from pre-built binaries]"
+        $testMe = Get-ChildItem -Recurse "$(Pipeline.Workspace)/artifacts/TestMe" -Filter "FreeServicesHub.TestMe.exe" | Select-Object -First 1 -ExpandProperty FullName
+        $serviceDir = (Get-ChildItem -Recurse "$(Pipeline.Workspace)/artifacts/Agent" -Filter "FreeServicesHub.Agent.exe" | Select-Object -First 1).DirectoryName
+        $installerDir = (Get-ChildItem -Recurse "$(Pipeline.Workspace)/artifacts/Installer" -Filter "FreeServicesHub.Agent.Installer.exe" | Select-Object -First 1).DirectoryName
+        Write-Host "TestMe exe: $testMe"
+        Write-Host "Agent dir: $serviceDir"
+        Write-Host "Installer dir: $installerDir"
+        Write-Host "Command:"
+        Write-Host "  $testMe --test=1 --heartbeats=1 --timeout=60 --servicedir=$serviceDir --installerdir=$installerDir"
+        Write-Host "========================================"
+        if (!$testMe) { Write-Error "TestMe.exe not found"; exit 1 }
+        if (!$serviceDir) { Write-Error "Agent.exe not found"; exit 1 }
+        New-Item -ItemType Directory -Force -Path "$(Build.ArtifactStagingDirectory)/TestLogs" | Out-Null
+        & $testMe --test=1 --heartbeats=1 --timeout=60 --servicedir=$serviceDir --installerdir=$installerDir 2>&1 | Tee-Object -FilePath "$(Build.ArtifactStagingDirectory)/TestLogs/artifact-test1.log"
+        Write-Host "Exit code: $LASTEXITCODE"
+        exit $LASTEXITCODE
+      displayName: 'Artifact Test 1 — Agent Console Mode'
+
+    - powershell: |
+        Write-Host "========================================"
+        Write-Host "[Stage: Test] [Job: ArtifactTest] [Step: Run Test 3 from pre-built binaries]"
+        $testMe = Get-ChildItem -Recurse "$(Pipeline.Workspace)/artifacts/TestMe" -Filter "FreeServicesHub.TestMe.exe" | Select-Object -First 1 -ExpandProperty FullName
+        $serviceDir = (Get-ChildItem -Recurse "$(Pipeline.Workspace)/artifacts/Agent" -Filter "FreeServicesHub.Agent.exe" | Select-Object -First 1).DirectoryName
+        $installerDir = (Get-ChildItem -Recurse "$(Pipeline.Workspace)/artifacts/Installer" -Filter "FreeServicesHub.Agent.Installer.exe" | Select-Object -First 1).DirectoryName
+        Write-Host "Command:"
+        Write-Host "  $testMe --test=3 --timeout=60 --servicedir=$serviceDir --installerdir=$installerDir"
+        Write-Host "========================================"
+        if (!$testMe) { Write-Error "TestMe.exe not found"; exit 1 }
+        & $testMe --test=3 --timeout=60 --servicedir=$serviceDir --installerdir=$installerDir 2>&1 | Tee-Object -FilePath "$(Build.ArtifactStagingDirectory)/TestLogs/artifact-test3.log"
+        Write-Host "Exit code: $LASTEXITCODE"
+        exit $LASTEXITCODE
+      displayName: 'Artifact Test 3 — Installer CLI'
+      continueOnError: true
+
+    - powershell: |
+        Write-Host "========================================"
+        Write-Host "[Stage: Test] [Job: ArtifactTest] [Step: Run Test 4 from pre-built binaries]"
+        $testMe = Get-ChildItem -Recurse "$(Pipeline.Workspace)/artifacts/TestMe" -Filter "FreeServicesHub.TestMe.exe" | Select-Object -First 1 -ExpandProperty FullName
+        $serviceDir = (Get-ChildItem -Recurse "$(Pipeline.Workspace)/artifacts/Agent" -Filter "FreeServicesHub.Agent.exe" | Select-Object -First 1).DirectoryName
+        Write-Host "Command:"
+        Write-Host "  $testMe --test=4 --heartbeats=3 --interval=5 --timeout=120 --servicedir=$serviceDir"
+        Write-Host "========================================"
+        if (!$testMe) { Write-Error "TestMe.exe not found"; exit 1 }
+        & $testMe --test=4 --heartbeats=3 --interval=5 --timeout=120 --servicedir=$serviceDir 2>&1 | Tee-Object -FilePath "$(Build.ArtifactStagingDirectory)/TestLogs/artifact-test4.log"
+        Write-Host "Exit code: $LASTEXITCODE"
+        exit $LASTEXITCODE
+      displayName: 'Artifact Test 4 — Agent Standalone Full'
+      continueOnError: true
+
+    - publish: $(Build.ArtifactStagingDirectory)/TestLogs
+      artifact: TestLogs-Artifacts
+      displayName: 'Upload artifact test logs'
+      condition: always()
+
+
+# ======================================================================
+# Stage 3: Deploy
+#   Downloads pre-built artifacts (no recompile). Deploys hub + agents.
+# ======================================================================
+
+- stage: Deploy
+  displayName: 'Deploy Hub + Agents'
+  dependsOn: Test
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+
+  # -- Deploy Hub -------------------------------------------------------
+  - deployment: DeployHub
+    displayName: 'Deploy Hub Web App'
+    environment: 'freeserviceshub-hub'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - download: current
+              artifact: Hub
+
+            - task: ExtractFiles@1
+              displayName: 'Extract Hub'
+              inputs:
+                archiveFilePatterns: '$(Pipeline.Workspace)/Hub/Hub.zip'
+                destinationFolder: '$(Pipeline.Workspace)/deploy/Hub'
+
+            # Deploy to your hosting target (IIS, Azure App Service, VM, etc.)
+            - script: echo "Deploy hub artifacts from $(Pipeline.Workspace)/deploy/Hub to hosting target"
+              displayName: 'Deploy Hub (customize for target)'
+
+            - powershell: |
+                Write-Host "Waiting for hub to start..."
+                Start-Sleep -Seconds 15
+                try {
+                  $response = Invoke-WebRequest -Uri "$(hubUrl)/health" -UseBasicParsing -TimeoutSec 10
+                  Write-Host "Hub health check: $($response.StatusCode)"
+                } catch {
+                  Write-Error "Hub health check failed: $_"
+                  exit 1
+                }
+              displayName: 'Hub Health Check'
+
+  # -- Deploy Agents (one per environment) ------------------------------
+
+  - deployment: DeployAgentDev
+    displayName: 'Deploy Agent - Dev'
+    dependsOn: DeployHub
+    environment: 'freeserviceshub-dev'
+    variables:
+      - group: FreeServicesHub-dev
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - download: current
+              artifact: Agent
+            - download: current
+              artifact: Installer
+            - task: ExtractFiles@1
+              displayName: 'Extract Agent'
+              inputs:
+                archiveFilePatterns: '$(Pipeline.Workspace)/Agent/Agent.zip'
+                destinationFolder: '$(Pipeline.Workspace)/deploy/Agent'
+            - task: ExtractFiles@1
+              displayName: 'Extract Installer'
+              inputs:
+                archiveFilePatterns: '$(Pipeline.Workspace)/Installer/Installer.zip'
+                destinationFolder: '$(Pipeline.Workspace)/deploy/Installer'
+            - template: templates/deploy-agent.yml
+              parameters:
+                hubUrl: $(hubUrl)
+                hubAdminToken: $(hubAdminToken)
+                agentInstallPath: $(agentInstallPath)
+                serviceName: $(serviceName)
+                serviceDisplayName: '$(serviceDisplayName)'
+
+  - deployment: DeployAgentCms
+    displayName: 'Deploy Agent - CMS'
+    dependsOn: DeployHub
+    environment: 'freeserviceshub-cms'
+    variables:
+      - group: FreeServicesHub-cms
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - download: current
+              artifact: Agent
+            - download: current
+              artifact: Installer
+            - task: ExtractFiles@1
+              displayName: 'Extract Agent'
+              inputs:
+                archiveFilePatterns: '$(Pipeline.Workspace)/Agent/Agent.zip'
+                destinationFolder: '$(Pipeline.Workspace)/deploy/Agent'
+            - task: ExtractFiles@1
+              displayName: 'Extract Installer'
+              inputs:
+                archiveFilePatterns: '$(Pipeline.Workspace)/Installer/Installer.zip'
+                destinationFolder: '$(Pipeline.Workspace)/deploy/Installer'
+            - template: templates/deploy-agent.yml
+              parameters:
+                hubUrl: $(hubUrl)
+                hubAdminToken: $(hubAdminToken)
+                agentInstallPath: $(agentInstallPath)
+                serviceName: $(serviceName)
+                serviceDisplayName: '$(serviceDisplayName)'
+
+  - deployment: DeployAgentProd
+    displayName: 'Deploy Agent - Prod'
+    dependsOn: DeployHub
+    environment: 'freeserviceshub-prod'
+    variables:
+      - group: FreeServicesHub-prod
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - download: current
+              artifact: Agent
+            - download: current
+              artifact: Installer
+            - task: ExtractFiles@1
+              displayName: 'Extract Agent'
+              inputs:
+                archiveFilePatterns: '$(Pipeline.Workspace)/Agent/Agent.zip'
+                destinationFolder: '$(Pipeline.Workspace)/deploy/Agent'
+            - task: ExtractFiles@1
+              displayName: 'Extract Installer'
+              inputs:
+                archiveFilePatterns: '$(Pipeline.Workspace)/Installer/Installer.zip'
+                destinationFolder: '$(Pipeline.Workspace)/deploy/Installer'
+            - template: templates/deploy-agent.yml
+              parameters:
+                hubUrl: $(hubUrl)
+                hubAdminToken: $(hubAdminToken)
+                agentInstallPath: $(agentInstallPath)
+                serviceName: $(serviceName)
+                serviceDisplayName: '$(serviceDisplayName)'
+
+
+# ======================================================================
+# Stage 4: Smoke Tests
+# ======================================================================
+
+- stage: SmokeTest
+  displayName: 'Smoke Tests'
+  dependsOn: Deploy
+  jobs:
+    - job: VerifyAgents
+      displayName: 'Verify Agents Online'
+      steps:
+        - powershell: |
+            Write-Host "Waiting 60s for heartbeat cycles..."
+            Start-Sleep -Seconds 60
+          displayName: 'Wait for Heartbeats'
+
+        - powershell: |
+            Write-Host "Checking agents on hub..."
+            try {
+              $headers = @{
+                "Authorization" = "Bearer $(hubAdminToken)"
+                "Content-Type"  = "application/json"
+              }
+              $response = Invoke-RestMethod -Uri "$(hubUrl)/api/Data/GetAgents" -Method Post -Headers $headers -Body "null"
+              $count = ($response | Measure-Object).Count
+              Write-Host "Agents registered: $count"
+              $response | ForEach-Object { Write-Host "  - $($_.hostname) (Last seen: $($_.lastSeen))" }
+              if ($count -lt 1) {
+                Write-Error "No agents registered with hub"
+                exit 1
+              }
+            } catch {
+              Write-Error "Failed to query agents: $_"
+              exit 1
+            }
+          displayName: 'Verify Agents Registered'

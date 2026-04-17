@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 
@@ -40,13 +40,6 @@ public partial class EFDataModel : DbContext
     public virtual DbSet<UserGroup> UserGroups { get; set; }
 
     public virtual DbSet<UserInGroup> UserInGroups { get; set; }
-
-    // The OnConfiguring override is only commented out and used to build the migration scripts.
-    // protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-    // => optionsBuilder.UseSqlite("Data Source=C:\\Working\\FreeServicesHub.db");
-    // => optionsBuilder.UseMySQL("Server=localhost;Database=FreeServicesHub;User=admin;Password=admin");
-    // => optionsBuilder.UseNpgsql("Host=localhost;Database=FreeServicesHub;Username=postgres;Password=admin");
-    // => optionsBuilder.UseSqlServer("Data Source=(local);Initial Catalog=FreeServicesHub;Persist Security Info=True;User ID=sa;Password=saPassword;MultipleActiveResultSets=True;TrustServerCertificate=True;");
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

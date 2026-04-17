@@ -1,0 +1,765 @@
+# build-and-deploy-pipeline.yml
+name: '$(Date:yyyyMMdd)$(Rev:.r)'
+
+resources:
+  repositories:
+    - repository: TemplateRepo
+      type: git
+      name: 'ReleasePipelines'
+      ref: 'refs/heads/main'
+      trigger: none
+    - repository: BuildRepo
+      type: git
+      name: 'FreeServicesHub/FreeServicesHub'
+      ref: 'refs/heads/main'
+      trigger:
+        branches:
+          include:
+            - main
+
+variables:
+  - template: Templates/common-variables.yml@TemplateRepo
+
+  - name: CI_ProjectName
+    value: "FreeServicesHub"
+  - name: CI_BUILD_CsProjectPath
+    value: "FreeServicesHub/FreeServicesHub/FreeServicesHub.csproj"
+  - name: CI_BUILD_Namespace
+    value: ""
+
+# Agent & Installer project paths
+  - name: CI_BUILD_AgentCsProjectPath
+    value: "FreeServicesHub.Agent/FreeServicesHub.Agent.csproj"
+  - name: CI_BUILD_InstallerCsProjectPath
+    value: "FreeServicesHub.Agent.Installer/FreeServicesHub.Agent.Installer.csproj"
+
+# Environment: DEV (Web App + Agent)
+  - name: CI_DEV_IISDeploymentType
+    value: "IISWebApplication"
+  - name: CI_DEV_WebsiteName
+    value: "azuredev.em.wsu.edu"
+  - name: CI_DEV_VirtualPath
+    value: "/freeserviceshub"
+  - name: CI_DEV_AppPoolName
+    value: "azuredev.em.wsu.edu.freeserviceshub"
+  - name: CI_DEV_VariableGroup
+    value: "FreeServicesHub_AppSettings_DEV"
+
+# Environment: PROD (Web App + Agent)
+  - name: CI_PROD_IISDeploymentType
+    value: "IISWebApplication"
+  - name: CI_PROD_WebsiteName
+    value: "prod.em.wsu.edu"
+  - name: CI_PROD_VirtualPath
+    value: "/freeserviceshub"
+  - name: CI_PROD_AppPoolName
+    value: "prod.em.wsu.edu.freeserviceshub"
+  - name: CI_PROD_VariableGroup
+    value: "FreeServicesHub_AppSettings_PROD"
+
+# Agent registration: web app URLs (used by deploy to request registration keys)
+  - name: CI_PIPELINE_COMMON_WebAppUrl_DEV
+    value: 'https://azuredev.em.wsu.edu/FreeServicesHub'
+
+  - name: CI_PIPELINE_COMMON_WebAppUrl_PROD
+    value: 'https://prod.em.wsu.edu/FreeServicesHub'
+
+
+
+pool:
+  name: 'BuildVM'
+
+stages:
+  ####################################################################
+  # 0. Pre-Build Stage — Env Dump + Generate API Keys
+  ####################################################################
+  - stage: PreBuildStage
+    displayName: "Pre-Build Stage"
+    jobs:
+      - job: PreBuildJob
+        workspace:
+          clean: all
+        displayName: "Dump Env Vars & Generate CiCd Token"
+        steps:
+          - checkout: none
+          - download: none
+          - template: Templates/dump-env-variables-template.yml@TemplateRepo
+
+          - task: PowerShell@2
+            name: generateCiCdToken
+            displayName: "Generate Ephemeral CiCd Admin Token"
+            inputs:
+              targetType: 'inline'
+              script: |
+                # Generate a one-time CiCd token from 4 randomized GUIDs (128 hex chars).
+                # Injected into web app appsettings.json via FileTransform@2 (App.CiCdAdminToken)
+                # and used by agent deploy steps to request registration keys.
+                $token = [guid]::NewGuid().ToString("N") + `
+                         [guid]::NewGuid().ToString("N") + `
+                         [guid]::NewGuid().ToString("N") + `
+                         [guid]::NewGuid().ToString("N")
+                Write-Host "CiCd token generated ($($token.Length) chars, secret)."
+                Write-Host "##vso[task.setvariable variable=CiCdToken;isOutput=true;issecret=true]$token"
+
+  # -------------------------------------------------------------------
+  # Build Stage: Build Web App, Agent, and Installer in parallel
+  # -------------------------------------------------------------------
+  - stage: BuildStage
+    displayName: "Build Stage"
+    jobs:
+      - job: BuildJob
+        displayName: "Build and Publish Web Application"
+        pool:
+          name: 'BuildVM'
+        steps:
+          - template: Templates/build-template.yml@TemplateRepo
+            parameters:
+              buildProjectName: "$(CI_ProjectName)"
+              buildCsProjectPath: "$(CI_BUILD_CsProjectPath)"
+              buildPublishArgs: "$(CI_PIPELINE_COMMON_PublishArgs)"
+              buildNamespace: "$(CI_BUILD_Namespace)"
+
+      - job: BuildAgentJob
+        displayName: "Build and Publish Agent"
+        pool:
+          name: 'BuildVM'
+        steps:
+          - checkout: BuildRepo
+            displayName: "Check out BuildRepo"
+
+          - task: UseDotNet@2
+            displayName: 'Install .NET 10.x'
+            inputs:
+              version: '10.x'
+              includePreviewVersions: true
+
+          - task: DotNetCoreCLI@2
+            displayName: "Restore Agent Packages"
+            inputs:
+              command: 'restore'
+              projects: '$(Build.SourcesDirectory)/$(CI_BUILD_AgentCsProjectPath)'
+
+          - script: |
+              dotnet publish "$(Build.SourcesDirectory)\$(CI_BUILD_AgentCsProjectPath)" --configuration Release -r win-x64 --self-contained -o "$(Build.ArtifactStagingDirectory)\publish\FreeServicesHub.Agent\"
+            displayName: "DotNet Publish Agent (win-x64, self-contained)"
+
+          - task: PowerShell@2
+            displayName: "Zip Agent Published Output"
+            inputs:
+              targetType: inline
+              script: |
+                $publishFolder = "$(Build.ArtifactStagingDirectory)\publish\FreeServicesHub.Agent"
+                $zipPath = "$(Build.ArtifactStagingDirectory)\FreeServicesHub.Agent.1.$(Build.BuildNumber).zip"
+                if (Test-Path $publishFolder) {
+                  Compress-Archive -Path "$publishFolder\*" -DestinationPath $zipPath -Force -CompressionLevel Fastest
+                  Write-Host "Zipped agent files to $zipPath"
+                } else {
+                  Write-Host "Agent publish folder not found: $publishFolder"
+                  Exit 1
+                }
+
+          - task: PublishBuildArtifacts@1
+            displayName: "Publish Agent Artifact"
+            inputs:
+              PathtoPublish: "$(Build.ArtifactStagingDirectory)\\FreeServicesHub.Agent.1.$(Build.BuildNumber).zip"
+              ArtifactName: "FreeServicesHub.Agent.Artifact"
+
+      - job: BuildInstallerJob
+        displayName: "Build and Publish Installer"
+        pool:
+          name: 'BuildVM'
+        steps:
+          - checkout: BuildRepo
+            displayName: "Check out BuildRepo"
+
+          - task: UseDotNet@2
+            displayName: 'Install .NET 10.x'
+            inputs:
+              version: '10.x'
+              includePreviewVersions: true
+
+          - task: DotNetCoreCLI@2
+            displayName: "Restore Installer Packages"
+            inputs:
+              command: 'restore'
+              projects: '$(Build.SourcesDirectory)/$(CI_BUILD_InstallerCsProjectPath)'
+
+          - script: |
+              dotnet publish "$(Build.SourcesDirectory)\$(CI_BUILD_InstallerCsProjectPath)" --configuration Release -r win-x64 --self-contained -o "$(Build.ArtifactStagingDirectory)\publish\FreeServicesHub.Agent.Installer\"
+            displayName: "DotNet Publish Installer (win-x64, self-contained)"
+
+          - task: PowerShell@2
+            displayName: "Zip Installer Published Output"
+            inputs:
+              targetType: inline
+              script: |
+                $publishFolder = "$(Build.ArtifactStagingDirectory)\publish\FreeServicesHub.Agent.Installer"
+                $zipPath = "$(Build.ArtifactStagingDirectory)\FreeServicesHub.Agent.Installer.1.$(Build.BuildNumber).zip"
+                if (Test-Path $publishFolder) {
+                  Compress-Archive -Path "$publishFolder\*" -DestinationPath $zipPath -Force -CompressionLevel Fastest
+                  Write-Host "Zipped installer files to $zipPath"
+                } else {
+                  Write-Host "Installer publish folder not found: $publishFolder"
+                  Exit 1
+                }
+
+          - task: PublishBuildArtifacts@1
+            displayName: "Publish Installer Artifact"
+            inputs:
+              PathtoPublish: "$(Build.ArtifactStagingDirectory)\\FreeServicesHub.Agent.Installer.1.$(Build.BuildNumber).zip"
+              ArtifactName: "FreeServicesHub.Agent.Installer.Artifact"
+
+  # -------------------------------------------------------------------
+  # Info Stage: Basic information (env dump, etc.)
+  # Depends on BuildStage so all artifacts are ready before deployment
+  # -------------------------------------------------------------------
+  - stage: InfoStage
+    displayName: "Info Stage"
+    dependsOn: BuildStage
+    jobs:
+      - job: InfoJob
+        displayName: "Info Job"
+        pool:
+          name: 'BuildVM'
+        steps:
+          - checkout: none
+          - download: none
+          - task: PowerShell@2
+            displayName: "Just a filler step"
+            inputs:
+              targetType: 'inline'
+              script: |
+                Write-Host "Hello World"
+
+  # -------------------------------------------------------------------
+  # Deploy Web App to DEV
+  # -------------------------------------------------------------------
+  - stage: DeployDEVStage
+    displayName: "Deploy Web App to DEV"
+    dependsOn:
+      - InfoStage
+      - PreBuildStage
+    variables:
+      - group: ${{ variables.CI_DEV_VariableGroup }}
+      - name: App.CiCdAdminToken
+        value: $[ stageDependencies.PreBuildStage.PreBuildJob.outputs['generateCiCdToken.CiCdToken'] ]
+      - name: App.CiCdMaxAgentRegistrations
+        value: 2
+    jobs:
+      - deployment: DeployDEV
+        workspace:
+          clean: all
+        displayName: "Deploy to DEV (Environment-based)"
+        environment:
+          name: "AzureDev"
+          resourceType: "VirtualMachine"
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: none
+                - checkout: none
+                - download: current
+                  artifact: FreeServicesHub.Artifact
+                - template: Templates/dump-env-variables-template.yml@TemplateRepo
+                - template: Templates/deploy-template.yml@TemplateRepo
+                  parameters:
+                    envFolderName: "DEV"
+                    basePath: "$(CI_PIPELINE_COMMON_ApplicationFolder_DEV)"
+                    projectName: "$(CI_ProjectName)"
+                    releaseRetention: "$(CI_PIPELINE_COMMON_ReleaseRetention)"
+                    IISDeploymentType: "$(CI_DEV_IISDeploymentType)"
+                    WebsiteName: "$(CI_DEV_WebsiteName)"
+                    VirtualPath: "$(CI_DEV_VirtualPath)"
+                    AppPoolName: "$(CI_DEV_AppPoolName)"
+                    DotNetVersion: "$(CI_PIPELINE_COMMON_DotNetVersion_DEV)"
+                    AppPoolIdentity: "$(CI_PIPELINE_COMMON_AppPoolIdentity_DEV)"
+                - template: Templates/clean-workspace-template.yml@TemplateRepo
+
+  # -------------------------------------------------------------------
+  # Deploy Web App to PROD
+  # -------------------------------------------------------------------
+  - stage: DeployPRODStage
+    displayName: "Deploy Web App to PROD"
+    dependsOn:
+      - InfoStage
+      - PreBuildStage
+    variables:
+      - group: ${{ variables.CI_PROD_VariableGroup }}
+      - name: App.CiCdAdminToken
+        value: $[ stageDependencies.PreBuildStage.PreBuildJob.outputs['generateCiCdToken.CiCdToken'] ]
+      - name: App.CiCdMaxAgentRegistrations
+        value: 2
+    jobs:
+      - deployment: DeployPROD
+        workspace:
+          clean: all
+        displayName: "Deploy to PROD (Environment-based)"
+        environment:
+          name: "AzureProd"
+          resourceType: "VirtualMachine"
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: none
+                - checkout: none
+                - download: current
+                  artifact: FreeServicesHub.Artifact
+                - template: Templates/dump-env-variables-template.yml@TemplateRepo
+                - template: Templates/deploy-template.yml@TemplateRepo
+                  parameters:
+                    envFolderName: "PROD"
+                    basePath: "$(CI_PIPELINE_COMMON_ApplicationFolder_PROD)"
+                    projectName: "$(CI_ProjectName)"
+                    releaseRetention: "$(CI_PIPELINE_COMMON_ReleaseRetention)"
+                    IISDeploymentType: "$(CI_PROD_IISDeploymentType)"
+                    WebsiteName: "$(CI_PROD_WebsiteName)"
+                    VirtualPath: "$(CI_PROD_VirtualPath)"
+                    AppPoolName: "$(CI_PROD_AppPoolName)"
+                    DotNetVersion: "$(CI_PIPELINE_COMMON_DotNetVersion_PROD)"
+                    AppPoolIdentity: "$(CI_PIPELINE_COMMON_AppPoolIdentity_PROD)"
+                - template: Templates/clean-workspace-template.yml@TemplateRepo
+
+  ####################################################################
+  # Deploy Agent to DEV
+  # Runs AFTER the DEV web app is deployed and running.
+  # Downloads agent + installer artifacts, deploys to Services folder,
+  # injects the generated API key into agent appsettings.json.
+  ####################################################################
+  - stage: DeployAgentDEVStage
+    displayName: "Deploy Agent to DEV"
+    dependsOn:
+      - DeployDEVStage
+      - PreBuildStage
+    variables:
+      - group: ${{ variables.CI_DEV_VariableGroup }}
+      - name: CiCdToken
+        value: $[ stageDependencies.PreBuildStage.PreBuildJob.outputs['generateCiCdToken.CiCdToken'] ]
+    jobs:
+      - deployment: DeployAgentDEV
+        workspace:
+          clean: all
+        displayName: "Deploy Agent to DEV Environment"
+        environment:
+          name: "AzureDev"
+          resourceType: "VirtualMachine"
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: none
+                - checkout: none
+                - download: current
+                  artifact: FreeServicesHub.Agent.Artifact
+                - download: current
+                  artifact: FreeServicesHub.Agent.Installer.Artifact
+
+                - task: PowerShell@2
+                  displayName: "Deploy Agent & Installer to Services/DEV"
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      Write-Host "=== Deploying FreeServicesHub Agent to DEV ==="
+
+                      $applicationsFolder = "$(CI_PIPELINE_COMMON_ApplicationFolder_DEV)"
+                      $servicesRoot = Join-Path (Split-Path $applicationsFolder -Parent) "Services"
+                      $envFolder = Join-Path $servicesRoot "DEV"
+                      $agentFolder = Join-Path $envFolder "FreeServicesHub.Agent"
+                      $installerFolder = Join-Path $envFolder "FreeServicesHub.Agent.Installer"
+                      $installerExe = Join-Path $installerFolder "FreeServicesHub.Agent.Installer.exe"
+
+                      Write-Host "Applications Folder: $applicationsFolder"
+                      Write-Host "Services Root:       $servicesRoot"
+                      Write-Host "Agent Deploy To:     $agentFolder"
+                      Write-Host "Installer Deploy To: $installerFolder"
+
+                      # Create directories if they don't exist
+                      foreach ($dir in @($servicesRoot, $envFolder, $agentFolder, $installerFolder)) {
+                        if (!(Test-Path $dir)) {
+                          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+                          Write-Host "Created: $dir"
+                        }
+                      }
+
+                      # --- Step 1: Extract INSTALLER first (not locked by service) ---
+                      $installerZip = Get-ChildItem -Path "$(Agent.BuildDirectory)" -Recurse -Filter "FreeServicesHub.Agent.Installer.1.*.zip" | Select-Object -First 1
+                      if ($installerZip) {
+                        Write-Host "Found installer artifact: $($installerZip.FullName)"
+                        Expand-Archive -Path $installerZip.FullName -DestinationPath $installerFolder -Force
+                        Write-Host "Installer extracted to: $installerFolder"
+                      } else {
+                        Write-Host "##vso[task.logissue type=warning]Installer artifact zip not found."
+                      }
+
+                      # --- Step 2: Stop & remove existing agent service (releases file locks) ---
+                      if (Test-Path $installerExe) {
+                        Write-Host "Stopping existing service (if any)..."
+                        & $installerExe stop --NonInteractive=true 2>&1 | Write-Host
+                        Start-Sleep -Seconds 3
+
+                        Write-Host "Removing old service registration (if any)..."
+                        & $installerExe remove --NonInteractive=true 2>&1 | Write-Host
+                        Start-Sleep -Seconds 2
+                      } else {
+                        Write-Host "No existing installer found — first deploy, skipping service stop."
+                      }
+
+                      # --- Step 3: Extract AGENT files (service is stopped, no locks) ---
+                      $agentZip = Get-ChildItem -Path "$(Agent.BuildDirectory)" -Recurse -Filter "FreeServicesHub.Agent.1.*.zip" | Select-Object -First 1
+                      if ($agentZip) {
+                        Write-Host "Found agent artifact: $($agentZip.FullName)"
+                        Expand-Archive -Path $agentZip.FullName -DestinationPath $agentFolder -Force
+                        Write-Host "Agent extracted to: $agentFolder"
+                      } else {
+                        Write-Host "##vso[task.logissue type=error]Agent artifact zip not found!"
+                        Exit 1
+                      }
+
+                      # --- Step 4: Request registration key from the now-running web app ---
+                      $cicdToken = "$(CiCdToken)"
+                      $hubUrl = "$(CI_PIPELINE_COMMON_WebAppUrl_DEV)"
+                      $agentSlug = "DEV"
+                      $regKey = $null
+
+                      Write-Host "CiCdToken length: $($cicdToken.Length)"
+
+                      if ($cicdToken) {
+                        Write-Host "Requesting registration key from $hubUrl for '$agentSlug'..."
+                        try {
+                          $headers = @{ "X-CiCd-Token" = $cicdToken }
+                          $response = Invoke-RestMethod `
+                            -Uri "$hubUrl/api/Data/CiCdRegisterAgent/$agentSlug" `
+                            -Method Post -ContentType "application/json" `
+                            -Headers $headers -UseDefaultCredentials -ErrorAction Stop
+
+                          $regKey = if ($response.registrationKey) { $response.registrationKey } elseif ($response.RegistrationKey) { $response.RegistrationKey } else { $null }
+
+                          if ($regKey) {
+                            $exp = if ($response.expiresAt) { $response.expiresAt } else { $response.ExpiresAt }
+                            Write-Host "Registration key obtained (expires: $exp)"
+                          } else {
+                            Write-Host "##vso[task.logissue type=warning]No registration key in response"
+                          }
+                        } catch {
+                          Write-Host "##vso[task.logissue type=warning]Failed to get registration key: $_"
+                          if ($_.Exception.Response) {
+                            try {
+                              $sr = [System.IO.StreamReader]::new($_.Exception.Response.GetResponseStream())
+                              Write-Host "Response body: $($sr.ReadToEnd())"
+                              $sr.Close()
+                            } catch { }
+                          }
+                        }
+                      } else {
+                        Write-Host "##vso[task.logissue type=warning]CiCdToken is empty — skipping key generation"
+                      }
+
+                      # --- Step 5: Inject config into agent appsettings.json ---
+                      $configPath = Join-Path $agentFolder "appsettings.json"
+
+                      if (Test-Path $configPath) {
+                        Write-Host "Injecting config into: $configPath"
+                        $config = Get-Content $configPath -Raw | ConvertFrom-Json
+                        if ($regKey) { $config.Agent.RegistrationKey = $regKey }
+                        $config.Agent.ApiClientToken = ""
+                        $config.Agent.AgentName = "DEV"
+                        $config.Agent.HubUrl = $hubUrl
+                        $config | ConvertTo-Json -Depth 10 | Set-Content $configPath -Encoding UTF8
+                        Write-Host "Config written to appsettings.json"
+                      } else {
+                        Write-Host "##vso[task.logissue type=warning]appsettings.json not found at $configPath"
+                      }
+
+                      # --- Step 5: Configure (install) and start the service ---
+                      if (!(Test-Path $installerExe)) {
+                        Write-Host "##vso[task.logissue type=error]Installer not found at $installerExe"
+                        Exit 1
+                      }
+
+                      # Remove stale .configured marker if service was already removed
+                      $markerFile = Join-Path $agentFolder ".configured"
+                      if (Test-Path $markerFile) {
+                        Write-Host "Removing stale .configured marker: $markerFile"
+                        Remove-Item $markerFile -Force
+                      }
+
+                      # Remove stale .boot-status from previous deploy
+                      $staleBootFile = Join-Path $agentFolder ".boot-status"
+                      if (Test-Path $staleBootFile) {
+                        Write-Host "Removing stale .boot-status file: $staleBootFile"
+                        Remove-Item $staleBootFile -Force
+                      }
+
+                      Write-Host "Configuring agent service..."
+                      & $installerExe configure --NonInteractive=true `
+                        "--Service:InstallPath=$agentFolder" `
+                        "--Publish:OutputPath=$agentFolder"
+
+                      if ($LASTEXITCODE -ne 0) {
+                        Write-Host "##vso[task.logissue type=error]Service configure failed (exit $LASTEXITCODE)"
+                        Exit $LASTEXITCODE
+                      }
+
+                      Write-Host "Starting agent service..."
+                      & $installerExe start --NonInteractive=true
+
+                      if ($LASTEXITCODE -ne 0) {
+                        Write-Host "##vso[task.logissue type=warning]Service start returned exit code $LASTEXITCODE"
+                      }
+
+                      Write-Host ""
+                      & $installerExe status --NonInteractive=true 2>&1 | Write-Host
+
+                      # --- Step 6: Wait for agent boot-status file (proves registration + SignalR connected) ---
+                      $bootFile = Join-Path $agentFolder ".boot-status"
+                      $maxWait = 90
+                      $elapsed = 0
+                      Write-Host "Waiting up to ${maxWait}s for agent boot-status file..."
+                      while (!(Test-Path $bootFile) -and $elapsed -lt $maxWait) {
+                        Start-Sleep -Seconds 5
+                        $elapsed += 5
+                        Write-Host "  ... waiting ($elapsed/$maxWait s)"
+                      }
+                      if (Test-Path $bootFile) {
+                        Write-Host "Agent boot-status file found:"
+                        Get-Content $bootFile | Write-Host
+                      } else {
+                        Write-Host "##vso[task.logissue type=warning]Agent boot-status file not found after ${maxWait}s. Agent may not have connected."
+                      }
+
+                      Write-Host ""
+                      Write-Host "=== DEV Agent Deploy Complete ==="
+
+                      # --- Step 7: Invalidate the CiCd token (burn it after use) ---
+                      Write-Host "Invalidating CiCd token on DEV web app..."
+                      try {
+                        $headers = @{ "X-CiCd-Token" = $cicdToken }
+                        Invoke-RestMethod `
+                          -Uri "$hubUrl/api/Data/InvalidateCiCdToken" `
+                          -Method Post -ContentType "application/json" `
+                          -Headers $headers -UseDefaultCredentials -ErrorAction Stop | Out-Null
+                        Write-Host "CiCd token invalidated on DEV."
+                      } catch {
+                        Write-Host "##vso[task.logissue type=warning]Failed to invalidate CiCd token on DEV: $_"
+                      }
+
+  ####################################################################
+  # Deploy Agent to PROD
+  # Runs AFTER the PROD web app is deployed and running.
+  ####################################################################
+  - stage: DeployAgentPRODStage
+    displayName: "Deploy Agent to PROD"
+    dependsOn:
+      - DeployPRODStage
+      - PreBuildStage
+    variables:
+      - group: ${{ variables.CI_PROD_VariableGroup }}
+      - name: CiCdToken
+        value: $[ stageDependencies.PreBuildStage.PreBuildJob.outputs['generateCiCdToken.CiCdToken'] ]
+    jobs:
+      - deployment: DeployAgentPROD
+        workspace:
+          clean: all
+        displayName: "Deploy Agent to PROD Environment"
+        environment:
+          name: "AzureProd"
+          resourceType: "VirtualMachine"
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: none
+                - checkout: none
+                - download: current
+                  artifact: FreeServicesHub.Agent.Artifact
+                - download: current
+                  artifact: FreeServicesHub.Agent.Installer.Artifact
+
+                - task: PowerShell@2
+                  displayName: "Deploy Agent & Installer to Services/PROD"
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      Write-Host "=== Deploying FreeServicesHub Agent to PROD ==="
+
+                      $applicationsFolder = "$(CI_PIPELINE_COMMON_ApplicationFolder_PROD)"
+                      $servicesRoot = Join-Path (Split-Path $applicationsFolder -Parent) "Services"
+                      $envFolder = Join-Path $servicesRoot "PROD"
+                      $agentFolder = Join-Path $envFolder "FreeServicesHub.Agent"
+                      $installerFolder = Join-Path $envFolder "FreeServicesHub.Agent.Installer"
+                      $installerExe = Join-Path $installerFolder "FreeServicesHub.Agent.Installer.exe"
+
+                      Write-Host "Applications Folder: $applicationsFolder"
+                      Write-Host "Services Root:       $servicesRoot"
+                      Write-Host "Agent Deploy To:     $agentFolder"
+                      Write-Host "Installer Deploy To: $installerFolder"
+
+                      foreach ($dir in @($servicesRoot, $envFolder, $agentFolder, $installerFolder)) {
+                        if (!(Test-Path $dir)) {
+                          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+                          Write-Host "Created: $dir"
+                        }
+                      }
+
+                      # --- Step 1: Extract INSTALLER first (not locked by service) ---
+                      $installerZip = Get-ChildItem -Path "$(Agent.BuildDirectory)" -Recurse -Filter "FreeServicesHub.Agent.Installer.1.*.zip" | Select-Object -First 1
+                      if ($installerZip) {
+                        Write-Host "Found installer artifact: $($installerZip.FullName)"
+                        Expand-Archive -Path $installerZip.FullName -DestinationPath $installerFolder -Force
+                        Write-Host "Installer extracted to: $installerFolder"
+                      } else {
+                        Write-Host "##vso[task.logissue type=warning]Installer artifact zip not found."
+                      }
+
+                      # --- Step 2: Stop & remove existing agent service (releases file locks) ---
+                      if (Test-Path $installerExe) {
+                        Write-Host "Stopping existing service (if any)..."
+                        & $installerExe stop --NonInteractive=true 2>&1 | Write-Host
+                        Start-Sleep -Seconds 3
+
+                        Write-Host "Removing old service registration (if any)..."
+                        & $installerExe remove --NonInteractive=true 2>&1 | Write-Host
+                        Start-Sleep -Seconds 2
+                      } else {
+                        Write-Host "No existing installer found — first deploy, skipping service stop."
+                      }
+
+                      # --- Step 3: Extract AGENT files (service is stopped, no locks) ---
+                      $agentZip = Get-ChildItem -Path "$(Agent.BuildDirectory)" -Recurse -Filter "FreeServicesHub.Agent.1.*.zip" | Select-Object -First 1
+                      if ($agentZip) {
+                        Write-Host "Found agent artifact: $($agentZip.FullName)"
+                        Expand-Archive -Path $agentZip.FullName -DestinationPath $agentFolder -Force
+                        Write-Host "Agent extracted to: $agentFolder"
+                      } else {
+                        Write-Host "##vso[task.logissue type=error]Agent artifact zip not found!"
+                        Exit 1
+                      }
+
+                      # --- Step 4: Request registration key from the now-running web app ---
+                      $cicdToken = "$(CiCdToken)"
+                      $hubUrl = "$(CI_PIPELINE_COMMON_WebAppUrl_PROD)"
+                      $agentSlug = "PROD"
+                      $regKey = $null
+
+                      Write-Host "CiCdToken length: $($cicdToken.Length)"
+
+                      if ($cicdToken) {
+                        Write-Host "Requesting registration key from $hubUrl for '$agentSlug'..."
+                        try {
+                          $headers = @{ "X-CiCd-Token" = $cicdToken }
+                          $response = Invoke-RestMethod `
+                            -Uri "$hubUrl/api/Data/CiCdRegisterAgent/$agentSlug" `
+                            -Method Post -ContentType "application/json" `
+                            -Headers $headers -UseDefaultCredentials -ErrorAction Stop
+
+                          $regKey = if ($response.registrationKey) { $response.registrationKey } elseif ($response.RegistrationKey) { $response.RegistrationKey } else { $null }
+
+                          if ($regKey) {
+                            $exp = if ($response.expiresAt) { $response.expiresAt } else { $response.ExpiresAt }
+                            Write-Host "Registration key obtained (expires: $exp)"
+                          } else {
+                            Write-Host "##vso[task.logissue type=warning]No registration key in response"
+                          }
+                        } catch {
+                          Write-Host "##vso[task.logissue type=warning]Failed to get registration key: $_"
+                          if ($_.Exception.Response) {
+                            try {
+                              $sr = [System.IO.StreamReader]::new($_.Exception.Response.GetResponseStream())
+                              Write-Host "Response body: $($sr.ReadToEnd())"
+                              $sr.Close()
+                            } catch { }
+                          }
+                        }
+                      } else {
+                        Write-Host "##vso[task.logissue type=warning]CiCdToken is empty — skipping key generation"
+                      }
+
+                      # --- Step 5: Inject config into agent appsettings.json ---
+                      $configPath = Join-Path $agentFolder "appsettings.json"
+
+                      if (Test-Path $configPath) {
+                        Write-Host "Injecting config into: $configPath"
+                        $config = Get-Content $configPath -Raw | ConvertFrom-Json
+                        if ($regKey) { $config.Agent.RegistrationKey = $regKey }
+                        $config.Agent.ApiClientToken = ""
+                        $config.Agent.AgentName = "PROD"
+                        $config.Agent.HubUrl = $hubUrl
+                        $config | ConvertTo-Json -Depth 10 | Set-Content $configPath -Encoding UTF8
+                        Write-Host "Config written to appsettings.json"
+                      } else {
+                        Write-Host "##vso[task.logissue type=warning]appsettings.json not found at $configPath"
+                      }
+
+                      # --- Step 5: Configure (install) and start the service ---
+                      if (!(Test-Path $installerExe)) {
+                        Write-Host "##vso[task.logissue type=error]Installer not found at $installerExe"
+                        Exit 1
+                      }
+
+                      # Remove stale .configured marker if service was already removed
+                      $markerFile = Join-Path $agentFolder ".configured"
+                      if (Test-Path $markerFile) {
+                        Write-Host "Removing stale .configured marker: $markerFile"
+                        Remove-Item $markerFile -Force
+                      }
+
+                      # Remove stale .boot-status from previous deploy
+                      $staleBootFile = Join-Path $agentFolder ".boot-status"
+                      if (Test-Path $staleBootFile) {
+                        Write-Host "Removing stale .boot-status file: $staleBootFile"
+                        Remove-Item $staleBootFile -Force
+                      }
+
+                      Write-Host "Configuring agent service..."
+                      & $installerExe configure --NonInteractive=true `
+                        "--Service:InstallPath=$agentFolder" `
+                        "--Publish:OutputPath=$agentFolder"
+
+                      if ($LASTEXITCODE -ne 0) {
+                        Write-Host "##vso[task.logissue type=error]Service configure failed (exit $LASTEXITCODE)"
+                        Exit $LASTEXITCODE
+                      }
+
+                      Write-Host "Starting agent service..."
+                      & $installerExe start --NonInteractive=true
+
+                      if ($LASTEXITCODE -ne 0) {
+                        Write-Host "##vso[task.logissue type=warning]Service start returned exit code $LASTEXITCODE"
+                      }
+
+                      Write-Host ""
+                      & $installerExe status --NonInteractive=true 2>&1 | Write-Host
+
+                      # --- Step 6: Wait for agent boot-status file (proves registration + SignalR connected) ---
+                      $bootFile = Join-Path $agentFolder ".boot-status"
+                      $maxWait = 90
+                      $elapsed = 0
+                      Write-Host "Waiting up to ${maxWait}s for agent boot-status file..."
+                      while (!(Test-Path $bootFile) -and $elapsed -lt $maxWait) {
+                        Start-Sleep -Seconds 5
+                        $elapsed += 5
+                        Write-Host "  ... waiting ($elapsed/$maxWait s)"
+                      }
+                      if (Test-Path $bootFile) {
+                        Write-Host "Agent boot-status file found:"
+                        Get-Content $bootFile | Write-Host
+                      } else {
+                        Write-Host "##vso[task.logissue type=warning]Agent boot-status file not found after ${maxWait}s. Agent may not have connected."
+                      }
+
+                      Write-Host ""
+                      Write-Host "=== PROD Agent Deploy Complete ==="
+
+                      # --- Step 7: Invalidate the CiCd token (burn it after use) ---
+                      Write-Host "Invalidating CiCd token on PROD web app..."
+                      try {
+                        $headers = @{ "X-CiCd-Token" = $cicdToken }
+                        Invoke-RestMethod `
+                          -Uri "$hubUrl/api/Data/InvalidateCiCdToken" `
+                          -Method Post -ContentType "application/json" `
+                          -Headers $headers -UseDefaultCredentials -ErrorAction Stop | Out-Null
+                        Write-Host "CiCd token invalidated on PROD."
+                      } catch {
+                        Write-Host "##vso[task.logissue type=warning]Failed to invalidate CiCd token on PROD: $_"
+                      }

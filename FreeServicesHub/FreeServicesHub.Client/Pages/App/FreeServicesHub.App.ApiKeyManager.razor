@@ -233,12 +233,12 @@
         _loading = true;
         StateHasChanged();
 
-        var keys = await Helpers.GetOrPost<List<DataObjects.RegistrationKey>>("api/Data/GetRegistrationKeys");
+        var keys = await Helpers.GetOrPost<List<DataObjects.RegistrationKey>>("api/Data/GetRegistrationKeys", new { });
         if (keys != null) {
             _registrationKeys = keys;
         }
 
-        var tokens = await Helpers.GetOrPost<List<DataObjects.ApiClientToken>>("api/Data/GetApiClientTokens");
+        var tokens = await Helpers.GetOrPost<List<DataObjects.ApiClientToken>>("api/Data/GetApiClientTokens", new { });
         if (tokens != null) {
             _clientTokens = tokens;
         }
@@ -257,7 +257,7 @@
 
         _newlyGeneratedKeys.Clear();
 
-        var result = await Helpers.GetOrPost<List<DataObjects.RegistrationKey>>("api/Data/GenerateRegistrationKeys", new { Count = _generateCount });
+        var result = await Helpers.GetOrPost<List<DataObjects.RegistrationKey>>($"api/Data/GenerateRegistrationKeys/{_generateCount}", new { });
 
         Model.ClearMessages();
 
@@ -279,7 +279,7 @@
         Model.ClearMessages();
         Model.Message_Saving();
 
-        var result = await Helpers.GetOrPost<DataObjects.BooleanResponse>("api/Data/RevokeToken/" + token.ApiClientTokenId);
+        var result = await Helpers.GetOrPost<DataObjects.BooleanResponse>("api/Data/RevokeToken/" + token.ApiClientTokenId, new { });
 
         Model.ClearMessages();
 

@@ -6,6 +6,7 @@ namespace FreeServicesHub;
 public partial interface IDataAccess
 {
     Task<List<DataObjects.RegistrationKey>> GenerateRegistrationKeys(int Count, Guid TenantId, DataObjects.User? CurrentUser = null);
+    Task<List<DataObjects.RegistrationKey>> GetRegistrationKeys(Guid TenantId);
     Task<DataObjects.RegistrationKey?> ValidateRegistrationKey(string PlaintextKey, Guid TenantId);
     Task<DataObjects.ApiClientToken> GenerateApiClientToken(Guid AgentId, Guid TenantId);
     Task<DataObjects.ApiClientToken?> ValidateApiClientToken(string PlaintextToken);
@@ -88,6 +89,34 @@ public partial class DataAccess
         return output;
     }
 
+    public async Task<List<DataObjects.RegistrationKey>> GetRegistrationKeys(Guid TenantId)
+    {
+        List<DataObjects.RegistrationKey> output = new();
+
+        List<EFModels.EFModels.RegistrationKey> recs = await data.RegistrationKeys
+            .Where(x => x.TenantId == TenantId)
+            .OrderByDescending(x => x.Created)
+            .ToListAsync();
+
+        foreach (EFModels.EFModels.RegistrationKey rec in recs) {
+            output.Add(new DataObjects.RegistrationKey {
+                ActionResponse = GetNewActionResponse(true),
+                RegistrationKeyId = rec.RegistrationKeyId,
+                TenantId = rec.TenantId,
+                KeyHash = rec.KeyHash,
+                KeyPrefix = rec.KeyPrefix ?? string.Empty,
+                ExpiresAt = rec.ExpiresAt,
+                Used = rec.Used,
+                UsedByAgentId = rec.UsedByAgentId,
+                UsedAt = rec.UsedAt,
+                Created = rec.Created,
+                CreatedBy = LastModifiedDisplayName(rec.CreatedBy ?? string.Empty),
+            });
+        }
+
+        return output;
+    }
+
     public async Task<DataObjects.RegistrationKey?> ValidateRegistrationKey(string PlaintextKey, Guid TenantId)
     {
         if (string.IsNullOrWhiteSpace(PlaintextKey)) {
@@ -98,7 +127,7 @@ public partial class DataAccess
         DateTime now = DateTime.UtcNow;
 
         EFModels.EFModels.RegistrationKey? rec = await data.RegistrationKeys
-            .FirstOrDefaultAsync(x => x.KeyHash == hash && x.TenantId == TenantId && x.Used == false && x.ExpiresAt > now);
+            .FirstOrDefaultAsync(x => x.KeyHash == hash && x.Used == false && x.ExpiresAt > now);
 
         if (rec == null) {
             return null;

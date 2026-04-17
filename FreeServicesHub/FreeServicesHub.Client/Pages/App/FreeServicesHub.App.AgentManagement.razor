@@ -1,0 +1,983 @@
+@page "/AgentManagement"
+@page "/{TenantCode}/AgentManagement"
+@implements IDisposable
+@using Blazored.LocalStorage
+@inject IJSRuntime jsRuntime
+@inject HttpClient Http
+@inject ILocalStorageService LocalStorage
+@inject BlazorDataModel Model
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title">
+            <Icon Name="Agents" /> Agent Management
+        </h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title">
+                <Icon Name="Agents" /> Agent Management
+                <StickyMenuIcon />
+            </h1>
+            <div class="btn-group mb-2" role="group" aria-label="Page actions">
+                <button type="button" class="btn btn-primary" @onclick="LoadData">
+                    <Icon Name="Refresh" /> <Language Tag="Refresh" />
+                </button>
+                <button type="button" class="btn btn-success" @onclick="() => _showAddAgent = !_showAddAgent"
+                        aria-expanded="@(_showAddAgent ? "true" : "false")" aria-controls="addAgentPanel">
+                    <i class="fa-solid fa-plus" aria-hidden="true"></i> Add New Agent
+                </button>
+            </div>
+        </div>
+
+        @* About Section *@
+        <FreeServicesHub_App_AboutSection Title="Agent Management" Subtitle="Register, manage, and monitor service agents">
+            <div class="row">
+                <div class="col-md-4">
+                    <h6><Icon Name="Info" /> What Is This?</h6>
+                    <p class="small text-muted">
+                        Manage the lifecycle of service agents. Generate one-time registration keys,
+                        view all registered agents, revoke tokens, and remove agents from the system.
+                    </p>
+                </div>
+                <div class="col-md-4">
+                    <h6><Icon Name="Eye" /> How It Works</h6>
+                    <p class="small text-muted">
+                        <strong>1.</strong> Generate a registration key below.<br />
+                        <strong>2.</strong> Copy the key and provide it to the person installing the agent.<br />
+                        <strong>3.</strong> They set the key in the agent's <code>appsettings.json</code> and start the service.<br />
+                        <strong>4.</strong> The agent registers itself and appears in the list.
+                    </p>
+                </div>
+                <div class="col-md-4">
+                    <h6><Icon Name="Settings" /> Requirements</h6>
+                    <p class="small text-muted">
+                        The installer needs the <strong>FreeServicesHub.Agent</strong> executable
+                        and a valid registration key. The agent uses the key once to obtain a
+                        long-lived API token for all future communication with the hub.
+                    </p>
+                </div>
+            </div>
+        </FreeServicesHub_App_AboutSection>
+
+        @* Status message live region *@
+        <div aria-live="polite" aria-atomic="true" role="status">
+            @if (!string.IsNullOrWhiteSpace(_statusMessage)) {
+                <div class="alert @_statusAlertClass alert-dismissible fade show mt-2 mb-3" role="alert">
+                    @_statusMessage
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="() => _statusMessage = string.Empty"></button>
+                </div>
+            }
+        </div>
+
+        @* ═══════════ Add New Agent Panel ═══════════ *@
+        @if (_showAddAgent) {
+            <div id="addAgentPanel" class="card border-success mb-4">
+                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                    <span><i class="fa-solid fa-plus-circle me-2" aria-hidden="true"></i> Register a New Agent</span>
+                    <button type="button" class="btn-close btn-close-white" aria-label="Close panel"
+                            @onclick="() => _showAddAgent = false"></button>
+                </div>
+                <div class="card-body">
+                    @if (_newlyGeneratedKeys.Any()) {
+                        @* Step 2: Keys generated — show them with install instructions *@
+                        <div class="alert alert-warning mb-3" role="alert">
+                            <h6 class="alert-heading"><i class="fa-solid fa-exclamation-triangle me-1" aria-hidden="true"></i> Important — Copy These Keys Now</h6>
+                            <p class="small mb-2">Registration keys are shown <strong>only once</strong>. They expire after the configured period and can only be used by one agent.</p>
+                        </div>
+
+                        @foreach (var key in _newlyGeneratedKeys) {
+                            <div class="d-flex align-items-center mb-2">
+                                <code class="flex-grow-1 bg-light p-2 rounded border font-monospace" style="word-break:break-all;">@key</code>
+                                <button type="button" class="btn btn-sm btn-outline-success ms-2"
+                                        @onclick="@(() => CopyToClipboard(key))"
+                                        aria-label="Copy registration key to clipboard">
+                                    <i class="fa-solid fa-copy" aria-hidden="true"></i> Copy
+                                </button>
+                            </div>
+                        }
+
+                        <hr />
+
+                        <h6><i class="fa-solid fa-book me-1" aria-hidden="true"></i> Installation Instructions</h6>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="card h-100">
+                                    <div class="card-body">
+                                        <h6 class="card-title text-primary">
+                                            <i class="fa-solid fa-terminal me-1" aria-hidden="true"></i> Step 1: Configure the Agent
+                                        </h6>
+                                        <p class="small text-muted mb-2">
+                                            Edit <code>appsettings.json</code> on the target machine:
+                                        </p>
+                                        <pre class="bg-dark text-light p-2 rounded small" style="white-space:pre-wrap;"><code>{
+  "Agent": {
+    "HubUrl": "@(_hubBaseUrl)",
+    "RegistrationKey": "&lt;paste key here&gt;",
+    "AgentName": "MyServer01",
+    "HeartbeatIntervalSeconds": 30
+  }
+}</code></pre>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card h-100">
+                                    <div class="card-body">
+                                        <h6 class="card-title text-primary">
+                                            <i class="fa-solid fa-play me-1" aria-hidden="true"></i> Step 2: Start the Agent
+                                        </h6>
+                                        <p class="small text-muted mb-2">Install and start the Windows Service:</p>
+                                        <pre class="bg-dark text-light p-2 rounded small" style="white-space:pre-wrap;"><code>sc create FreeServicesHubAgent binPath= "C:\path\to\FreeServicesHub.Agent.exe"
+sc start FreeServicesHubAgent</code></pre>
+                                        <p class="small text-muted mt-2 mb-0">Or run as a console app for testing:</p>
+                                        <pre class="bg-dark text-light p-2 rounded small mt-1" style="white-space:pre-wrap;"><code>.\FreeServicesHub.Agent.exe</code></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr />
+                        <h6><i class="fa-solid fa-check-circle me-1" aria-hidden="true"></i> Step 3: Verify Connection</h6>
+                        <p class="small text-muted">After starting the agent, click below to check if it connects (waits up to 60 seconds).</p>
+                        @if (_wizardVerifying) {
+                            <button class="btn btn-outline-primary" disabled>
+                                <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Checking...
+                            </button>
+                        } else if (_wizardVerified) {
+                            <div class="alert alert-success py-2"><i class="fa-solid fa-check me-1" aria-hidden="true"></i> Agent verified and connected!</div>
+                        } else {
+                            <button class="btn btn-primary" @onclick="VerifyAgentConnection">
+                                <i class="fa-solid fa-satellite-dish me-1" aria-hidden="true"></i> Verify Agent Connection
+                            </button>
+                        }
+
+                        <div class="mt-3">
+                            <button type="button" class="btn btn-outline-success" @onclick="GenerateKeys"
+                                    aria-label="Generate more registration keys">
+                                <i class="fa-solid fa-plus" aria-hidden="true"></i> Generate More Keys
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary ms-2" @onclick="CloseAddPanel"
+                                    aria-label="Close registration panel">
+                                Done
+                            </button>
+                        </div>
+                    } else {
+                        @* Step 1: Generate keys *@
+                        <p class="mb-3">
+                            Generate a one-time registration key to authorize a new agent. Each key can only be used once and expires automatically.
+                        </p>
+                        <div class="d-flex align-items-end gap-3">
+                            <div>
+                                <label for="regKeyCount" class="form-label small fw-bold mb-1">Number of keys</label>
+                                <input type="number" id="regKeyCount" class="form-control form-control-sm" style="width:100px;"
+                                       min="1" max="50" @bind="_generateCount" />
+                            </div>
+                            <button type="button" class="btn btn-success" @onclick="GenerateKeys"
+                                    disabled="@_generating" aria-label="Generate registration keys">
+                                @if (_generating) {
+                                    <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                                }
+                                <i class="fa-solid fa-key me-1" aria-hidden="true"></i> Generate Registration Key(s)
+                            </button>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        @* ═══════════ Summary Cards ═══════════ *@
+        <section aria-label="Agent summary counts">
+            <div class="row g-3 mb-4">
+                <div class="col-6 col-lg-3">
+                    <div class="card text-center border-primary" role="region" aria-label="Total agents">
+                        <div class="card-body py-2">
+                            <h3 class="text-primary mb-0" aria-label="@_agents.Count total">@_agents.Count</h3>
+                            <small class="text-muted">Total Agents</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="card text-center border-success" role="region" aria-label="Online agents">
+                        <div class="card-body py-2">
+                            <h3 class="text-success mb-0" aria-label="@OnlineCount online">@OnlineCount</h3>
+                            <small class="text-muted">Online</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="card text-center border-warning" role="region" aria-label="Registration keys available">
+                        <div class="card-body py-2">
+                            <h3 class="text-warning mb-0" aria-label="@AvailableKeyCount available keys">@AvailableKeyCount</h3>
+                            <small class="text-muted">Keys Available</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="card text-center border-secondary" role="region" aria-label="Active API tokens">
+                        <div class="card-body py-2">
+                            <h3 class="text-secondary mb-0" aria-label="@ActiveTokenCount active tokens">@ActiveTokenCount</h3>
+                            <small class="text-muted">Active Tokens</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        @* ═══════════ Agent Table ═══════════ *@
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="fa-solid fa-server me-2" aria-hidden="true"></i> Registered Agents</span>
+                <span class="badge bg-secondary" aria-live="polite">@FilteredAgents.Count agent(s)</span>
+            </div>
+            <div class="card-body pb-0">
+                @* Filter toolbar *@
+                <div class="d-flex flex-wrap gap-2 align-items-end mb-3" role="search" aria-label="Filter agents">
+                    <div>
+                        <label for="agentMgmtFilter" class="form-label small fw-bold mb-1">Search</label>
+                        <input type="search" id="agentMgmtFilter" class="form-control form-control-sm"
+                               placeholder="Name, hostname, OS…"
+                               @bind="_filterText" @bind:event="oninput" style="min-width:200px;" />
+                    </div>
+                    <div>
+                        <label for="agentMgmtStatus" class="form-label small fw-bold mb-1">Status</label>
+                        <select id="agentMgmtStatus" class="form-select form-select-sm" @bind="_filterStatus" style="min-width:120px;">
+                            <option value="">All</option>
+                            <option value="Online">Online</option>
+                            <option value="Warning">Warning</option>
+                            <option value="Error">Error</option>
+                            <option value="Offline">Offline</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="agentMgmtPageSize" class="form-label small fw-bold mb-1">Per page</label>
+                        <select id="agentMgmtPageSize" class="form-select form-select-sm" @bind="PageSize" style="min-width:80px;">
+                            <option value="10">10</option>
+                            <option value="25">25</option>
+                            <option value="50">50</option>
+                        </select>
+                    </div>
+                </div>
+
+                @if (PagedAgents.Any()) {
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle" aria-label="Registered agents">
+                            <thead class="table-light">
+                                <tr>
+                                    <th scope="col" style="width:40px;" aria-label="Status indicator">
+                                        <span class="visually-hidden">Status</span>
+                                    </th>
+                                    <th scope="col" role="columnheader" aria-sort="@GetAriaSortValue("Name")" style="cursor:pointer;" @onclick='() => SortBy("Name")'>
+                                        Name @SortIndicator("Name")
+                                    </th>
+                                    <th scope="col" role="columnheader" aria-sort="@GetAriaSortValue("Hostname")" style="cursor:pointer;" @onclick='() => SortBy("Hostname")'>
+                                        Hostname @SortIndicator("Hostname")
+                                    </th>
+                                    <th scope="col" role="columnheader" aria-sort="@GetAriaSortValue("Status")" style="cursor:pointer;" @onclick='() => SortBy("Status")'>
+                                        Status @SortIndicator("Status")
+                                    </th>
+                                    <th scope="col">OS</th>
+                                    <th scope="col" role="columnheader" aria-sort="@GetAriaSortValue("AgentVersion")" style="cursor:pointer;" @onclick='() => SortBy("AgentVersion")'>
+                                        Version @SortIndicator("AgentVersion")
+                                    </th>
+                                    <th scope="col" role="columnheader" aria-sort="@GetAriaSortValue("LastHeartbeat")" style="cursor:pointer;" @onclick='() => SortBy("LastHeartbeat")'>
+                                        Last Heartbeat @SortIndicator("LastHeartbeat")
+                                    </th>
+                                    <th scope="col" role="columnheader" aria-sort="@GetAriaSortValue("RegisteredAt")" style="cursor:pointer;" @onclick='() => SortBy("RegisteredAt")'>
+                                        Registered @SortIndicator("RegisteredAt")
+                                    </th>
+                                    <th scope="col" style="width:140px;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var agent in PagedAgents) {
+                                    <tr>
+                                        <td>
+                                            <span class="badge @GetStatusBadge(agent.Status)"
+                                                  aria-label="@agent.Status" title="@agent.Status">&bull;</span>
+                                        </td>
+                                        <td><strong>@agent.Name</strong></td>
+                                        <td><code class="small">@agent.Hostname</code></td>
+                                        <td>
+                                            <span class="badge @GetStatusBadge(agent.Status)">@agent.Status</span>
+                                        </td>
+                                        <td>
+                                            <small class="text-truncate d-inline-block" style="max-width:200px;" title="@agent.OperatingSystem">
+                                                @agent.OperatingSystem
+                                            </small>
+                                        </td>
+                                        <td><small>@agent.AgentVersion</small></td>
+                                        <td>
+                                            @if (agent.LastHeartbeat.HasValue) {
+                                                <time datetime="@agent.LastHeartbeat.Value.ToString("o")">
+                                                    <small>@agent.LastHeartbeat.Value.ToString("g")</small>
+                                                </time>
+                                            } else {
+                                                <small class="text-muted">Never</small>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (agent.RegisteredAt.HasValue) {
+                                                <time datetime="@agent.RegisteredAt.Value.ToString("o")">
+                                                    <small>@agent.RegisteredAt.Value.ToString("g")</small>
+                                                </time>
+                                            } else {
+                                                <small class="text-muted">-</small>
+                                            }
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-primary me-1"
+                                                    @onclick="() => ViewAgent(agent.AgentId)"
+                                                    title="View details" aria-label="View details for @agent.Name">
+                                                <i class="fa-solid fa-eye" aria-hidden="true"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-info me-1"
+                                                    @onclick="() => ViewSettings(agent.AgentId)"
+                                                    title="Agent settings" aria-label="Settings for @agent.Name">
+                                                <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-danger"
+                                                    @onclick="() => ConfirmDeleteAgent(agent)"
+                                                    title="Delete agent" aria-label="Delete agent @agent.Name">
+                                                <i class="fa-solid fa-trash" aria-hidden="true"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    @* Pagination *@
+                    @if (TotalPages > 1) {
+                        <nav aria-label="Agent table pagination" class="mt-2 mb-3">
+                            <ul class="pagination pagination-sm justify-content-center mb-0">
+                                <li class="page-item @(_currentPage <= 1 ? "disabled" : "")">
+                                    <button class="page-link" @onclick="() => GoToPage(1)"
+                                            disabled="@(_currentPage <= 1)" aria-label="First page">
+                                        <span aria-hidden="true">&laquo;&laquo;</span>
+                                    </button>
+                                </li>
+                                <li class="page-item @(_currentPage <= 1 ? "disabled" : "")">
+                                    <button class="page-link" @onclick="() => GoToPage(_currentPage - 1)"
+                                            disabled="@(_currentPage <= 1)" aria-label="Previous page">
+                                        <span aria-hidden="true">&laquo;</span>
+                                    </button>
+                                </li>
+                                @foreach (var p in VisiblePageNumbers) {
+                                    <li class="page-item @(p == _currentPage ? "active" : "")"
+                                        aria-current="@(p == _currentPage ? "page" : null)">
+                                        <button class="page-link" @onclick="() => GoToPage(p)"
+                                                aria-label="Page @p">@p</button>
+                                    </li>
+                                }
+                                <li class="page-item @(_currentPage >= TotalPages ? "disabled" : "")">
+                                    <button class="page-link" @onclick="() => GoToPage(_currentPage + 1)"
+                                            disabled="@(_currentPage >= TotalPages)" aria-label="Next page">
+                                        <span aria-hidden="true">&raquo;</span>
+                                    </button>
+                                </li>
+                                <li class="page-item @(_currentPage >= TotalPages ? "disabled" : "")">
+                                    <button class="page-link" @onclick="() => GoToPage(TotalPages)"
+                                            disabled="@(_currentPage >= TotalPages)" aria-label="Last page">
+                                        <span aria-hidden="true">&raquo;&raquo;</span>
+                                    </button>
+                                </li>
+                            </ul>
+                        </nav>
+                    }
+                } else {
+                    <div class="text-center py-4 text-muted" role="status">
+                        @if (_agents.Any()) {
+                            <p>No agents match the current filter.</p>
+                        } else {
+                            <i class="fa-solid fa-server fa-2x mb-2 d-block" aria-hidden="true"></i>
+                            <p>No agents registered yet. Click <strong>Add New Agent</strong> to get started.</p>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        @* ═══════════ Registration Keys & Tokens ═══════════ *@
+        <div class="row g-3 mb-4">
+            @* Registration Keys *@
+            <div class="col-lg-6">
+                <div class="card h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span><i class="fa-solid fa-key me-2" aria-hidden="true"></i> Registration Keys</span>
+                        <span class="badge bg-secondary">@_registrationKeys.Count</span>
+                    </div>
+                    <div class="card-body p-0">
+                        @if (_registrationKeys.Any()) {
+                            <div class="table-responsive" style="max-height:300px; overflow-y:auto;">
+                                <table class="table table-sm table-striped mb-0" aria-label="Registration keys">
+                                    <thead class="table-light sticky-top">
+                                        <tr>
+                                            <th scope="col">Key Prefix</th>
+                                            <th scope="col">Status</th>
+                                            <th scope="col">Expires</th>
+                                            <th scope="col">Used By</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var key in _registrationKeys.OrderByDescending(k => k.Created).Take(50)) {
+                                            <tr>
+                                                <td><code>@key.KeyPrefix…</code></td>
+                                                <td>
+                                                    @if (key.Used) {
+                                                        <span class="badge bg-secondary" aria-label="Used">Used</span>
+                                                    } else if (key.ExpiresAt < DateTime.UtcNow) {
+                                                        <span class="badge bg-warning text-dark" aria-label="Expired">Expired</span>
+                                                    } else {
+                                                        <span class="badge bg-success" aria-label="Available">Available</span>
+                                                    }
+                                                </td>
+                                                <td>
+                                                    <time datetime="@key.ExpiresAt.ToString("o")">
+                                                        <small>@key.ExpiresAt.ToString("g")</small>
+                                                    </time>
+                                                </td>
+                                                <td>
+                                                    @if (key.UsedByAgentId.HasValue && key.UsedByAgentId != Guid.Empty) {
+                                                        <a href="@(Helpers.BuildUrl("AgentDashboard"))"
+                                                           aria-label="View agent @key.UsedByAgentId.Value.ToString()[..8]">
+                                                            @key.UsedByAgentId.Value.ToString()[..8]…
+                                                        </a>
+                                                    } else {
+                                                        <span class="text-muted">—</span>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        } else {
+                            <div class="p-3 text-muted text-center" role="status">
+                                No registration keys generated yet.
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            @* API Client Tokens *@
+            <div class="col-lg-6">
+                <div class="card h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span><i class="fa-solid fa-lock me-2" aria-hidden="true"></i> API Client Tokens</span>
+                        <span class="badge bg-secondary">@_clientTokens.Count</span>
+                    </div>
+                    <div class="card-body p-0">
+                        @if (_clientTokens.Any()) {
+                            <div class="table-responsive" style="max-height:300px; overflow-y:auto;">
+                                <table class="table table-sm table-striped mb-0" aria-label="API client tokens">
+                                    <thead class="table-light sticky-top">
+                                        <tr>
+                                            <th scope="col">Token Prefix</th>
+                                            <th scope="col">Agent</th>
+                                            <th scope="col">Status</th>
+                                            <th scope="col" style="width:1%;">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var token in _clientTokens.OrderByDescending(t => t.Created)) {
+                                            <tr>
+                                                <td><code>@token.TokenPrefix…</code></td>
+                                                <td><small>@token.AgentName</small></td>
+                                                <td>
+                                                    @if (token.Active) {
+                                                        <span class="badge bg-success" aria-label="Active">Active</span>
+                                                    } else {
+                                                        <span class="badge bg-secondary" aria-label="Revoked">Revoked</span>
+                                                    }
+                                                </td>
+                                                <td class="text-nowrap">
+                                                    @if (token.Active) {
+                                                        <button type="button" class="btn btn-xs btn-outline-danger"
+                                                                @onclick="@(() => RevokeToken(token))"
+                                                                aria-label="Revoke token for @token.AgentName">
+                                                            <i class="fa-solid fa-ban" aria-hidden="true"></i> Revoke
+                                                        </button>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        } else {
+                            <div class="p-3 text-muted text-center" role="status">
+                                No API tokens issued yet.
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* ═══════════ Delete Confirmation Modal ═══════════ *@
+        @if (_deleteConfirmAgent != null) {
+            <div class="modal d-block" tabindex="-1" role="dialog" aria-labelledby="deleteModalTitle" aria-modal="true"
+                 style="background-color: rgba(0,0,0,0.5);">
+                <div class="modal-dialog modal-dialog-centered" role="document">
+                    <div class="modal-content">
+                        <div class="modal-header bg-danger text-white">
+                            <h5 class="modal-title" id="deleteModalTitle">
+                                <i class="fa-solid fa-exclamation-triangle me-1" aria-hidden="true"></i> Confirm Delete
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" aria-label="Close"
+                                    @onclick="() => _deleteConfirmAgent = null"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p>Are you sure you want to delete the agent <strong>@_deleteConfirmAgent.Name</strong>
+                            (@_deleteConfirmAgent.Hostname)?</p>
+                            <p class="text-danger small mb-0">This action will remove the agent record and revoke its API token.
+                            The agent will no longer be able to communicate with the hub.</p>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @onclick="() => _deleteConfirmAgent = null">Cancel</button>
+                            <button type="button" class="btn btn-danger" @onclick="DeleteAgent">
+                                <i class="fa-solid fa-trash me-1" aria-hidden="true"></i> Delete Agent
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+}
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+
+    protected bool _loadedData = false;
+    protected bool _loading = true;
+    protected bool _validatedUrl = false;
+    protected string _pageName = "agentmanagement";
+
+    // Data
+    protected List<DataObjects.Agent> _agents = new();
+    protected List<DataObjects.RegistrationKey> _registrationKeys = new();
+    protected List<DataObjects.ApiClientToken> _clientTokens = new();
+
+    // Add Agent panel
+    protected bool _showAddAgent = false;
+    protected int _generateCount = 1;
+    protected bool _generating = false;
+    protected List<string> _newlyGeneratedKeys = new();
+    protected string _hubBaseUrl = "";
+
+    // Agent table sort/filter/pagination
+    protected string _sortColumn = "Name";
+    protected bool _sortAscending = true;
+    protected string _filterText = "";
+    protected string _filterStatus = "";
+    protected int _currentPage = 1;
+    protected int _pageSize = 25;
+    protected int PageSize {
+        get => _pageSize;
+        set {
+            _pageSize = value;
+            _currentPage = 1;
+        }
+    }
+
+    // Delete confirmation
+    protected DataObjects.Agent? _deleteConfirmAgent = null;
+
+    // Status messages
+    protected string _statusMessage = "";
+    protected string _statusAlertClass = "alert-success";
+
+    // Wizard verification
+    protected bool _wizardVerifying = false;
+    protected bool _wizardVerified = false;
+    protected int _agentCountBeforeGenerate = 0;
+
+    // ── Computed Properties ──
+
+    protected int OnlineCount => _agents.Count(a => a.Status == DataObjects.AgentStatuses.Online);
+    protected int AvailableKeyCount => _registrationKeys.Count(k => !k.Used && k.ExpiresAt > DateTime.UtcNow);
+    protected int ActiveTokenCount => _clientTokens.Count(t => t.Active);
+
+    protected List<DataObjects.Agent> FilteredAgents {
+        get {
+            var items = _agents.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_filterText)) {
+                var q = _filterText.Trim();
+                items = items.Where(a =>
+                    a.Name.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || a.Hostname.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || a.OperatingSystem.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || a.AgentVersion.Contains(q, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(_filterStatus)) {
+                items = items.Where(a => a.Status.Equals(_filterStatus, StringComparison.OrdinalIgnoreCase)
+                    || (_filterStatus == DataObjects.AgentStatuses.Offline
+                        && (a.Status == DataObjects.AgentStatuses.Offline || a.Status == DataObjects.AgentStatuses.Stale)));
+            }
+
+            items = _sortColumn switch {
+                "Hostname" => _sortAscending ? items.OrderBy(a => a.Hostname) : items.OrderByDescending(a => a.Hostname),
+                "Status" => _sortAscending ? items.OrderBy(a => a.Status) : items.OrderByDescending(a => a.Status),
+                "AgentVersion" => _sortAscending ? items.OrderBy(a => a.AgentVersion) : items.OrderByDescending(a => a.AgentVersion),
+                "LastHeartbeat" => _sortAscending ? items.OrderBy(a => a.LastHeartbeat ?? DateTime.MinValue) : items.OrderByDescending(a => a.LastHeartbeat ?? DateTime.MinValue),
+                "RegisteredAt" => _sortAscending ? items.OrderBy(a => a.RegisteredAt ?? DateTime.MinValue) : items.OrderByDescending(a => a.RegisteredAt ?? DateTime.MinValue),
+                _ => _sortAscending ? items.OrderBy(a => a.Name) : items.OrderByDescending(a => a.Name),
+            };
+
+            return items.ToList();
+        }
+    }
+
+    protected int TotalPages => Math.Max(1, (int)Math.Ceiling((double)FilteredAgents.Count / _pageSize));
+
+    protected List<DataObjects.Agent> PagedAgents =>
+        FilteredAgents.Skip((_currentPage - 1) * _pageSize).Take(_pageSize).ToList();
+
+    protected IEnumerable<int> VisiblePageNumbers {
+        get {
+            const int maxVisible = 7;
+            int start = Math.Max(1, _currentPage - maxVisible / 2);
+            int end = Math.Min(TotalPages, start + maxVisible - 1);
+            start = Math.Max(1, end - maxVisible + 1);
+            return Enumerable.Range(start, end - start + 1);
+        }
+    }
+
+    // ── Lifecycle ──
+
+    public void Dispose()
+    {
+        Model.OnChange -= OnDataModelUpdated;
+        Model.OnSignalRUpdate -= SignalRUpdate;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) {
+            Model.TenantCodeFromUrl = TenantCode;
+        }
+
+        if (Model.Loaded && Model.LoggedIn) {
+            if (!Model.User.Admin) {
+                Helpers.NavigateToRoot();
+                return;
+            }
+
+            if (!_validatedUrl) {
+                _validatedUrl = true;
+                await Helpers.ValidateUrl(TenantCode);
+            }
+
+            if (!_loadedData) {
+                _loadedData = true;
+                await LoadData();
+            }
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.OnChange += OnDataModelUpdated;
+        Model.OnSignalRUpdate += SignalRUpdate;
+        Model.View = _pageName;
+    }
+
+    protected void OnDataModelUpdated()
+    {
+        if (Model.View == _pageName) {
+            StateHasChanged();
+        }
+    }
+
+    // ── Data Loading ──
+
+    protected async Task LoadData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        // Derive hub base URL from current page URL
+        try {
+            _hubBaseUrl = Helpers.BuildUrl("").TrimEnd('/');
+            if (string.IsNullOrWhiteSpace(_hubBaseUrl)) {
+                _hubBaseUrl = "https://your-hub-url.example.com";
+            }
+        } catch {
+            _hubBaseUrl = "https://your-hub-url.example.com";
+        }
+
+        var agents = await Helpers.GetOrPost<List<DataObjects.Agent>>("api/Data/GetAgents", new { });
+        if (agents != null) _agents = agents;
+
+        var keys = await Helpers.GetOrPost<List<DataObjects.RegistrationKey>>("api/Data/GetRegistrationKeys", new { });
+        if (keys != null) _registrationKeys = keys;
+
+        var tokens = await Helpers.GetOrPost<List<DataObjects.ApiClientToken>>("api/Data/GetApiClientTokens", new { });
+        if (tokens != null) _clientTokens = tokens;
+
+        _currentPage = 1;
+        _loading = false;
+        StateHasChanged();
+    }
+
+    // ── Sorting ──
+
+    protected void SortBy(string column)
+    {
+        if (_sortColumn == column) {
+            _sortAscending = !_sortAscending;
+        } else {
+            _sortColumn = column;
+            _sortAscending = true;
+        }
+        _currentPage = 1;
+        StateHasChanged();
+    }
+
+    protected string GetAriaSortValue(string column) =>
+        _sortColumn != column ? "none" : _sortAscending ? "ascending" : "descending";
+
+    protected MarkupString SortIndicator(string column)
+    {
+        if (_sortColumn != column) return new MarkupString("<span class=\"text-muted opacity-50\" aria-hidden=\"true\">⇅</span>");
+        return _sortAscending
+            ? new MarkupString("<span aria-hidden=\"true\">▲</span>")
+            : new MarkupString("<span aria-hidden=\"true\">▼</span>");
+    }
+
+    // ── Pagination ──
+
+    protected void GoToPage(int page)
+    {
+        _currentPage = Math.Clamp(page, 1, TotalPages);
+        StateHasChanged();
+    }
+
+    // ── Registration Keys ──
+
+    protected async Task GenerateKeys()
+    {
+        if (_generateCount < 1) _generateCount = 1;
+        if (_generateCount > 50) _generateCount = 50;
+
+        _agentCountBeforeGenerate = _agents.Count;
+
+        _generating = true;
+        _newlyGeneratedKeys.Clear();
+        StateHasChanged();
+
+        var result = await Helpers.GetOrPost<List<DataObjects.RegistrationKey>>($"api/Data/GenerateRegistrationKeys/{_generateCount}", new { });
+
+        _generating = false;
+
+        if (result != null) {
+            foreach (var key in result) {
+                if (!string.IsNullOrWhiteSpace(key.NewKeyPlaintext)) {
+                    _newlyGeneratedKeys.Add(key.NewKeyPlaintext);
+                }
+                _registrationKeys.Add(key);
+            }
+            ShowStatus($"{result.Count} registration key(s) generated successfully.", true);
+        } else {
+            ShowStatus("Failed to generate registration keys.", false);
+        }
+
+        StateHasChanged();
+    }
+
+    protected void CloseAddPanel()
+    {
+        _showAddAgent = false;
+        _newlyGeneratedKeys.Clear();
+        _wizardVerifying = false;
+        _wizardVerified = false;
+        StateHasChanged();
+    }
+
+    protected async Task VerifyAgentConnection()
+    {
+        _wizardVerifying = true;
+        _wizardVerified = false;
+        StateHasChanged();
+
+        int maxAttempts = 12; // 12 * 5s = 60 seconds
+        for (int i = 0; i < maxAttempts; i++) {
+            var agents = await Helpers.GetOrPost<List<DataObjects.Agent>>("api/Data/GetAgents", new { });
+            if (agents != null && agents.Count > _agentCountBeforeGenerate) {
+                _wizardVerified = true;
+                _wizardVerifying = false;
+                _agents = agents;
+                ShowStatus("New agent connected successfully!", true);
+                StateHasChanged();
+                return;
+            }
+
+            await Task.Delay(5000);
+            StateHasChanged();
+        }
+
+        _wizardVerifying = false;
+        ShowStatus("Agent has not connected yet. Check the Agent Dashboard for status.", false);
+        StateHasChanged();
+    }
+
+    // ── Token Management ──
+
+    protected async Task RevokeToken(DataObjects.ApiClientToken token)
+    {
+        var result = await Helpers.GetOrPost<DataObjects.BooleanResponse>("api/Data/RevokeApiClientToken/" + token.ApiClientTokenId, new { });
+        if (result != null && result.Result) {
+            token.Active = false;
+            token.RevokedAt = DateTime.UtcNow;
+            ShowStatus($"Token for '{token.AgentName}' has been revoked.", true);
+        } else {
+            ShowStatus("Failed to revoke token.", false);
+        }
+        StateHasChanged();
+    }
+
+    // ── Delete Agent ──
+
+    protected void ConfirmDeleteAgent(DataObjects.Agent agent)
+    {
+        _deleteConfirmAgent = agent;
+        StateHasChanged();
+    }
+
+    protected async Task DeleteAgent()
+    {
+        if (_deleteConfirmAgent == null) return;
+
+        var result = await Helpers.GetOrPost<DataObjects.BooleanResponse>("api/Data/DeleteAgents", new List<Guid> { _deleteConfirmAgent.AgentId });
+        if (result != null && result.Result) {
+            _agents.RemoveAll(a => a.AgentId == _deleteConfirmAgent.AgentId);
+            ShowStatus($"Agent '{_deleteConfirmAgent.Name}' has been deleted.", true);
+        } else {
+            ShowStatus($"Failed to delete agent '{_deleteConfirmAgent.Name}'.", false);
+        }
+
+        _deleteConfirmAgent = null;
+        StateHasChanged();
+    }
+
+    // ── Navigation ──
+
+    protected void ViewAgent(Guid agentId)
+    {
+        Helpers.NavigateTo("AgentDetail/" + agentId.ToString());
+    }
+
+    protected void ViewSettings(Guid agentId)
+    {
+        Helpers.NavigateTo("AgentSettings");
+    }
+
+    // ── Helpers ──
+
+    protected string GetStatusBadge(string status) => status switch {
+        DataObjects.AgentStatuses.Online => "bg-success",
+        DataObjects.AgentStatuses.Warning => "bg-warning text-dark",
+        DataObjects.AgentStatuses.Error => "bg-danger",
+        DataObjects.AgentStatuses.Offline => "bg-secondary",
+        DataObjects.AgentStatuses.Stale => "bg-secondary",
+        _ => "bg-secondary"
+    };
+
+    protected async Task CopyToClipboard(string text)
+    {
+        try {
+            await jsRuntime.InvokeVoidAsync("navigator.clipboard.writeText", text);
+            ShowStatus("Copied to clipboard!", true);
+        } catch {
+            ShowStatus("Failed to copy. Please select and copy manually.", false);
+        }
+    }
+
+    protected void ShowStatus(string message, bool success)
+    {
+        _statusMessage = message;
+        _statusAlertClass = success ? "alert-success" : "alert-danger";
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(5000);
+            _statusMessage = "";
+            await InvokeAsync(StateHasChanged);
+        });
+    }
+
+    // ── SignalR ──
+
+    protected void SignalRUpdate(DataObjects.SignalRUpdate update)
+    {
+        if (Model.View != _pageName) return;
+
+        switch (update.UpdateType) {
+            case DataObjects.SignalRUpdateType.AgentConnected:
+                if (update.ObjectAsString != null) {
+                    var agent = Helpers.DeserializeObject<DataObjects.Agent>(update.ObjectAsString);
+                    if (agent != null) {
+                        var existing = _agents.FirstOrDefault(a => a.AgentId == agent.AgentId);
+                        if (existing != null) {
+                            int idx = _agents.IndexOf(existing);
+                            _agents[idx] = agent;
+                        } else {
+                            _agents.Add(agent);
+                        }
+                        ShowStatus($"New agent '{agent.Name}' connected!", true);
+                        StateHasChanged();
+                    }
+                }
+                _ = RefreshKeysAndTokens();
+                break;
+
+            case DataObjects.SignalRUpdateType.AgentDisconnected:
+            case DataObjects.SignalRUpdateType.AgentShutdown:
+                if (update.ItemId.HasValue) {
+                    var disc = _agents.FirstOrDefault(a => a.AgentId == update.ItemId.Value);
+                    if (disc != null) {
+                        disc.Status = DataObjects.AgentStatuses.Offline;
+                        StateHasChanged();
+                    }
+                }
+                break;
+
+            case DataObjects.SignalRUpdateType.AgentStatusChanged:
+                if (update.ObjectAsString != null) {
+                    var changed = Helpers.DeserializeObject<DataObjects.Agent>(update.ObjectAsString);
+                    if (changed != null) {
+                        var existing = _agents.FirstOrDefault(a => a.AgentId == changed.AgentId);
+                        if (existing != null) {
+                            existing.Status = changed.Status;
+                            StateHasChanged();
+                        }
+                    }
+                }
+                break;
+
+            case DataObjects.SignalRUpdateType.RegistrationKeyGenerated:
+                if (update.ObjectAsString != null) {
+                    var key = Helpers.DeserializeObject<DataObjects.RegistrationKey>(update.ObjectAsString);
+                    if (key != null && !_registrationKeys.Any(k => k.RegistrationKeyId == key.RegistrationKeyId)) {
+                        _registrationKeys.Add(key);
+                        StateHasChanged();
+                    }
+                }
+                break;
+        }
+    }
+
+    protected async Task RefreshKeysAndTokens()
+    {
+        var keys = await Helpers.GetOrPost<List<DataObjects.RegistrationKey>>("api/Data/GetRegistrationKeys", new { });
+        if (keys != null) _registrationKeys = keys;
+
+        var tokens = await Helpers.GetOrPost<List<DataObjects.ApiClientToken>>("api/Data/GetApiClientTokens", new { });
+        if (tokens != null) _clientTokens = tokens;
+
+        StateHasChanged();
+    }
+}

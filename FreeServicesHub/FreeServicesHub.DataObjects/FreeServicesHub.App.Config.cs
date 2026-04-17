@@ -3,6 +3,8 @@ namespace FreeServicesHub;
 // Interface — what consumers see
 public partial interface IConfigurationHelper
 {
+    public string CiCdAdminToken { get; }
+    public int CiCdMaxAgentRegistrations { get; }
     public int AgentHeartbeatIntervalSeconds { get; }
     public int AgentStaleThresholdSeconds { get; }
     public int RegistrationKeyExpiryHours { get; }
@@ -18,6 +20,8 @@ public partial interface IConfigurationHelper
 // Implementation — reads from loader
 public partial class ConfigurationHelper : IConfigurationHelper
 {
+    public string CiCdAdminToken { get { return _loader.CiCdAdminToken; } }
+    public int CiCdMaxAgentRegistrations { get { return _loader.CiCdMaxAgentRegistrations; } }
     public int AgentHeartbeatIntervalSeconds { get { return _loader.AgentHeartbeatIntervalSeconds; } }
     public int AgentStaleThresholdSeconds { get { return _loader.AgentStaleThresholdSeconds; } }
     public int RegistrationKeyExpiryHours { get { return _loader.RegistrationKeyExpiryHours; } }
@@ -33,6 +37,8 @@ public partial class ConfigurationHelper : IConfigurationHelper
 // Loader — populated during startup
 public partial class ConfigurationHelperLoader
 {
+    public string CiCdAdminToken { get; set; } = string.Empty;
+    public int CiCdMaxAgentRegistrations { get; set; } = 10;
     public int AgentHeartbeatIntervalSeconds { get; set; } = 30;
     public int AgentStaleThresholdSeconds { get; set; } = 120;
     public int RegistrationKeyExpiryHours { get; set; } = 24;

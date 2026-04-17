@@ -13,6 +13,12 @@ public sealed class InstallerConfig
     public ServiceSettings Service { get; set; } = new();
     public PublishSettings Publish { get; set; } = new();
     public SecuritySettings Security { get; set; } = new();
+
+    /// <summary>
+    /// When true, skips all interactive prompts. Required for CI/CD pipelines.
+    /// Set via --NonInteractive or --NonInteractive=true on the command line.
+    /// </summary>
+    public bool NonInteractive { get; set; }
 }
 
 /// <summary>

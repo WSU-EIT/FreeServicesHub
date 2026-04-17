@@ -184,6 +184,19 @@ public partial class DataAccess
                 }
             }
 
+            // Cascade soft-delete: mark any jobs assigned to these agents as Cancelled
+            var agentIds = recs.Select(r => r.AgentId).ToList();
+            var orphanedJobs = await data.HubJobs
+                .Where(j => j.AgentId.HasValue && agentIds.Contains(j.AgentId.Value) && !j.Deleted
+                    && j.Status != "Completed" && j.Status != "Failed" && j.Status != "Cancelled")
+                .ToListAsync();
+            foreach (var job in orphanedJobs) {
+                job.Status = "Cancelled";
+                job.ErrorMessage = "Agent deleted";
+                job.CompletedAt = now;
+                job.LastModified = now;
+            }
+
             await data.SaveChangesAsync();
             output.Result = true;
 

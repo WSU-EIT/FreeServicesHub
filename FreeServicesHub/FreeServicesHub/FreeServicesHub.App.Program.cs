@@ -1,10 +1,42 @@
+using FreeServicesHub.EFModels.EFModels;
+using Microsoft.EntityFrameworkCore;
+
 namespace FreeServicesHub;
 
 public partial class Program
 {
     private static WebApplicationBuilder MyAppModifyBuilderEnd(WebApplicationBuilder Output)
     {
+        var connectionString = Output.Configuration.GetConnectionString("AppData") ?? string.Empty;
+        var databaseType = (Output.Configuration.GetValue<string>("DatabaseType") ?? string.Empty).ToLower();
+
+        Output.Services.AddDbContext<EFDataModel>(options =>
+        {
+            switch (databaseType)
+            {
+                case "inmemory":
+                    options.UseInMemoryDatabase("InMemory");
+                    break;
+                case "mysql":
+                    options.UseMySQL(connectionString, o => o.EnableRetryOnFailure());
+                    break;
+                case "postgresql":
+                    options.UseNpgsql(connectionString, o => o.EnableRetryOnFailure());
+                    break;
+                case "sqlite":
+                    options.UseSqlite(connectionString);
+                    break;
+                case "sqlserver":
+                    options.UseSqlServer(connectionString, o => o.EnableRetryOnFailure());
+                    break;
+            }
+        });
+
+        Output.Services.AddSingleton<BackgroundServiceLogSink>();
+        Output.Services.AddSingleton<ILoggerProvider>(sp => sp.GetRequiredService<BackgroundServiceLogSink>());
+
         Output.Services.AddHostedService<AgentMonitorService>();
+        Output.Services.AddHostedService<DevRegistrationKeySeeder>();
         return Output;
     }
 
@@ -18,6 +50,8 @@ public partial class Program
     private static ConfigurationHelperLoader MyConfigurationHelpersLoadApp(
         ConfigurationHelperLoader output, WebApplicationBuilder builder)
     {
+        output.CiCdAdminToken = builder.Configuration.GetValue<string>("App:CiCdAdminToken", "") ?? string.Empty;
+        output.CiCdMaxAgentRegistrations = builder.Configuration.GetValue<int>("App:CiCdMaxAgentRegistrations", 10);
         output.AgentHeartbeatIntervalSeconds = builder.Configuration.GetValue<int>("App:AgentHeartbeatIntervalSeconds", 30);
         output.AgentStaleThresholdSeconds = builder.Configuration.GetValue<int>("App:AgentStaleThresholdSeconds", 120);
         output.RegistrationKeyExpiryHours = builder.Configuration.GetValue<int>("App:RegistrationKeyExpiryHours", 24);

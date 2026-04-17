@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 
 namespace FreeServicesHub.EFModels.EFModels;
 
@@ -11,6 +11,17 @@ public partial class EFDataModel
     public virtual DbSet<ApiClientToken> ApiClientTokens { get; set; }
 
     public virtual DbSet<AgentHeartbeat> AgentHeartbeats { get; set; }
+
+    public virtual DbSet<HubJob> HubJobs { get; set; }
+
+    public virtual DbSet<CiCdTokenUsage> CiCdTokenUsages { get; set; }
+
+    // The OnConfiguring override is only commented out and used to build the migration scripts.
+    //protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    // => optionsBuilder.UseSqlite("Data Source=C:\\Working\\FreeServicesHub.db");
+    // => optionsBuilder.UseMySQL("Server=localhost;Database=FreeServicesHub;User=admin;Password=admin");
+    // => optionsBuilder.UseNpgsql("Host=localhost;Database=FreeServicesHub;Username=postgres;Password=admin");
+    //=> optionsBuilder.UseSqlServer("Data Source=(local);Initial Catalog=FreeServicesHub;Persist Security Info=True;User ID=sa;Password=saPassword;MultipleActiveResultSets=True;TrustServerCertificate=True;");
 
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {
@@ -61,6 +72,30 @@ public partial class EFDataModel
 
             entity.Property(e => e.HeartbeatId).ValueGeneratedNever();
             entity.Property(e => e.Timestamp).HasColumnType("datetime");
+        });
+
+        modelBuilder.Entity<HubJob>(entity =>
+        {
+            entity.Property(e => e.HubJobId).ValueGeneratedNever();
+            entity.Property(e => e.JobType).HasMaxLength(100);
+            entity.Property(e => e.Status).HasMaxLength(50);
+            entity.Property(e => e.CreatedBy).HasMaxLength(100);
+            entity.Property(e => e.LastModifiedBy).HasMaxLength(100);
+            entity.Property(e => e.Created).HasColumnType("datetime");
+            entity.Property(e => e.StartedAt).HasColumnType("datetime");
+            entity.Property(e => e.CompletedAt).HasColumnType("datetime");
+            entity.Property(e => e.LastModified).HasColumnType("datetime");
+            entity.Property(e => e.DeletedAt).HasColumnType("datetime");
+        });
+
+        modelBuilder.Entity<CiCdTokenUsage>(entity =>
+        {
+            entity.Property(e => e.CiCdTokenUsageId).ValueGeneratedNever();
+            entity.Property(e => e.TokenHash).HasMaxLength(100);
+            entity.Property(e => e.TokenPrefix).HasMaxLength(20);
+            entity.Property(e => e.ExpiresAt).HasColumnType("datetime");
+            entity.Property(e => e.Created).HasColumnType("datetime");
+            entity.Property(e => e.InvalidatedAt).HasColumnType("datetime");
         });
     }
 }

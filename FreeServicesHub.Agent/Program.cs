@@ -1,4 +1,4 @@
-// FreeServicesHub.Agent -- Program.cs
+﻿// FreeServicesHub.Agent -- Program.cs
 // Host builder for the Agent worker service.
 // Runs as a Windows Service via sc.exe or as a console app for debugging.
 
@@ -13,6 +13,11 @@ var builder = Host.CreateDefaultBuilder(args)
     {
         config.SetBasePath(AppContext.BaseDirectory);
         config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+    })
+    .ConfigureLogging((context, logging) =>
+    {
+        var logPath = Path.Combine(AppContext.BaseDirectory, "agent.log");
+        logging.AddProvider(new FileLoggerProvider(logPath));
     })
     .ConfigureServices((context, services) =>
     {

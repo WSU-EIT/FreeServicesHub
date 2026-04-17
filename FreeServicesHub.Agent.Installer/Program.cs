@@ -1,4 +1,4 @@
-// FreeServicesHub.Agent.Installer -- Program.cs
+﻿// FreeServicesHub.Agent.Installer -- Program.cs
 // Dual CLI/UI interface for building, deploying, and managing the FreeServicesHub Agent.
 // Windows only -- uses sc.exe for service management.
 //
@@ -36,7 +36,13 @@ PrintBanner();
 var action = args.FirstOrDefault(a => !a.StartsWith("--"));
 
 if (!string.IsNullOrEmpty(action))
+{
+    // CLI mode: auto-enable noninteractive unless explicitly set to false
+    if (!args.Any(a => a.StartsWith("--NonInteractive=", StringComparison.OrdinalIgnoreCase)))
+        config.NonInteractive = true;
+
     return RunAction(action, config);
+}
 
 return RunInteractive(config);
 
@@ -223,7 +229,7 @@ static int ActionConfigure(InstallerConfig config)
         return 1;
     }
 
-    var nonInteractive = !string.IsNullOrEmpty(config.Security.ApiKey);
+    var nonInteractive = config.NonInteractive;
 
     Console.WriteLine(">> Configure:\n");
 
@@ -240,26 +246,32 @@ static int ActionConfigure(InstallerConfig config)
             config.Service.Name = nameInput;
     }
 
-    // API Key
+    // API Key (optional -- if empty, agent runs in standalone mode)
     if (nonInteractive)
     {
-        Console.WriteLine($"  API key: {new string('*', Math.Min(config.Security.ApiKey.Length, 20))}");
+        if (!string.IsNullOrEmpty(config.Security.ApiKey))
+            Console.WriteLine($"  API key: {new string('*', Math.Min(config.Security.ApiKey.Length, 20))}");
+        else
+            Console.WriteLine("  API key: (none -- standalone mode)");
     }
     else
     {
-        Console.Write("  Enter API key > ");
+        Console.Write("  Enter API key (press enter to skip for standalone mode) > ");
         var apiKeyInput = ReadMaskedInput();
         Console.WriteLine();
-        if (string.IsNullOrWhiteSpace(apiKeyInput))
-        {
-            WriteError("API key is required.");
-            return 1;
-        }
-        config.Security.ApiKey = apiKeyInput;
+        if (!string.IsNullOrWhiteSpace(apiKeyInput))
+            config.Security.ApiKey = apiKeyInput;
     }
 
-    WriteStep("Validating API key...");
-    WriteSuccess("API key validated.");
+    if (!string.IsNullOrEmpty(config.Security.ApiKey))
+    {
+        WriteStep("Validating API key...");
+        WriteSuccess("API key validated.");
+    }
+    else
+    {
+        WriteInfo("No API key provided. Agent will run in standalone mode (console/file logging only).");
+    }
     Console.WriteLine();
 
     // Source path (publish output)
@@ -298,14 +310,21 @@ static int ActionConfigure(InstallerConfig config)
     var copyResult = CopyPublishToInstall(config);
     if (copyResult != 0) return copyResult;
 
-    // Write API key to agent's appsettings.json
-    var writeResult = WriteApiKeyToServiceConfig(config);
-    if (writeResult != 0)
+    // Write API key to agent's appsettings.json (only if a key was provided)
+    if (!string.IsNullOrEmpty(config.Security.ApiKey))
     {
-        WriteError("Failed to write API key to service configuration.");
-        return writeResult;
+        var writeResult = WriteApiKeyToServiceConfig(config);
+        if (writeResult != 0)
+        {
+            WriteError("Failed to write API key to service configuration.");
+            return writeResult;
+        }
+        WriteSuccess("API key written to service configuration.");
     }
-    WriteSuccess("API key written to service configuration.");
+    else
+    {
+        WriteInfo("No API key -- skipping credential write. Agent will run standalone.");
+    }
 
     // Install the Windows service via sc.exe
     WriteStep("Installing service...");
@@ -331,7 +350,7 @@ static int ActionUninstall(InstallerConfig config)
     Console.WriteLine();
 
     // Authentication
-    var nonInteractive = !string.IsNullOrEmpty(config.Security.ApiKey);
+    var nonInteractive = config.NonInteractive;
 
     if (nonInteractive)
     {
@@ -450,7 +469,7 @@ static int ActionDestroy(InstallerConfig config)
 {
     PrintHeader("DESTROY -- UNDO EVERYTHING");
 
-    var nonInteractive = !string.IsNullOrEmpty(config.Security.ApiKey);
+    var nonInteractive = config.NonInteractive;
     var serviceName = config.Service.Name;
     var installPath = config.Service.InstallPath;
 

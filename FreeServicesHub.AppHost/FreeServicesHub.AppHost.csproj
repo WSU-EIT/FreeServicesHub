@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Sdk Name="Aspire.AppHost.Sdk" Version="9.2.0" />
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>FreeServicesHub.AppHost</RootNamespace>
+    <AssemblyName>FreeServicesHub.AppHost</AssemblyName>
+    <UserSecretsId>freeserviceshub-apphost</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.AppHost" Version="9.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FreeServicesHub\FreeServicesHub\FreeServicesHub.csproj" />
+    <ProjectReference Include="..\FreeServicesHub.Agent\FreeServicesHub.Agent.csproj" />
+  </ItemGroup>
+
+</Project>

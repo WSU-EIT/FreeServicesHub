@@ -20,7 +20,10 @@ public partial class Program
     public static WebApplication AppModifyEnd(WebApplication app)
     {
         var output = app;
-        // Add any app-specific modifications to the app here.
+
+        // Health check endpoint for CI/CD pipeline verification
+        output.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
+
         return output;
     }
 

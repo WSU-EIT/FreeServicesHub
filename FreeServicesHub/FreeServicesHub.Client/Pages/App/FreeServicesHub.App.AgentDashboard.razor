@@ -18,7 +18,7 @@
                 <Language Tag="AgentDashboard" IncludeIcon="true" />
                 <StickyMenuIcon />
             </h1>
-            <div class="btn-group mb-2" role="group">
+            <div class="btn-group mb-2" role="group" aria-label="Page actions">
                 <button type="button" class="btn btn-primary" @onclick="LoadData">
                     <Icon Name="Refresh" /> <Language Tag="Refresh" />
                 </button>
@@ -53,134 +53,244 @@
         </FreeServicesHub_App_AboutSection>
 
         @* Summary Cards *@
-        <div class="row g-3 mb-4">
-            <div class="col-6 col-md-3">
-                <div class="card text-center border-success">
-                    <div class="card-body py-2">
-                        <h3 class="text-success mb-0">@OnlineCount</h3>
-                        <small class="text-muted"><Language Tag="Online" /></small>
+        <section aria-label="Agent status summary">
+            <div class="row g-3 mb-4">
+                <div class="col-6 col-md-3">
+                    <div class="card text-center border-success" role="region" aria-label="Online agents">
+                        <div class="card-body py-2">
+                            <h3 class="text-success mb-0" aria-label="@OnlineCount online">@OnlineCount</h3>
+                            <small class="text-muted"><Language Tag="Online" /></small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="card text-center border-warning" role="region" aria-label="Warning agents">
+                        <div class="card-body py-2">
+                            <h3 class="text-warning mb-0" aria-label="@WarningCount warning">@WarningCount</h3>
+                            <small class="text-muted"><Language Tag="Warning" /></small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="card text-center border-danger" role="region" aria-label="Error agents">
+                        <div class="card-body py-2">
+                            <h3 class="text-danger mb-0" aria-label="@ErrorCount error">@ErrorCount</h3>
+                            <small class="text-muted"><Language Tag="Error" /></small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="card text-center border-secondary" role="region" aria-label="Offline agents">
+                        <div class="card-body py-2">
+                            <h3 class="text-secondary mb-0" aria-label="@OfflineCount offline">@OfflineCount</h3>
+                            <small class="text-muted"><Language Tag="Offline" /></small>
+                        </div>
                     </div>
                 </div>
             </div>
-            <div class="col-6 col-md-3">
-                <div class="card text-center border-warning">
-                    <div class="card-body py-2">
-                        <h3 class="text-warning mb-0">@WarningCount</h3>
-                        <small class="text-muted"><Language Tag="Warning" /></small>
-                    </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="card text-center border-danger">
-                    <div class="card-body py-2">
-                        <h3 class="text-danger mb-0">@ErrorCount</h3>
-                        <small class="text-muted"><Language Tag="Error" /></small>
-                    </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="card text-center border-secondary">
-                    <div class="card-body py-2">
-                        <h3 class="text-secondary mb-0">@OfflineCount</h3>
-                        <small class="text-muted"><Language Tag="Offline" /></small>
-                    </div>
-                </div>
-            </div>
-        </div>
+        </section>
 
-        @* Agent Card Grid *@
-        @if (_agents.Any()) {
-            <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-4 g-3 mb-4">
-                @foreach (var agent in _agents.OrderBy(a => a.Name)) {
-                    var worstStatus = GetWorstStatus(agent);
-                    var cardClass = "agent-card agent-" + worstStatus.ToLower();
-                    if (_recentlyUpdatedIds.Contains(agent.AgentId)) {
-                        cardClass += " agent-card-updated";
-                    }
-                    <div class="col">
-                        <div class="card @cardClass h-100 cursor-pointer" @onclick="@(() => ViewAgent(agent.AgentId))">
-                            <div class="card-body p-3">
-                                <div class="d-flex justify-content-between align-items-start mb-2">
-                                    <h6 class="card-title mb-0 text-truncate" title="@agent.Name">@agent.Name</h6>
-                                    <span class="badge @GetStatusBadgeClass(agent.Status)">@agent.Status</span>
-                                </div>
-                                <div class="small text-muted mb-2">
-                                    <div><Icon Name="Computer" /> @agent.Hostname</div>
-                                    <div><Icon Name="Settings" /> @agent.OperatingSystem</div>
-                                </div>
-                                @if (_latestHeartbeats.ContainsKey(agent.AgentId)) {
-                                    var hb = _latestHeartbeats[agent.AgentId];
-                                    <div class="mb-1">
-                                        <div class="d-flex justify-content-between small">
-                                            <span>CPU</span>
-                                            <span>@hb.CpuPercent.ToString("F1")%</span>
-                                        </div>
-                                        <div class="progress metric-bar">
-                                            <div class="progress-bar @GetMetricClass(hb.CpuPercent, 70, 90)" role="progressbar"
-                                                 style="width: @hb.CpuPercent.ToString("F0")%"></div>
-                                        </div>
-                                    </div>
-                                    <div class="mb-1">
-                                        <div class="d-flex justify-content-between small">
-                                            <span>MEM</span>
-                                            <span>@hb.MemoryPercent.ToString("F1")%</span>
-                                        </div>
-                                        <div class="progress metric-bar">
-                                            <div class="progress-bar @GetMetricClass(hb.MemoryPercent, 75, 90)" role="progressbar"
-                                                 style="width: @hb.MemoryPercent.ToString("F0")%"></div>
-                                        </div>
-                                    </div>
-                                    @if (_diskMetrics.ContainsKey(agent.AgentId)) {
-                                        @foreach (var disk in _diskMetrics[agent.AgentId]) {
-                                            <div class="mb-1">
-                                                <div class="d-flex justify-content-between small">
-                                                    <span>DISK @disk.Drive</span>
-                                                    <span>@disk.Percent.ToString("F1")%</span>
-                                                </div>
-                                                <div class="progress metric-bar">
-                                                    <div class="progress-bar @GetMetricClass(disk.Percent, 80, 95)" role="progressbar"
-                                                         style="width: @disk.Percent.ToString("F0")%"></div>
-                                                </div>
-                                            </div>
-                                        }
-                                    }
-                                }
-                                @if (agent.LastHeartbeat.HasValue) {
-                                    <div class="small text-muted mt-2">
-                                        <Language Tag="LastHeartbeat" />: @agent.LastHeartbeat.Value.ToString("g")
-                                    </div>
-                                }
+        @* Job Queue Summary *@
+        <section aria-label="Job queue summary" class="mb-4">
+            <h5><i class="fa-solid fa-list-check me-1" aria-hidden="true"></i> Job Queue</h5>
+            <div class="row g-3 mb-3">
+                @foreach (var kvp in _jobStatusCounts.OrderBy(x => GetJobSortOrder(x.Key))) {
+                    var color = kvp.Key switch {
+                        "Queued" => "info", "Assigned" => "primary", "Running" => "warning",
+                        "Completed" => "success", "Failed" => "danger", _ => "secondary"
+                    };
+                    <div class="col-4 col-md-2">
+                        <div class="card text-center border-@color" role="region"
+                             aria-label="@kvp.Value @kvp.Key jobs">
+                            <div class="card-body py-2">
+                                <h4 class="text-@color mb-0">@kvp.Value</h4>
+                                <small class="text-muted">@kvp.Key</small>
                             </div>
                         </div>
                     </div>
                 }
             </div>
+
+            @if (_recentJobs.Any()) {
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover" aria-label="Recent active jobs">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col">Type</th>
+                                <th scope="col">Agent</th>
+                                <th scope="col">Status</th>
+                                <th scope="col">Created</th>
+                                <th scope="col">Duration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var job in _recentJobs) {
+                                <tr>
+                                    <td>@job.JobType</td>
+                                    <td>@(_agents.FirstOrDefault(a => a.AgentId == (job.AgentId ?? Guid.Empty))?.Name ?? "Unassigned")</td>
+                                    <td>
+                                        <span class="badge @GetJobBadgeClass(job.Status)">
+                                            @job.Status
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <time datetime="@job.Created.ToString("o")">
+                                            @job.Created.ToString("g")
+                                        </time>
+                                    </td>
+                                    <td>@GetJobDuration(job)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            } else {
+                <div class="text-muted small">No active jobs in the queue.</div>
+            }
+        </section>
+
+        @* Filter & Sort Toolbar *@
+        @if (_agents.Any()) {
+            <div class="d-flex flex-wrap gap-2 align-items-end mb-3" role="search" aria-label="Filter and sort agents">
+                <div>
+                    <label for="agentDashFilter" class="form-label small fw-bold mb-1">Search agents</label>
+                    <input type="search" id="agentDashFilter" class="form-control form-control-sm"
+                           placeholder="Filter by name, host, OS…"
+                           @bind="_agentFilter" @bind:event="oninput" style="min-width:200px;" />
+                </div>
+                <div>
+                    <label for="agentDashStatusFilter" class="form-label small fw-bold mb-1">Status</label>
+                    <select id="agentDashStatusFilter" class="form-select form-select-sm" @bind="_agentStatusFilter" style="min-width:130px;">
+                        <option value="">All</option>
+                        <option value="@DataObjects.AgentStatuses.Online">Online</option>
+                        <option value="@DataObjects.AgentStatuses.Warning">Warning</option>
+                        <option value="@DataObjects.AgentStatuses.Error">Error</option>
+                        <option value="@DataObjects.AgentStatuses.Offline">Offline</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="agentDashSort" class="form-label small fw-bold mb-1">Sort by</label>
+                    <select id="agentDashSort" class="form-select form-select-sm" @bind="_agentSortField" style="min-width:130px;">
+                        <option value="Name">Name</option>
+                        <option value="Status">Status</option>
+                        <option value="LastHeartbeat">Last Heartbeat</option>
+                        <option value="Hostname">Hostname</option>
+                    </select>
+                </div>
+                <div class="ms-auto small text-muted align-self-end pb-1" aria-live="polite">
+                    @FilteredAgents.Count of @_agents.Count agent(s)
+                </div>
+            </div>
+        }
+
+        @* Agent Card Grid *@
+        @if (_agents.Any()) {
+            <section aria-label="Agent cards">
+                <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-4 g-3 mb-4">
+                    @foreach (var agent in FilteredAgents) {
+                        var worstStatus = GetWorstStatus(agent);
+                        var cardClass = "agent-card agent-" + worstStatus.ToLower();
+                        if (_recentlyUpdatedIds.Contains(agent.AgentId)) {
+                            cardClass += " agent-card-updated";
+                        }
+                        <div class="col">
+                            <div class="card @cardClass h-100 cursor-pointer"
+                                 tabindex="0"
+                                 role="link"
+                                 aria-label="View details for agent @agent.Name, status @agent.Status"
+                                 @onclick="@(() => ViewAgent(agent.AgentId))"
+                                 @onkeydown="@(e => { if (e.Key == "Enter" || e.Key == " ") ViewAgent(agent.AgentId); })">
+                                <div class="card-body p-3">
+                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                        <h6 class="card-title mb-0 text-truncate" title="@agent.Name">@agent.Name</h6>
+                                        <span class="badge @GetStatusBadgeClass(agent.Status)" aria-label="Status: @agent.Status">@agent.Status</span>
+                                    </div>
+                                    <div class="small text-muted mb-2">
+                                        <div><Icon Name="Computer" /> @agent.Hostname</div>
+                                        <div><Icon Name="Settings" /> @agent.OperatingSystem</div>
+                                    </div>
+                                    @if (_latestHeartbeats.ContainsKey(agent.AgentId)) {
+                                        var hb = _latestHeartbeats[agent.AgentId];
+                                        <div class="mb-1">
+                                            <div class="d-flex justify-content-between small">
+                                                <span>CPU</span>
+                                                <span>@hb.CpuPercent.ToString("F1")%</span>
+                                            </div>
+                                            <div class="progress metric-bar" role="progressbar"
+                                                 aria-label="CPU usage" aria-valuenow="@((int)hb.CpuPercent)"
+                                                 aria-valuemin="0" aria-valuemax="100">
+                                                <div class="progress-bar @GetMetricClass(hb.CpuPercent, 70, 90)"
+                                                     style="width: @hb.CpuPercent.ToString("F0")%"></div>
+                                            </div>
+                                        </div>
+                                        <div class="mb-1">
+                                            <div class="d-flex justify-content-between small">
+                                                <span>MEM</span>
+                                                <span>@hb.MemoryPercent.ToString("F1")%</span>
+                                            </div>
+                                            <div class="progress metric-bar" role="progressbar"
+                                                 aria-label="Memory usage" aria-valuenow="@((int)hb.MemoryPercent)"
+                                                 aria-valuemin="0" aria-valuemax="100">
+                                                <div class="progress-bar @GetMetricClass(hb.MemoryPercent, 75, 90)"
+                                                     style="width: @hb.MemoryPercent.ToString("F0")%"></div>
+                                            </div>
+                                        </div>
+                                        @if (_diskMetrics.ContainsKey(agent.AgentId)) {
+                                            @foreach (var disk in _diskMetrics[agent.AgentId]) {
+                                                <div class="mb-1">
+                                                    <div class="d-flex justify-content-between small">
+                                                        <span>DISK @disk.Drive</span>
+                                                        <span>@disk.Percent.ToString("F1")%</span>
+                                                    </div>
+                                                    <div class="progress metric-bar" role="progressbar"
+                                                         aria-label="Disk @disk.Drive usage" aria-valuenow="@((int)disk.Percent)"
+                                                         aria-valuemin="0" aria-valuemax="100">
+                                                        <div class="progress-bar @GetMetricClass(disk.Percent, 80, 95)"
+                                                             style="width: @disk.Percent.ToString("F0")%"></div>
+                                                    </div>
+                                                </div>
+                                            }
+                                        }
+                                    }
+                                    @if (agent.LastHeartbeat.HasValue) {
+                                        <div class="small text-muted mt-2">
+                                            <Language Tag="LastHeartbeat" />: <time datetime="@agent.LastHeartbeat.Value.ToString("o")">@agent.LastHeartbeat.Value.ToString("g")</time>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </section>
         } else {
-            <div class="alert alert-info">
+            <div class="alert alert-info" role="status">
                 <Language Tag="NoAgentsRegistered" />
             </div>
         }
 
         @* Activity Feed *@
         @if (_activityFeed.Any()) {
-            <div class="card mb-3">
-                <div class="card-header">
-                    <Icon Name="List" /> <Language Tag="RecentActivity" />
-                </div>
-                <div class="card-body p-0">
-                    <div class="activity-feed">
-                        <ul class="list-group list-group-flush">
-                            @foreach (var entry in _activityFeed) {
-                                <li class="list-group-item small py-1">
-                                    <span class="text-muted me-2">@entry.Timestamp.ToString("HH:mm:ss")</span>
-                                    <span class="badge @GetStatusBadgeClass(entry.Status) me-1">@entry.Status</span>
-                                    <strong>@entry.AgentName</strong> &mdash; @entry.Message
-                                </li>
-                            }
-                        </ul>
+            <section aria-label="Recent activity feed">
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <Icon Name="List" /> <Language Tag="RecentActivity" />
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="activity-feed" aria-live="polite">
+                            <ul class="list-group list-group-flush" aria-label="Recent agent activity">
+                                @foreach (var entry in _activityFeed) {
+                                    <li class="list-group-item small py-1">
+                                        <time class="text-muted me-2" datetime="@entry.Timestamp.ToString("o")">@entry.Timestamp.ToString("HH:mm:ss")</time>
+                                        <span class="badge @GetStatusBadgeClass(entry.Status) me-1" aria-label="Status: @entry.Status">@entry.Status</span>
+                                        <strong>@entry.AgentName</strong> &mdash; @entry.Message
+                                    </li>
+                                }
+                            </ul>
+                        </div>
                     </div>
                 </div>
-            </div>
+            </section>
         }
     }
 }
@@ -198,6 +308,15 @@
     protected List<ActivityEntry> _activityFeed = new List<ActivityEntry>();
     protected HashSet<Guid> _recentlyUpdatedIds = new HashSet<Guid>();
 
+    // Filtering & sorting
+    protected string _agentFilter = "";
+    protected string _agentStatusFilter = "";
+    protected string _agentSortField = "Name";
+
+    // Job queue data
+    protected List<DataObjects.HubJob> _recentJobs = new();
+    protected Dictionary<string, int> _jobStatusCounts = new();
+
     protected class ActivityEntry
     {
         public DateTime Timestamp { get; set; }
@@ -205,6 +324,39 @@
         public string Status { get; set; } = string.Empty;
         public string Message { get; set; } = string.Empty;
     }
+
+    // ── Computed Properties ──
+
+    protected List<DataObjects.Agent> FilteredAgents {
+        get {
+            var items = _agents.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_agentFilter)) {
+                var q = _agentFilter.Trim();
+                items = items.Where(a =>
+                    a.Name.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || a.Hostname.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || a.OperatingSystem.Contains(q, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(_agentStatusFilter)) {
+                items = items.Where(a => a.Status == _agentStatusFilter
+                    || (_agentStatusFilter == DataObjects.AgentStatuses.Offline
+                        && (a.Status == DataObjects.AgentStatuses.Offline || a.Status == DataObjects.AgentStatuses.Stale)));
+            }
+
+            items = _agentSortField switch {
+                "Status" => items.OrderBy(a => a.Status).ThenBy(a => a.Name),
+                "LastHeartbeat" => items.OrderByDescending(a => a.LastHeartbeat ?? DateTime.MinValue),
+                "Hostname" => items.OrderBy(a => a.Hostname).ThenBy(a => a.Name),
+                _ => items.OrderBy(a => a.Name),
+            };
+
+            return items.ToList();
+        }
+    }
+
+    // ── Lifecycle ──
 
     public void Dispose()
     {
@@ -245,10 +397,14 @@
         }
     }
 
+    // ── Summary Counts ──
+
     protected int OnlineCount => _agents.Count(a => a.Status == DataObjects.AgentStatuses.Online);
     protected int WarningCount => _agents.Count(a => a.Status == DataObjects.AgentStatuses.Warning);
     protected int ErrorCount => _agents.Count(a => a.Status == DataObjects.AgentStatuses.Error);
     protected int OfflineCount => _agents.Count(a => a.Status == DataObjects.AgentStatuses.Offline || a.Status == DataObjects.AgentStatuses.Stale);
+
+    // ── Helpers ──
 
     protected string GetMetricClass(double value, double warn, double error) =>
         value >= error ? "bg-danger" :
@@ -292,17 +448,19 @@
         Helpers.NavigateTo("AgentDetail/" + agentId.ToString());
     }
 
+    // ── Data ──
+
     protected async Task LoadData()
     {
         _loading = true;
         StateHasChanged();
 
-        var agents = await Helpers.GetOrPost<List<DataObjects.Agent>>("api/Data/GetAgents");
+        var agents = await Helpers.GetOrPost<List<DataObjects.Agent>>("api/Data/GetAgents", new { });
         if (agents != null) {
             _agents = agents;
         }
 
-        var heartbeats = await Helpers.GetOrPost<List<DataObjects.AgentHeartbeat>>("api/Data/GetLatestHeartbeats");
+        var heartbeats = await Helpers.GetOrPost<List<DataObjects.AgentHeartbeat>>("api/Data/GetLatestHeartbeats", new { });
         if (heartbeats != null) {
             _latestHeartbeats.Clear();
             _diskMetrics.Clear();
@@ -319,8 +477,29 @@
             }
         }
 
+        await LoadJobData();
+
         _loading = false;
         StateHasChanged();
+    }
+
+    protected async Task LoadJobData()
+    {
+        try {
+            var allJobs = await Helpers.GetOrPost<List<DataObjects.HubJob>>("api/Data/GetHubJobs", new { });
+            if (allJobs != null) {
+                _jobStatusCounts = allJobs
+                    .GroupBy(j => j.Status)
+                    .ToDictionary(g => g.Key, g => g.Count());
+
+                _recentJobs = allJobs
+                    .Where(j => j.Status != DataObjects.HubJobStatuses.Completed
+                              && j.Status != DataObjects.HubJobStatuses.Cancelled)
+                    .OrderByDescending(j => j.Created)
+                    .Take(10)
+                    .ToList();
+            }
+        } catch { }
     }
 
     protected async void MarkRecentlyUpdated(Guid agentId)
@@ -341,11 +520,12 @@
             Message = message
         });
 
-        // Keep only last 50 entries
         if (_activityFeed.Count > 50) {
             _activityFeed.RemoveRange(50, _activityFeed.Count - 50);
         }
     }
+
+    // ── SignalR ──
 
     protected void SignalRUpdate(DataObjects.SignalRUpdate update)
     {
@@ -418,6 +598,33 @@
                     }
                 }
                 break;
+
+            case DataObjects.SignalRUpdateType.JobUpdated:
+            case DataObjects.SignalRUpdateType.JobCompleted:
+                _ = InvokeAsync(async () => {
+                    await LoadJobData();
+                    StateHasChanged();
+                });
+                break;
         }
     }
+
+    protected string GetJobDuration(DataObjects.HubJob job)
+    {
+        if (job.StartedAt == null) return "—";
+        DateTime end = job.CompletedAt ?? DateTime.UtcNow;
+        TimeSpan d = end - job.StartedAt.Value;
+        return d.TotalMinutes < 1 ? $"{d.Seconds}s" : $"{d.TotalMinutes:F0}m {d.Seconds}s";
+    }
+
+    protected string GetJobBadgeClass(string status) => status switch {
+        "Queued" => "bg-info", "Assigned" => "bg-primary", "Running" => "bg-warning text-dark",
+        "Completed" => "bg-success", "Failed" => "bg-danger", "Cancelled" => "bg-secondary",
+        _ => "bg-light text-dark"
+    };
+
+    protected int GetJobSortOrder(string status) => status switch {
+        "Running" => 0, "Assigned" => 1, "Queued" => 2,
+        "Failed" => 3, "Completed" => 4, "Cancelled" => 5, _ => 99
+    };
 }

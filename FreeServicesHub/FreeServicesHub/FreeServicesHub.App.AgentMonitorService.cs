@@ -24,8 +24,9 @@ public class AgentMonitorService : BackgroundService
     private int _consecutiveErrors = 0;
     private const int MaxBackoffMultiplier = 12; // 5s * 12 = 60s max
 
-    // The SignalR group name dashboard clients subscribe to
-    private const string MonitorGroup = "AgentMonitor";
+    // Broadcast to the tenant's own SignalR group (matching the framework pattern
+    // where clients join via JoinTenantId and listen on the TenantId GUID group).
+    private static string GetMonitorGroup(Guid tenantId) => tenantId.ToString();
 
     public AgentMonitorService(
         IHubContext<freeserviceshubHub, IsrHub> HubContext,
@@ -105,27 +106,33 @@ public class AgentMonitorService : BackgroundService
             }
         }
 
-        // Broadcast status changes to the AgentMonitor group
+        // Broadcast status changes to tenant-scoped groups
         if (changedAgents.Count > 0) {
-            DataObjects.SignalRUpdate changeUpdate = new() {
-                UpdateType = DataObjects.SignalRUpdateType.AgentStatusChanged,
-                Message = $"{changedAgents.Count} agent(s) status changed",
-                Object = changedAgents,
-            };
+            foreach (var tenantGroup in changedAgents.GroupBy(a => a.TenantId)) {
+                DataObjects.SignalRUpdate changeUpdate = new() {
+                    TenantId = tenantGroup.Key,
+                    UpdateType = DataObjects.SignalRUpdateType.AgentStatusChanged,
+                    Message = $"{tenantGroup.Count()} agent(s) status changed",
+                    Object = tenantGroup.ToList(),
+                };
 
-            await _hubContext.Clients.Group(MonitorGroup).SignalRUpdate(changeUpdate);
+                await _hubContext.Clients.Group(GetMonitorGroup(tenantGroup.Key)).SignalRUpdate(changeUpdate);
+            }
         }
 
-        // Always send a heartbeat so dashboard knows the service is alive
-        DataObjects.SignalRUpdate heartbeatUpdate = new() {
-            UpdateType = DataObjects.SignalRUpdateType.AgentHeartbeat,
-            Message = changedAgents.Count > 0
-                ? $"{changedAgents.Count} change(s) detected across {agents.Count} agents"
-                : $"Checked {agents.Count} agents — no changes",
-            Object = agents,
-        };
+        // Always send a heartbeat per tenant so dashboard knows the service is alive
+        foreach (var tenantGroup in agents.GroupBy(a => a.TenantId)) {
+            DataObjects.SignalRUpdate heartbeatUpdate = new() {
+                TenantId = tenantGroup.Key,
+                UpdateType = DataObjects.SignalRUpdateType.AgentHeartbeat,
+                Message = changedAgents.Any(a => a.TenantId == tenantGroup.Key)
+                    ? $"{changedAgents.Count(a => a.TenantId == tenantGroup.Key)} change(s) detected across {tenantGroup.Count()} agents"
+                    : $"Checked {tenantGroup.Count()} agents — no changes",
+                Object = tenantGroup.ToList(),
+            };
 
-        await _hubContext.Clients.Group(MonitorGroup).SignalRUpdate(heartbeatUpdate);
+            await _hubContext.Clients.Group(GetMonitorGroup(tenantGroup.Key)).SignalRUpdate(heartbeatUpdate);
+        }
     }
 
 }

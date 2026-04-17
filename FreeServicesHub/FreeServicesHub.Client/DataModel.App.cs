@@ -40,6 +40,25 @@ public partial class BlazorDataModel
         }
     }
 
+    private List<DataObjects.HubJob> _ActiveJobs = new List<DataObjects.HubJob>();
+
+    /// <summary>
+    /// Active jobs for the dashboard. Updated by SignalR and manual load.
+    /// </summary>
+    public List<DataObjects.HubJob> ActiveJobs {
+        get {
+            return _ActiveJobs;
+        }
+
+        set {
+            if (!ObjectsAreEqual(_ActiveJobs, value)) {
+                _ActiveJobs = value;
+                _ModelUpdated = DateTime.UtcNow;
+                NotifyDataChanged();
+            }
+        }
+    }
+
     /// <summary>
     /// An example of implementing a custom property in your data model.
     /// </summary>

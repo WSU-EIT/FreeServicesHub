@@ -13,6 +13,11 @@ public partial class DataObjects
         public const string AgentStatusChanged = "AgentStatusChanged";
         public const string AgentShutdown = "AgentShutdown";
         public const string RegistrationKeyGenerated = "RegistrationKeyGenerated";
+        public const string BackgroundServiceLog = "BackgroundServiceLog";
+        public const string AgentSettingsUpdated = "AgentSettingsUpdated";
+        public const string AgentSettingsReport = "AgentSettingsReport";
+        public const string JobUpdated = "JobUpdated";
+        public const string JobCompleted = "JobCompleted";
     }
 
     public partial class User

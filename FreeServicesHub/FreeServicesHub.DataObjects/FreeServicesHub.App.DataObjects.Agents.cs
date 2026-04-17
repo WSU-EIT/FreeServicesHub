@@ -2,6 +2,16 @@ namespace FreeServicesHub;
 
 public partial class DataObjects
 {
+    public class GetAgentsRequest
+    {
+        public List<Guid>? Ids { get; set; }
+    }
+
+    public class GetHubJobsRequest
+    {
+        public List<Guid>? Ids { get; set; }
+    }
+
     // Agent - a registered service agent instance
     public class Agent : ActionResponseObject
     {
@@ -38,6 +48,7 @@ public partial class DataObjects
         public string DiskMetricsJson { get; set; } = string.Empty; // JSON array of {Drive, UsedGB, TotalGB, Percent}
         public string CustomDataJson { get; set; } = string.Empty;  // Extensible JSON block
         public string AgentName { get; set; } = string.Empty; // Denormalized for display
+        public string ServiceInfoJson { get; set; } = string.Empty; // JSON of AgentServiceInfo
     }
 
     // DiskMetric - individual disk stats (deserialized from DiskMetricsJson)

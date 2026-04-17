@@ -52,4 +52,13 @@ public partial class DataObjects
         public string ApiClientToken { get; set; } = string.Empty; // Plaintext token, shown once
         public string HubUrl { get; set; } = string.Empty;
     }
+
+    // CiCdRegistrationResponse - returned by the CI/CD pipeline registration endpoint
+    public class CiCdRegistrationResponse
+    {
+        public string AgentSlug { get; set; } = string.Empty;       // Friendly name / primary key for this agent
+        public string RegistrationKey { get; set; } = string.Empty;  // Plaintext key to inject into agent appsettings.json
+        public DateTime ExpiresAt { get; set; }                      // When the key expires
+        public string Message { get; set; } = string.Empty;
+    }
 }

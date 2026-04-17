@@ -1,0 +1,588 @@
+@page "/AgentSettings"
+@page "/{TenantCode}/AgentSettings"
+@implements IDisposable
+@using Blazored.LocalStorage
+@inject IJSRuntime jsRuntime
+@inject HttpClient Http
+@inject ILocalStorageService LocalStorage
+@inject BlazorDataModel Model
+@if (Model.Loaded && Model.View == _pageName) {
+    @if (_loading) {
+        <h1 class="page-title">
+            <Language Tag="AgentSettings" IncludeIcon="true" />
+        </h1>
+        <LoadingMessage />
+    } else {
+        <div class="@Model.StickyMenuClass">
+            <h1 class="page-title">
+                <Language Tag="AgentSettings" IncludeIcon="true" />
+                <StickyMenuIcon />
+            </h1>
+            <div class="btn-group mb-2" role="group" aria-label="Page actions">
+                <button type="button" class="btn btn-primary" @onclick="LoadData">
+                    <Icon Name="Refresh" /> <Language Tag="Refresh" />
+                </button>
+            </div>
+        </div>
+
+        @* About Section *@
+        <FreeServicesHub_App_AboutSection Title="Agent Settings" Subtitle="View and manage Windows Service settings for connected agents">
+            <div class="row">
+                <div class="col-md-4">
+                    <h6><Icon Name="Info" /> <Language Tag="WhatIsThis" /></h6>
+                    <p class="small text-muted">
+                        View real-time Windows Service metadata and agent configuration for every
+                        registered agent. Settings are synced with each heartbeat.
+                    </p>
+                </div>
+                <div class="col-md-4">
+                    <h6><Icon Name="Eye" /> <Language Tag="WhatYoullSee" /></h6>
+                    <p class="small text-muted">
+                        Service name, status, startup type, log-on account, PID, hub URL,
+                        heartbeat interval, and agent name — all pulled from the running service.
+                    </p>
+                </div>
+                <div class="col-md-4">
+                    <h6><Icon Name="Settings" /> <Language Tag="Actions" /></h6>
+                    <p class="small text-muted">
+                        Click the edit icon on any agent row to inline-edit the heartbeat interval,
+                        agent name, hub URL, or startup type. Changes are pushed to the agent in real time.
+                    </p>
+                </div>
+            </div>
+        </FreeServicesHub_App_AboutSection>
+
+        @* Status message live region *@
+        <div aria-live="polite" aria-atomic="true" role="status">
+            @if (!string.IsNullOrWhiteSpace(_statusMessage)) {
+                <div class="alert @_statusAlertClass alert-dismissible fade show mt-2 mb-3" role="alert">
+                    @_statusMessage
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="() => _statusMessage = string.Empty"></button>
+                </div>
+            }
+        </div>
+
+        @if (_serviceInfos.Any()) {
+            @* Filter & search toolbar *@
+            <div class="d-flex flex-wrap gap-2 align-items-end mb-3" role="search" aria-label="Filter agent settings">
+                <div>
+                    <label for="agentSettingsFilter" class="form-label small fw-bold mb-1">Search agents</label>
+                    <input type="search" id="agentSettingsFilter" class="form-control form-control-sm"
+                           placeholder="Filter by name, service, status…"
+                           aria-describedby="agentSettingsFilterHelp"
+                           @bind="_filterText" @bind:event="oninput" style="min-width:220px;" />
+                    <div id="agentSettingsFilterHelp" class="form-text visually-hidden">
+                        Filters the table by agent name, service name, or status.
+                    </div>
+                </div>
+                <div>
+                    <label for="agentStatusFilter" class="form-label small fw-bold mb-1">Status</label>
+                    <select id="agentStatusFilter" class="form-select form-select-sm" @bind="_filterStatus" style="min-width:130px;">
+                        <option value="">All statuses</option>
+                        <option value="Running">Running</option>
+                        <option value="Stopped">Stopped</option>
+                        <option value="Console">Console</option>
+                        <option value="Online">Online</option>
+                        <option value="Offline">Offline</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="agentPageSize" class="form-label small fw-bold mb-1">Per page</label>
+                    <select id="agentPageSize" class="form-select form-select-sm" @bind="PageSize" style="min-width:80px;">
+                        <option value="10">10</option>
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+                <div class="ms-auto small text-muted align-self-end pb-1" aria-live="polite">
+                    Showing @PagedItems.Count of @FilteredItems.Count agent(s)
+                </div>
+            </div>
+
+            @* Sortable data table *@
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle" aria-label="Agent settings">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col" style="width:40px;" aria-label="Status indicator">
+                                <span class="visually-hidden">Status</span>
+                            </th>
+                            <th scope="col" role="columnheader" aria-sort="@GetAriaSortValue("AgentName")" style="cursor:pointer;" @onclick='() => SortBy("AgentName")'>
+                                Agent @SortIndicator("AgentName")
+                            </th>
+                            <th scope="col" role="columnheader" aria-sort="@GetAriaSortValue("ServiceName")" style="cursor:pointer;" @onclick='() => SortBy("ServiceName")'>
+                                Service Name @SortIndicator("ServiceName")
+                            </th>
+                            <th scope="col" role="columnheader" aria-sort="@GetAriaSortValue("ServiceStatus")" style="cursor:pointer;" @onclick='() => SortBy("ServiceStatus")'>
+                                Status @SortIndicator("ServiceStatus")
+                            </th>
+                            <th scope="col" role="columnheader" aria-sort="@GetAriaSortValue("StartupType")" style="cursor:pointer;" @onclick='() => SortBy("StartupType")'>
+                                Startup @SortIndicator("StartupType")
+                            </th>
+                            <th scope="col">Log-On Account</th>
+                            <th scope="col" role="columnheader" aria-sort="@GetAriaSortValue("ProcessId")" style="cursor:pointer;" @onclick='() => SortBy("ProcessId")'>
+                                PID @SortIndicator("ProcessId")
+                            </th>
+                            <th scope="col">Hub URL</th>
+                            <th scope="col" role="columnheader" aria-sort="@GetAriaSortValue("HeartbeatIntervalSeconds")" style="cursor:pointer;" @onclick='() => SortBy("HeartbeatIntervalSeconds")'>
+                                Heartbeat (s) @SortIndicator("HeartbeatIntervalSeconds")
+                            </th>
+                            <th scope="col">Version</th>
+                            <th scope="col" role="columnheader" aria-sort="@GetAriaSortValue("Uptime")" style="cursor:pointer;" @onclick='() => SortBy("Uptime")'>
+                                Uptime @SortIndicator("Uptime")
+                            </th>
+                            <th scope="col" style="width:120px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var info in PagedItems) {
+                            var isEditing = _editingAgentId == info.AgentId;
+                            <tr class="@(isEditing ? "table-active" : "")">
+                                <td>
+                                    <span class="badge @GetServiceStatusBadge(info.ServiceStatus)"
+                                          aria-label="@info.ServiceStatus" title="@info.ServiceStatus">&bull;</span>
+                                </td>
+                                <td>
+                                    @if (isEditing) {
+                                        <label for="editAgentName-@info.AgentId" class="visually-hidden">Agent name</label>
+                                        <input type="text" id="editAgentName-@info.AgentId"
+                                               class="form-control form-control-sm" @bind="_editAgentName" />
+                                    } else {
+                                        <strong>@info.AgentName</strong>
+                                    }
+                                </td>
+                                <td>
+                                    <code class="small">@info.ServiceName</code>
+                                    @if (!string.IsNullOrWhiteSpace(info.DisplayName) && info.DisplayName != info.ServiceName) {
+                                        <br /><small class="text-muted">@info.DisplayName</small>
+                                    }
+                                </td>
+                                <td>
+                                    <span class="badge @GetServiceStatusBadge(info.ServiceStatus)">@info.ServiceStatus</span>
+                                </td>
+                                <td>
+                                    @if (isEditing) {
+                                        <label for="editStartupType-@info.AgentId" class="visually-hidden">Startup type</label>
+                                        <select id="editStartupType-@info.AgentId"
+                                                class="form-select form-select-sm" @bind="_editStartupType">
+                                            <option value="Automatic">Automatic</option>
+                                            <option value="Manual">Manual</option>
+                                            <option value="Disabled">Disabled</option>
+                                        </select>
+                                    } else {
+                                        @info.StartupType
+                                    }
+                                </td>
+                                <td><small>@info.LogOnAccount</small></td>
+                                <td><code>@info.ProcessId</code></td>
+                                <td>
+                                    @if (isEditing) {
+                                        <label for="editHubUrl-@info.AgentId" class="visually-hidden">Hub URL</label>
+                                        <input type="text" id="editHubUrl-@info.AgentId"
+                                               class="form-control form-control-sm" @bind="_editHubUrl" />
+                                    } else {
+                                        <small class="text-truncate d-inline-block" style="max-width:180px;" title="@info.HubUrl">@info.HubUrl</small>
+                                    }
+                                </td>
+                                <td>
+                                    @if (isEditing) {
+                                        <label for="editHeartbeat-@info.AgentId" class="visually-hidden">Heartbeat interval (seconds)</label>
+                                        <input type="number" id="editHeartbeat-@info.AgentId"
+                                               class="form-control form-control-sm" @bind="_editHeartbeatInterval"
+                                               min="5" max="3600" style="width:80px;" />
+                                    } else {
+                                        @info.HeartbeatIntervalSeconds
+                                    }
+                                </td>
+                                <td><small>@info.AgentVersion</small></td>
+                                <td><small>@FormatUptime(info.Uptime)</small></td>
+                                <td>
+                                    @if (isEditing) {
+                                        <button class="btn btn-sm btn-success me-1"
+                                                @onclick="() => SaveSettings(info)"
+                                                title="Save settings" aria-label="Save settings for @info.AgentName">
+                                            <Icon Name="Save" />
+                                        </button>
+                                        <button class="btn btn-sm btn-secondary"
+                                                @onclick="CancelEdit"
+                                                title="Cancel editing" aria-label="Cancel editing @info.AgentName">
+                                            <Icon Name="Close" />
+                                        </button>
+                                    } else {
+                                        <button class="btn btn-sm btn-outline-primary me-1"
+                                                @onclick="() => StartEdit(info)"
+                                                title="Edit settings" aria-label="Edit settings for @info.AgentName">
+                                            <Icon Name="Edit" />
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-info"
+                                                @onclick="() => RequestRefresh(info.AgentId)"
+                                                title="Request settings refresh" aria-label="Refresh settings for @info.AgentName">
+                                            <Icon Name="Refresh" />
+                                        </button>
+                                    }
+                                </td>
+                            </tr>
+                            @if (!string.IsNullOrWhiteSpace(info.ServiceDescription)) {
+                                <tr class="@(isEditing ? "table-active" : "")" aria-hidden="true">
+                                    <td></td>
+                                    <td colspan="11">
+                                        <small class="text-muted fst-italic">@info.ServiceDescription</small>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            @* Pagination *@
+            @if (TotalPages > 1) {
+                <nav aria-label="Agent settings table pagination" class="mt-2">
+                    <ul class="pagination pagination-sm justify-content-center mb-0">
+                        <li class="page-item @(_currentPage <= 1 ? "disabled" : "")">
+                            <button class="page-link" @onclick="() => GoToPage(1)"
+                                    disabled="@(_currentPage <= 1)" aria-label="First page">
+                                <span aria-hidden="true">&laquo;&laquo;</span>
+                            </button>
+                        </li>
+                        <li class="page-item @(_currentPage <= 1 ? "disabled" : "")">
+                            <button class="page-link" @onclick="() => GoToPage(_currentPage - 1)"
+                                    disabled="@(_currentPage <= 1)" aria-label="Previous page">
+                                <span aria-hidden="true">&laquo;</span>
+                            </button>
+                        </li>
+                        @foreach (var p in VisiblePageNumbers) {
+                            <li class="page-item @(p == _currentPage ? "active" : "")"
+                                aria-current="@(p == _currentPage ? "page" : null)">
+                                <button class="page-link" @onclick="() => GoToPage(p)"
+                                        aria-label="Page @p">@p</button>
+                            </li>
+                        }
+                        <li class="page-item @(_currentPage >= TotalPages ? "disabled" : "")">
+                            <button class="page-link" @onclick="() => GoToPage(_currentPage + 1)"
+                                    disabled="@(_currentPage >= TotalPages)" aria-label="Next page">
+                                <span aria-hidden="true">&raquo;</span>
+                            </button>
+                        </li>
+                        <li class="page-item @(_currentPage >= TotalPages ? "disabled" : "")">
+                            <button class="page-link" @onclick="() => GoToPage(TotalPages)"
+                                    disabled="@(_currentPage >= TotalPages)" aria-label="Last page">
+                                <span aria-hidden="true">&raquo;&raquo;</span>
+                            </button>
+                        </li>
+                    </ul>
+                </nav>
+            }
+        } else {
+            <div class="alert alert-info" role="status">
+                <Icon Name="Info" /> No agent service information available yet.
+                Agents report their service metadata with each heartbeat after connecting.
+            </div>
+        }
+    }
+}
+@code {
+    [Parameter] public string? TenantCode { get; set; }
+
+    protected bool _loadedData = false;
+    protected bool _loading = true;
+    protected bool _validatedUrl = false;
+    protected string _pageName = "agentsettings";
+
+    protected List<DataObjects.AgentServiceInfo> _serviceInfos = new();
+
+    // Sorting
+    protected string _sortColumn = "AgentName";
+    protected bool _sortAscending = true;
+
+    // Filtering
+    protected string _filterText = "";
+    protected string _filterStatus = "";
+
+    // Pagination
+    protected int _currentPage = 1;
+    protected int _pageSize = 25;
+    protected int PageSize {
+        get => _pageSize;
+        set {
+            _pageSize = value;
+            _currentPage = 1;
+        }
+    }
+
+    // Inline editing state
+    protected Guid? _editingAgentId = null;
+    protected string _editAgentName = "";
+    protected string _editHubUrl = "";
+    protected int _editHeartbeatInterval = 30;
+    protected string _editStartupType = "Automatic";
+
+    protected string _statusMessage = "";
+    protected string _statusAlertClass = "alert-success";
+
+    // ── Computed Properties ──
+
+    protected List<DataObjects.AgentServiceInfo> FilteredItems {
+        get {
+            var items = _serviceInfos.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_filterText)) {
+                var q = _filterText.Trim();
+                items = items.Where(i =>
+                    i.AgentName.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || i.ServiceName.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || i.ServiceStatus.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || i.DisplayName.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || i.LogOnAccount.Contains(q, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(_filterStatus)) {
+                items = items.Where(i => i.ServiceStatus.Equals(_filterStatus, StringComparison.OrdinalIgnoreCase));
+            }
+
+            items = _sortColumn switch {
+                "AgentName" => _sortAscending ? items.OrderBy(i => i.AgentName) : items.OrderByDescending(i => i.AgentName),
+                "ServiceName" => _sortAscending ? items.OrderBy(i => i.ServiceName) : items.OrderByDescending(i => i.ServiceName),
+                "ServiceStatus" => _sortAscending ? items.OrderBy(i => i.ServiceStatus) : items.OrderByDescending(i => i.ServiceStatus),
+                "StartupType" => _sortAscending ? items.OrderBy(i => i.StartupType) : items.OrderByDescending(i => i.StartupType),
+                "ProcessId" => _sortAscending ? items.OrderBy(i => i.ProcessId) : items.OrderByDescending(i => i.ProcessId),
+                "HeartbeatIntervalSeconds" => _sortAscending ? items.OrderBy(i => i.HeartbeatIntervalSeconds) : items.OrderByDescending(i => i.HeartbeatIntervalSeconds),
+                "Uptime" => _sortAscending ? items.OrderBy(i => i.Uptime) : items.OrderByDescending(i => i.Uptime),
+                _ => items.OrderBy(i => i.AgentName),
+            };
+
+            return items.ToList();
+        }
+    }
+
+    protected int TotalPages => Math.Max(1, (int)Math.Ceiling((double)FilteredItems.Count / _pageSize));
+
+    protected List<DataObjects.AgentServiceInfo> PagedItems =>
+        FilteredItems.Skip((_currentPage - 1) * _pageSize).Take(_pageSize).ToList();
+
+    protected IEnumerable<int> VisiblePageNumbers {
+        get {
+            const int maxVisible = 7;
+            int start = Math.Max(1, _currentPage - maxVisible / 2);
+            int end = Math.Min(TotalPages, start + maxVisible - 1);
+            start = Math.Max(1, end - maxVisible + 1);
+            return Enumerable.Range(start, end - start + 1);
+        }
+    }
+
+    // ── Lifecycle ──
+
+    public void Dispose()
+    {
+        Model.OnChange -= OnDataModelUpdated;
+        Model.OnSignalRUpdate -= SignalRUpdate;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) {
+            Model.TenantCodeFromUrl = TenantCode;
+        }
+
+        if (Model.Loaded && Model.LoggedIn) {
+            if (!_validatedUrl) {
+                _validatedUrl = true;
+                await Helpers.ValidateUrl(TenantCode);
+            }
+
+            if (!_loadedData) {
+                _loadedData = true;
+                await LoadData();
+            }
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        Model.OnChange += OnDataModelUpdated;
+        Model.OnSignalRUpdate += SignalRUpdate;
+        Model.View = _pageName;
+    }
+
+    protected void OnDataModelUpdated()
+    {
+        if (Model.View == _pageName) {
+            StateHasChanged();
+        }
+    }
+
+    // ── Data ──
+
+    protected async Task LoadData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        var infos = await Helpers.GetOrPost<List<DataObjects.AgentServiceInfo>>("api/Data/GetAgentServiceInfos", new { });
+        if (infos != null) {
+            _serviceInfos = infos;
+        }
+
+        _currentPage = 1;
+        _loading = false;
+        StateHasChanged();
+    }
+
+    // ── Sorting ──
+
+    protected void SortBy(string column)
+    {
+        if (_sortColumn == column) {
+            _sortAscending = !_sortAscending;
+        } else {
+            _sortColumn = column;
+            _sortAscending = true;
+        }
+        _currentPage = 1;
+        StateHasChanged();
+    }
+
+    protected string GetAriaSortValue(string column) =>
+        _sortColumn != column ? "none" : _sortAscending ? "ascending" : "descending";
+
+    protected MarkupString SortIndicator(string column)
+    {
+        if (_sortColumn != column) return new MarkupString("<span class=\"text-muted opacity-50\" aria-hidden=\"true\">⇅</span>");
+        return _sortAscending
+            ? new MarkupString("<span aria-hidden=\"true\">▲</span>")
+            : new MarkupString("<span aria-hidden=\"true\">▼</span>");
+    }
+
+    // ── Pagination ──
+
+    protected void GoToPage(int page)
+    {
+        _currentPage = Math.Clamp(page, 1, TotalPages);
+        StateHasChanged();
+    }
+
+    // ── Inline Editing ──
+
+    protected void StartEdit(DataObjects.AgentServiceInfo info)
+    {
+        _editingAgentId = info.AgentId;
+        _editAgentName = info.AgentName;
+        _editHubUrl = info.HubUrl;
+        _editHeartbeatInterval = info.HeartbeatIntervalSeconds;
+        _editStartupType = info.StartupType;
+        StateHasChanged();
+    }
+
+    protected void CancelEdit()
+    {
+        _editingAgentId = null;
+        StateHasChanged();
+    }
+
+    protected async Task SaveSettings(DataObjects.AgentServiceInfo info)
+    {
+        var update = new DataObjects.AgentSettingsUpdate
+        {
+            AgentId = info.AgentId,
+            HubUrl = _editHubUrl != info.HubUrl ? _editHubUrl : null,
+            HeartbeatIntervalSeconds = _editHeartbeatInterval != info.HeartbeatIntervalSeconds ? _editHeartbeatInterval : null,
+            AgentName = _editAgentName != info.AgentName ? _editAgentName : null,
+            StartupType = _editStartupType != info.StartupType ? _editStartupType : null,
+        };
+
+        bool hasChanges = update.HubUrl != null || update.HeartbeatIntervalSeconds != null
+                       || update.AgentName != null || update.StartupType != null;
+
+        if (!hasChanges) {
+            _editingAgentId = null;
+            StateHasChanged();
+            return;
+        }
+
+        var result = await Helpers.GetOrPost<DataObjects.BooleanResponse>("api/Data/UpdateAgentSettings", update);
+        if (result != null && result.Result) {
+            if (update.AgentName != null) info.AgentName = update.AgentName;
+            if (update.HubUrl != null) info.HubUrl = update.HubUrl;
+            if (update.HeartbeatIntervalSeconds.HasValue) info.HeartbeatIntervalSeconds = update.HeartbeatIntervalSeconds.Value;
+            if (update.StartupType != null) info.StartupType = update.StartupType;
+
+            ShowStatus("Settings update sent to agent successfully.", true);
+        } else {
+            var msg = result?.Messages?.FirstOrDefault() ?? "Failed to send settings update.";
+            ShowStatus(msg, false);
+        }
+
+        _editingAgentId = null;
+        StateHasChanged();
+    }
+
+    protected async Task RequestRefresh(Guid agentId)
+    {
+        await Helpers.GetOrPost<DataObjects.BooleanResponse>($"api/Data/RequestAgentSettings/{agentId}", new { });
+        ShowStatus("Settings refresh requested. Waiting for agent response...", true);
+        StateHasChanged();
+    }
+
+    // ── Helpers ──
+
+    protected void ShowStatus(string message, bool success)
+    {
+        _statusMessage = message;
+        _statusAlertClass = success ? "alert-success" : "alert-danger";
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(5000);
+            _statusMessage = "";
+            await InvokeAsync(StateHasChanged);
+        });
+    }
+
+    protected string GetServiceStatusBadge(string status) => status switch {
+        "Running" => "bg-success",
+        "Stopped" => "bg-danger",
+        "StartPending" => "bg-warning text-dark",
+        "StopPending" => "bg-warning text-dark",
+        "Console" => "bg-info text-dark",
+        "Online" => "bg-success",
+        "Offline" => "bg-secondary",
+        _ => "bg-secondary"
+    };
+
+    protected string FormatUptime(TimeSpan uptime)
+    {
+        if (uptime.TotalDays >= 1)
+            return $"{(int)uptime.TotalDays}d {uptime.Hours}h";
+        if (uptime.TotalHours >= 1)
+            return $"{(int)uptime.TotalHours}h {uptime.Minutes}m";
+        if (uptime.TotalMinutes >= 1)
+            return $"{(int)uptime.TotalMinutes}m";
+        return "< 1m";
+    }
+
+    // ── SignalR ──
+
+    protected void SignalRUpdate(DataObjects.SignalRUpdate update)
+    {
+        if (Model.View != _pageName) return;
+
+        switch (update.UpdateType) {
+            case DataObjects.SignalRUpdateType.AgentSettingsReport:
+                if (update.Message == "SettingsReport" && update.ObjectAsString != null) {
+                    var info = Helpers.DeserializeObject<DataObjects.AgentServiceInfo>(update.ObjectAsString);
+                    if (info != null) {
+                        var existing = _serviceInfos.FirstOrDefault(s => s.AgentId == info.AgentId);
+                        if (existing != null) {
+                            int idx = _serviceInfos.IndexOf(existing);
+                            _serviceInfos[idx] = info;
+                        } else {
+                            _serviceInfos.Add(info);
+                        }
+                        ShowStatus($"Settings updated from agent '{info.AgentName}'.", true);
+                        StateHasChanged();
+                    }
+                }
+                break;
+        }
+    }
+}

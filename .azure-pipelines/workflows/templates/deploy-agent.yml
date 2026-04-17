@@ -1,0 +1,68 @@
+# Template: Deploy a FreeServicesHub Agent to a target environment.
+# Called once per environment (dev, cms, prod) with environment-specific parameters.
+
+parameters:
+  - name: hubUrl
+    type: string
+  - name: hubAdminToken
+    type: string
+  - name: agentInstallPath
+    type: string
+  - name: serviceName
+    type: string
+  - name: serviceDisplayName
+    type: string
+
+steps:
+  # 1. Stop existing service (best effort -- may not exist yet)
+  - script: |
+      sc.exe stop ${{ parameters.serviceName }} 2>nul
+      timeout /t 5
+      sc.exe delete ${{ parameters.serviceName }} 2>nul
+    displayName: 'Stop & Remove Existing Service'
+    continueOnError: true
+
+  # 2. Generate a one-time registration key from the hub
+  - powershell: |
+      $headers = @{
+        "Authorization" = "Bearer ${{ parameters.hubAdminToken }}"
+        "Content-Type"  = "application/json"
+      }
+      $response = Invoke-RestMethod -Uri "${{ parameters.hubUrl }}/api/Data/GenerateRegistrationKeys/1" -Method Post -Headers $headers -Body "null"
+      $key = $response[0].newKeyPlaintext
+      if ([string]::IsNullOrEmpty($key)) {
+        Write-Error "Failed to generate registration key"
+        exit 1
+      }
+      Write-Host "Registration key generated: $($key.Substring(0, 8))..."
+      Write-Host "##vso[task.setvariable variable=registrationKey;issecret=true]$key"
+    displayName: 'Generate Registration Key'
+
+  # 3. Run the installer in headless (non-interactive) mode
+  - script: |
+      $(Pipeline.Workspace)/installer/FreeServicesHub.Agent.Installer.exe configure ^
+        --Security:ApiKey=$(registrationKey) ^
+        --Service:Name=${{ parameters.serviceName }} ^
+        --Service:DisplayName="${{ parameters.serviceDisplayName }}" ^
+        --Service:InstallPath=${{ parameters.agentInstallPath }} ^
+        --Publish:OutputPath=$(Pipeline.Workspace)/agent
+    displayName: 'Run Installer (configure)'
+
+  # 4. Write hub URL to agent config
+  - powershell: |
+      $configPath = Join-Path "${{ parameters.agentInstallPath }}" "appsettings.json"
+      if (Test-Path $configPath) {
+        $json = Get-Content $configPath -Raw | ConvertFrom-Json
+        $json.Agent.HubUrl = "${{ parameters.hubUrl }}"
+        $json | ConvertTo-Json -Depth 10 | Set-Content $configPath
+        Write-Host "Updated HubUrl to ${{ parameters.hubUrl }}"
+      }
+    displayName: 'Configure Hub URL'
+
+  # 5. Start the service
+  - script: sc.exe start ${{ parameters.serviceName }}
+    displayName: 'Start Agent Service'
+
+  # 6. Verify service is running
+  - script: sc.exe query ${{ parameters.serviceName }}
+    displayName: 'Verify Service Status'

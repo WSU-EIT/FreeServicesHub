@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using FreeServicesHub.EFModels.EFModels;
@@ -5,10 +6,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FreeServicesHub;
 
-// Validates Bearer tokens on agent-specific API routes (/api/agent/*).
+// Validates Bearer tokens on agent-specific API routes (/api/agent/*)
+// and SignalR negotiate (/freeserviceshubHub).
 // Hashes the incoming token with SHA-256 and looks it up in ApiClientTokens.
-// On success, stashes AgentId and TenantId in HttpContext.Items so downstream
-// controllers don't need to re-validate.
+// On success, stashes AgentId and TenantId in HttpContext.Items and sets
+// HttpContext.User with a ClaimsPrincipal so downstream [Authorize] passes.
 
 public class ApiKeyMiddleware
 {
@@ -23,29 +25,51 @@ public class ApiKeyMiddleware
     {
         string path = Context.Request.Path.Value ?? "";
 
-        // Only intercept agent-specific API routes
         bool requiresAgentAuth = path.StartsWith("/api/agent/", StringComparison.OrdinalIgnoreCase);
+        bool isSignalR = path.StartsWith("/freeserviceshubHub", StringComparison.OrdinalIgnoreCase);
 
-        if (!requiresAgentAuth) {
+        if (!requiresAgentAuth && !isSignalR) {
             await _next(Context);
             return;
         }
 
-        // Extract Bearer token from Authorization header
-        if (!Context.Request.Headers.TryGetValue("Authorization", out Microsoft.Extensions.Primitives.StringValues authHeader)) {
-            await WriteUnauthorized(Context, "missing_token", "Authorization header required");
-            return;
+        // Extract token -- SignalR sends via query string, HTTP API via Authorization header
+        string? token = null;
+
+        if (isSignalR) {
+            token = Context.Request.Query["access_token"];
         }
 
-        string headerValue = authHeader.ToString();
-        if (!headerValue.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) {
-            await WriteUnauthorized(Context, "invalid_format", "Authorization header must use Bearer scheme");
-            return;
-        }
-
-        string token = headerValue.Substring(7).Trim();
         if (string.IsNullOrEmpty(token)) {
-            await WriteUnauthorized(Context, "empty_token", "Bearer token cannot be empty");
+            if (!Context.Request.Headers.TryGetValue("Authorization", out var authHeader)) {
+                if (requiresAgentAuth) {
+                    await WriteUnauthorized(Context, "missing_token", "Authorization header required");
+                    return;
+                }
+                // For SignalR without a token, let it fall through to normal auth (Blazor UI users)
+                await _next(Context);
+                return;
+            }
+
+            string headerValue = authHeader.ToString();
+            if (!headerValue.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) {
+                if (requiresAgentAuth) {
+                    await WriteUnauthorized(Context, "invalid_format", "Authorization header must use Bearer scheme");
+                    return;
+                }
+                await _next(Context);
+                return;
+            }
+
+            token = headerValue.Substring(7).Trim();
+        }
+
+        if (string.IsNullOrEmpty(token)) {
+            if (requiresAgentAuth) {
+                await WriteUnauthorized(Context, "empty_token", "Bearer token cannot be empty");
+                return;
+            }
+            await _next(Context);
             return;
         }
 
@@ -60,13 +84,28 @@ public class ApiKeyMiddleware
             .FirstOrDefaultAsync(t => t.TokenHash == tokenHash && t.Active && t.RevokedAt == null);
 
         if (clientToken == null) {
-            await WriteUnauthorized(Context, "invalid_token", "Token is invalid, revoked, or inactive");
+            if (requiresAgentAuth) {
+                await WriteUnauthorized(Context, "invalid_token", "Token is invalid, revoked, or inactive");
+                return;
+            }
+            // For SignalR, let it fall through -- might be a Blazor UI user with cookie auth
+            await _next(Context);
             return;
         }
 
         // Stash agent identity for downstream controllers
         Context.Items["AgentId"] = clientToken.AgentId;
         Context.Items["AgentTenantId"] = clientToken.TenantId;
+
+        // Create a ClaimsPrincipal so [Authorize] on the hub passes
+        var claims = new List<Claim>
+        {
+            new Claim(ClaimTypes.NameIdentifier, clientToken.AgentId.ToString()),
+            new Claim("AgentId", clientToken.AgentId.ToString()),
+            new Claim("TenantId", clientToken.TenantId.ToString()),
+        };
+        var identity = new ClaimsIdentity(claims, "AgentToken");
+        Context.User = new ClaimsPrincipal(identity);
 
         await _next(Context);
     }

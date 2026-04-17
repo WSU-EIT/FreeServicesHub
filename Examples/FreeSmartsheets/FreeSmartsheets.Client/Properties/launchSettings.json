@@ -1,8 +1,0 @@
-{
-  "profiles": {
-    "FreeSmartsheets.Client": {
-      "commandName": "Project",
-      "nativeDebugging": false
-    }
-  }
-}
